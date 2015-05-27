@@ -30,7 +30,7 @@ MCJITHelper::~MCJITHelper() {
 
 void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     Module* M_ptr = M.get();
-    Modules.push_back(M_ptr);
+    //Modules.push_back(M_ptr);
 
     if (OptimizeModule) {
         legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(M_ptr);
@@ -91,7 +91,8 @@ void* MCJITHelper::getPointerToNamedFunction(const std::string &Name) {
 }
 
 Function* MCJITHelper::getFunction(const std::string &Name) {
-    // alternative: JIT->FindFunctionNamed(Name.c_str())
+    return JIT->FindFunctionNamed(Name.c_str());
+    /** BROKEN
     Function* ret = nullptr;
     for (std::vector<Module*>::iterator M_it = Modules.begin(), M_end = Modules.end(); M_it != M_end; ++M_it) {
         Module* M = *M_it;
@@ -105,6 +106,7 @@ Function* MCJITHelper::getFunction(const std::string &Name) {
     }
 
     return ret;
+    **/
 }
 
 int MCJITHelper::runFunction(const std::string &FunctionName, std::vector<int> &Arguments) {

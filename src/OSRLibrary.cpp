@@ -2,7 +2,6 @@
 #include "StateMap.hpp"
 
 #include "llvm/PassManager.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/DominanceFrontier.h"
 #include "llvm/Analysis/DomPrinter.h"
 #include "llvm/IR/BasicBlock.h"
@@ -15,7 +14,6 @@
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 #include <iostream>
@@ -35,11 +33,6 @@ using namespace llvm;
 /**
  * Public methods
  */
-
-static void printFunctionForDebug(Function* F) {
-    F->dump();
-    F->viewCFG();
-}
 
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
                         BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
@@ -79,7 +72,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), OSRDestFunName); // (2)
     Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
     for (Value* src_v: valuesToPass) {
-        (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr")); // maybe from dest rather than src function???
+        (OSRDestArgIt++)->setName(src_v->getName()); // maybe from dest rather than src function???
     }
     assert(OSRDestArgIt == OSRDestFun->arg_end());
 
@@ -88,7 +81,6 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     applyAttributesToArguments(OSRDestFun, dest, valuesToPass); // (4)
 
     std::map<const Argument*, Value*> deadArgsMap = getMapForDeadArgs(dest, valuesToPass); // (5)
-    // TODO this is broken: should use SSAUpdater! (see simple_loop_SSA.ll with missing phi node entry)
 
     BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();  // (6)
     BasicBlock* newEntryPoint = M.createEntryPointForOSRDestFunction(srcDestBlocks,
@@ -98,17 +90,13 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     updateOpMappingForClonedBody(OSRDestFun, dest, destToOSRDestVMap);
 
     newEntryPoint->insertInto(OSRDestFun, oldEntryPoint); // (8)
-
     assert(&OSRDestFun->getEntryBlock() == newEntryPoint);
 
-    replaceUsesWithNewValues2(OSRDestFun, dest_block, liveInAtDestBlock, destToOSRDestVMap, updatesForDestToOSRDestVMap); // (9)
+    replaceUsesWithNewValues(OSRDestFun, dest_block, liveInAtDestBlock, destToOSRDestVMap, updatesForDestToOSRDestVMap); // (9)
 
     tmpMod->getFunctionList().push_back(OSRDestFun); // (10)
-    printFunctionForDebug(OSRDestFun);
     verified = verifyFunction(*OSRDestFun, &errStream);
     assert(verified);
-
-
 
     /* [Prepare F1' aka newSrc] Workflow:
      * (1) Duplicate F1 into newSrc
@@ -142,14 +130,16 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
 
     //newSrcFun->viewCFG();
 
-    if (false) {
+    if (true) {
         legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(tmpMod);
         //FPM->add(createDomOnlyPrinterPass()); // broken
         FPM->add(createCFGSimplificationPass());
         FPM->run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
-        verifyFunction(*OSRDestFun, &errStream);
+        verified = verifyFunction(*OSRDestFun, &errStream);
+        assert(verified);
         FPM->run(*newSrcFun);
-        verifyFunction(*newSrcFun, &errStream);
+        verified = verifyFunction(*newSrcFun, &errStream);
+        assert(verified);
     }
 
 
@@ -298,125 +288,6 @@ void OSRLibrary::updateDestToOSRDestVMapForArguments(Function* dest, ValueToValu
 
 void OSRLibrary::replaceUsesWithNewValues(Function* NF, BasicBlock* origBlock, LivenessAnalysis::LiveValues &liveInForOrigBlock, ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap) {
     BasicBlock* entryPoint = &NF->getEntryBlock();
-    //BasicBlock* resumeBlock = cast<BasicBlock>(VMap[origBlock]);
-    //Instruction* oldFirstInstInResumeBlock = resumeBlock->getInstList().begin();
-
-    /* For each live value at the target basic block, I have three cases:
-     * 1) value is defined through a PHI node
-     * 2) value is uniquely defined in the body
-     * 3) value is an argument
-     * In the first case, I have only to add an edge to the PHI node. In
-     * the second case, I will create a PHI node at the beginning of the
-     * target block and I will replace all the uses of the value with
-     * uses of the value defined at the newly created PHI node. The third
-     * case has already been handled in a previous step. */
-    int replacedUses = 0;
-
-    // use SSAUpdater to fix the CFG to keep the SSA form consistent
-    SmallVector<PHINode*, 8> insertedPHINodes;
-    //SSAUpdater updateSSA(&insertedPHINodes); // TODO: use argument instead
-    SSAUpdater updateSSA;
-
-    for (LivenessAnalysis::LiveValues::const_iterator it = liveInForOrigBlock.begin(), end = liveInForOrigBlock.end();
-         it != end; ++it) {
-        Value* origValue = const_cast<Value*>(*it);
-        if (isa<Argument>(origValue)) continue; // case 3 - TODO this is broken for dead arguments (undef value)!!
-
-        Value* oldValue = VMap[origValue];
-        Instruction* oldInst = cast<Instruction>(oldValue); // TODO what about constants?
-        BasicBlock* oldBlock = oldInst->getParent();
-
-        Value* newValue = updatesForVMap[origValue];
-        BasicBlock* newBlock = entryPoint;
-        //BasicBlock* newBlock = nullptr;
-        /*
-        if (Argument* newArg = dyn_cast<Argument>(newValue)) {
-            newBlock = newArg->getParent();
-        } else if (Instruction* newInst == dyn_cast<Instruction>(newValue)) {
-            assert(false); // TODO works only for direct state mapping
-        } else {
-            assert(false);
-        }
-        assert(newValue->getParent() == entryPoint);
-        */
-        //newBlock = cast<BasicBlock>(VMap[origBlock]);
-
-        updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_join").str())); // TODO cleaner code for name
-        updateSSA.AddAvailableValue(oldBlock, oldValue);
-        updateSSA.AddAvailableValue(newBlock, newValue);
-
-/*
-
-        // TODO: check again osr.cpp in McOSR and also RewriteUseAfterInsertions in SSAUpdater)
-        // check also processInstruction in LCSSA.cpp (around line 149)
-        SmallVector<Use *, 16> usesToRewrite;
-        for (Use &U : oldValue->uses()) {
-            usesToRewrite.push_back(&U);
-        }
-
-        for (unsigned i = 0, e = usesToRewrite.size(); i != e; ++i) {
-            // Mike...
-            Instruction *User = cast<Instruction>(usesToRewrite[i]->getUser());
-            BasicBlock *UserBB = User->getParent();
-            if (PHINode *PN = dyn_cast<PHINode>(User)) {
-                continue;
-                //UserBB = PN->getIncomingBlock(*usesToRewrite[i]);
-            } // TODO :(
-
-            // TODO: does not handle uses in the same block
-            updateSSA.RewriteUse(*usesToRewrite[i]);
-            //updateSSA.RewriteUseAfterInsertions(*usesToRewrite[i]);
-            fprintf(stderr, "WHD\n");
-
-        }
-        fprintf(stderr, "WHDIYF\n");
-        ++replacedUses;
-        */
-
-        for (Value::use_iterator UI = oldValue->use_begin(), UE = oldValue->use_end(); UI != UE; ) {
-            // Grab the use before incrementing the iterator.
-            Use &U = *UI;
-
-            // Increment the iterator before removing the use from the list.
-            ++UI;
-
-            // SSAUpdater can't handle a non-PHI use in the same block as an
-            // earlier def. We can easily handle those cases manually.
-            Instruction *UserInst = cast<Instruction>(U.getUser());
-            if (!isa<PHINode>(UserInst)) {
-                BasicBlock *UserBB = UserInst->getParent();
-                if (UserBB == oldBlock) {
-                    U = oldValue;
-                    continue;
-                }
-
-/*
-                // The original users in the OrigHeader are already using the
-                // original definitions.
-                if (UserBB == OrigHeader)
-                    continue;
-
-                // Users in the OrigPreHeader need to use the value to which the
-                // original definitions are mapped.
-                if (UserBB == OrigPreheader) {
-                    U = OrigPreHeaderVal;
-                    continue;
-                }*/
-            }
-
-            // Anything else can be handled by SSAUpdater.
-            updateSSA.RewriteUse(U);
-            fprintf(stderr, "WHD\n");
-        }
-
-        fprintf(stderr, "WHDIYF\n");
-        ++replacedUses;
-    }
-    assert(replacedUses == updatesForVMap.size());
-}
-
-void OSRLibrary::replaceUsesWithNewValues2(Function* NF, BasicBlock* origBlock, LivenessAnalysis::LiveValues &liveInForOrigBlock, ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap) {
-    BasicBlock* entryPoint = &NF->getEntryBlock();
     BasicBlock* resumeBlock = cast<BasicBlock>(VMap[origBlock]);
     Instruction* oldFirstInstInResumeBlock = resumeBlock->getInstList().begin();
 
@@ -431,7 +302,6 @@ void OSRLibrary::replaceUsesWithNewValues2(Function* NF, BasicBlock* origBlock, 
      * case has already been handled in a previous step. */
     int replacedUses = 0;
 
-// originale
     for (LivenessAnalysis::LiveValues::const_iterator it = liveInForOrigBlock.begin(), end = liveInForOrigBlock.end();
          it != end; ++it) {
         Value* origValue = const_cast<Value*>(*it);
@@ -453,7 +323,6 @@ void OSRLibrary::replaceUsesWithNewValues2(Function* NF, BasicBlock* origBlock, 
     }
     assert(replacedUses == updatesForVMap.size());
 }
-
 
 Function* OSRLibrary::duplicateFunction(Function* F, const Twine &Name, ValueToValueMapTy &VMap) {
     Function* dup = CloneFunction(F, VMap, false, nullptr); // TODO moduleLevelChanges true?

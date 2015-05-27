@@ -25,7 +25,6 @@ public:
             // unfortunately we need a module for EngineBuilder (TODO: check again)
             InitialModule = llvm::make_unique<Module>("empty", Context);
         }
-        Modules.push_back(InitialModule.get());
 
         Listeners.push_back(new StackMapJITEventListener(&StackMaps)); // TODO use a shared_ptr instead?
 
@@ -59,7 +58,6 @@ public:
 private:
     LLVMContext                     &Context;
     IRBuilder<>                     *Builder;
-    std::vector<Module*>            Modules;
     std::vector<StackMap*>          StackMaps;
     std::vector<JITEventListener*>  Listeners;
 

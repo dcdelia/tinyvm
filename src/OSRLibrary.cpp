@@ -14,6 +14,7 @@
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 #include <iostream>
@@ -34,12 +35,18 @@ using namespace llvm;
  * Public methods
  */
 
+static bool verifyAux(Function* F, raw_os_ostream* OS) {
+    //fprintf(stderr, "WHD!!!!!\n");
+    bool ret = verifyFunction(*F, OS); // according to the docs (which version??), returns false if there are no errors
+    if (ret) F->dump();
+    return ret;
+}
+
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
                         BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
                         const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
     // common stuff for the generation of F1' and F2'
     Function *newSrcFun, *OSRDestFun;
-    bool verified;
     raw_os_ostream errStream(std::cerr);
     StateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
     std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
@@ -72,7 +79,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), OSRDestFunName); // (2)
     Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
     for (Value* src_v: valuesToPass) {
-        (OSRDestArgIt++)->setName(src_v->getName()); // maybe from dest rather than src function???
+        (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr")); // maybe from dest rather than src function???
     }
     assert(OSRDestArgIt == OSRDestFun->arg_end());
 
@@ -81,6 +88,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     applyAttributesToArguments(OSRDestFun, dest, valuesToPass); // (4)
 
     std::map<const Argument*, Value*> deadArgsMap = getMapForDeadArgs(dest, valuesToPass); // (5)
+    // TODO this is broken: should use SSAUpdater! (see simple_loop_SSA.ll with missing phi node entry)
 
     BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();  // (6)
     BasicBlock* newEntryPoint = M.createEntryPointForOSRDestFunction(srcDestBlocks,
@@ -95,8 +103,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     replaceUsesWithNewValues(OSRDestFun, dest_block, liveInAtDestBlock, destToOSRDestVMap, updatesForDestToOSRDestVMap); // (9)
 
     tmpMod->getFunctionList().push_back(OSRDestFun); // (10)
-    verified = verifyFunction(*OSRDestFun, &errStream);
-    assert(verified);
+    verifyAux(OSRDestFun, &errStream);
 
     /* [Prepare F1' aka newSrc] Workflow:
      * (1) Duplicate F1 into newSrc
@@ -125,8 +132,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     BasicBlock* splittedBlock = insertOSRCond (newSrcFun, srcBlock, OSR_B, newCond, splitBlockName);
 
     tmpMod->getFunctionList().push_back(newSrcFun); // (5)
-    verified = verifyFunction(*newSrcFun, &errStream);
-    assert(verified);
+    verifyAux(newSrcFun, &errStream);
 
     //newSrcFun->viewCFG();
 
@@ -134,12 +140,12 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
         legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(tmpMod);
         //FPM->add(createDomOnlyPrinterPass()); // broken
         FPM->add(createCFGSimplificationPass());
+
         FPM->run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
-        verified = verifyFunction(*OSRDestFun, &errStream);
-        assert(verified);
+        verifyAux(OSRDestFun, &errStream);
+
         FPM->run(*newSrcFun);
-        verified = verifyFunction(*newSrcFun, &errStream);
-        assert(verified);
+        verifyAux(newSrcFun, &errStream);
     }
 
 
@@ -302,22 +308,46 @@ void OSRLibrary::replaceUsesWithNewValues(Function* NF, BasicBlock* origBlock, L
      * case has already been handled in a previous step. */
     int replacedUses = 0;
 
+    // use SSAUpdater to fix the CFG to keep the SSA form consistent
+    SmallVector<PHINode*, 8> insertedPHINodes;
+    SSAUpdater updateSSA(&insertedPHINodes); // TODO: use argument instead
+
     for (LivenessAnalysis::LiveValues::const_iterator it = liveInForOrigBlock.begin(), end = liveInForOrigBlock.end();
          it != end; ++it) {
         Value* origValue = const_cast<Value*>(*it);
         if (isa<Argument>(origValue)) continue; // case 3
-        Value* value = VMap[origValue];
-        PHINode *phi = dyn_cast<PHINode>(value);
-        if (phi) {
-            // case 1
-            phi->addIncoming(updatesForVMap[origValue], entryPoint);
-        } else {
-            // case 2
-            phi = PHINode::Create(value->getType(), 2, Twine("osrPHI_", value->getName()), oldFirstInstInResumeBlock);
-            value->replaceAllUsesWith(phi);
-            phi->addIncoming(updatesForVMap[origValue], entryPoint);
-            Instruction* I = cast<Instruction>(value); // TODO constants?
-            phi->addIncoming(value, I->getParent());
+
+        Value* oldValue = VMap[origValue];
+        Instruction* oldInst = cast<Instruction>(oldValue); // TODO what about constants?
+        BasicBlock* oldBlock = oldInst->getParent();
+
+        Value* newValue = updatesForVMap[origValue];
+        BasicBlock* newBlock = entryPoint;
+
+        updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_join").str())); // TODO cleaner code for name
+        updateSSA.AddAvailableValue(oldBlock, oldValue);
+        updateSSA.AddAvailableValue(newBlock, newValue);
+
+        for (Value::use_iterator UI = oldValue->use_begin(), UE = oldValue->use_end(); UI != UE; ) {
+            // Grab the use before incrementing the iterator.
+            Use &U = *UI;
+
+            // Increment the iterator before removing the use from the list.
+            ++UI;
+
+            // SSAUpdater can't handle a non-PHI use in the same block as an
+            // earlier def. We can easily handle those cases manually.
+            Instruction *UserInst = cast<Instruction>(U.getUser());
+            if (!isa<PHINode>(UserInst)) {
+                BasicBlock *UserBB = UserInst->getParent();
+                if (UserBB == oldBlock) {
+                    U = oldValue; // TODO check!!!!!!!!!
+                    continue;
+                }
+            }
+
+            // Anything else can be handled by SSAUpdater.
+            updateSSA.RewriteUse(U);
         }
         ++replacedUses;
     }

@@ -14,17 +14,18 @@ enum Token {
     tok_integer     = -4,
 
     // special commands for the interpreter
-    tok_quit        = -10,
-    tok_load        = -11,
-    tok_begin       = -12,
-    tok_insert_osr  = -13,
-    tok_in          = -14,
-    tok_at          = -15,
-    tok_as          = -16,
-    tok_to          = -17,
-    tok_cfg         = -18,
-    tok_cfg_full    = -19,
-    tok_dump        = -20
+    tok_help        = -10,
+    tok_quit        = -11,
+    tok_load        = -12,
+    tok_begin       = -13,
+    tok_insert_osr  = -14,
+    tok_in          = -15,
+    tok_at          = -16,
+    tok_as          = -17,
+    tok_to          = -18,
+    tok_cfg         = -19,
+    tok_cfg_full    = -20,
+    tok_dump        = -21
 };
 
 class Lexer {

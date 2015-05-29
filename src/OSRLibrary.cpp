@@ -29,6 +29,7 @@ using namespace llvm;
  * - use better aliases for types
  * - use const references more?
  * - nomi strani in OSRDestFun
+ * - controllare che liveness analisis non includa valori di OSRCond
  */
 
 /**

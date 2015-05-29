@@ -274,12 +274,41 @@ static void handleDumpCommand(Lexer* L, MCJITHelper* TheHelper) {
     }
 }
 
+static void handleHelpCommand(Lexer* L) {
+    // simple commands
+    std::cerr << "List of available commands:\n";
+    std::cerr << "--> BEGIN <module_name>\n" << "\tType an IR module from stdin. Press CTRL-D when finished.\n";
+    std::cerr << "--> LOAD <file_name>\n" << "\tLoads an IR module from a given file.\n";
+    std::cerr << "--> CFG <function_name>\n" << "\tShows a compact view of the CFG of a given function.\n";
+    std::cerr << "--> CFG_FULL <function_name>\n" << "\tShows the full CFG (with instructions) of a given function.\n";
+    std::cerr << "--> DUMP <function_name>\n" << "\tShows the IR code of a given function.\n";
+    std::cerr << "--> QUIT\n" << "\tExits TinyVM.\n";
+
+    // function invocation
+    std::cerr << "\nThe TinyVM command line supports the invocation of loaded functions. "
+              << "Functions can be invoked as in C, except for the final semi-colon that must not be added.\n"
+              << "For the time being, only functions with integer arguments and return values are supported.\n";
+
+    // demo insert_finalized_osr
+    std::cerr << "\nDemo OSR points can be inserted with the following command:\n"
+              << "--> INSERT_OSR IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>\n"
+              << "where F1 and F2 are existing functions, and B1 and B2 are basic block labels.\n";
+    std::cerr << "\nThe command generates a function F1' cloned from F1 such that when basic block B1 "
+              << "is reached during the execution of F1', an OSR transition to F2' is fired.\n";
+    std::cerr << "\nFunction F2' is generated from F2 in order to resume the execution from the "
+              << "beginning of basic block B2, and values for live variables in F1' at B1 "
+              << "are transferred as arguments for the call.\n";
+}
+
 static void mainLoop(Lexer* L, MCJITHelper* H) {
+    fprintf(stderr, "Welcome! Enter 'HELP' to show the list of available commands.\n");
+
     while (1) {
         fprintf(stderr, "TinyVM> ");
         int token = L->getNextToken();
         switch (token) {
             case tok_newline:       fprintf(stderr, "\r"); break; // dirty trick :-)
+            case tok_help:          handleHelpCommand(L); break;
             case tok_begin:         handleBeginCommand(L, H); break;
             case tok_load:          handleLoadCommand(L, H); break;
             case tok_insert_osr:    handleInsertOSRCommand(L, H); break;

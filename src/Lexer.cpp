@@ -30,6 +30,7 @@ int Lexer::getNextToken() {
         std::string command = CurString;
         std::transform(command.begin(), command.end(), command.begin(), ::toupper);
 
+        if (command == "HELP")          return tok_help;
         if (command == "QUIT")          return tok_quit;
         if (command == "LOAD")          return tok_load;
         if (command == "BEGIN")         return tok_begin;

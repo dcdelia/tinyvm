@@ -17,13 +17,15 @@ class StateMap {
     public:
         typedef std::pair<BasicBlock*, BasicBlock*> BBSrcDestPair;
         typedef ValueMap<Value*, std::vector<Value*>> ValueToValuesMap;
+        typedef std::map<BasicBlock*, std::vector<Value*>> ValuesForBlockMap;
         StateMap(Function* src, Function* dest, ValueToValuesMap* VVsMap) : src(src), dest(dest),
             srcLiveValueAnalysis(LivenessAnalysis(src)), destLiveValueAnalysis (LivenessAnalysis(dest)),
             VVsMap(VVsMap), reverseVVsMap(flipValueToValuesMap(VVsMap)) { }
         // TODO: destructor
         LivenessAnalysis& getLivenessResultsForSrcFunction();
         LivenessAnalysis& getLivenessResultsForDestFunction();
-        virtual std::vector<Value*> getValuesToFetchFromSrcFunction(BBSrcDestPair &srcDestBlocks);
+        virtual std::vector<Value*> &getValuesToFetchFromSrcFunction(BBSrcDestPair &srcDestBlocks);
+        virtual std::vector<Value*> &getValuesToSetForDestFunction(BBSrcDestPair &srcDestBlocks);
         virtual BasicBlock* createEntryPointForOSRDestFunction(BBSrcDestPair &srcDestBlocks, Function *OSRDestFun,
                             ValueToValueMapTy &destToOSRDestVMap, ValueToValueMapTy &updatesForDestToOSRDestVMap,
                             std::vector<Value*> &fetchedValuesAsArgs);
@@ -33,10 +35,8 @@ class StateMap {
         Function *src, *dest;
         LivenessAnalysis srcLiveValueAnalysis, destLiveValueAnalysis;
         ValueToValuesMap *VVsMap, *reverseVVsMap;
+        ValuesForBlockMap valuesToFetchFromSrc, valuesToFetchAtDest;
 
-        std::map<BBSrcDestPair, std::vector<Value*>> argumentsToFetchMap;
-
-        //static ValueToValueMapTy flipVMap(ValueToValueMapTy &Map);
         static ValueToValuesMap* flipValueToValuesMap(ValueToValuesMap *Map);
 };
 

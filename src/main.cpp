@@ -205,7 +205,15 @@ static void handleInsertOSRCommand(Lexer* L, MCJITHelper* TheHelper) {
     StateMap M(src, dest, VVsMap);
     fprintf(stderr, "StateMap generated!\n");
 
+    // print information about values to fetch
+    StateMap::BBSrcDestPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
     M.getLivenessResultsForSrcFunction().printResultsToScreen(src_bb);
+    std::vector<Value*> &valuesToFetch = M.getValuesToFetchFromSrcFunction(tmpSrcDestPair);
+    fprintf(stderr, "Values to fetch: %lu\n", valuesToFetch.size());
+    for (int i = 0, e = valuesToFetch.size(); i < e; ++i) {
+        fprintf(stderr, "%s ", valuesToFetch[i]->getName().str().c_str());
+    }
+    fprintf(stderr, "\n");
 
     // we generate a condition that is always true as OSRCond
     OSRLibrary::OSRCond cond;
@@ -236,7 +244,6 @@ static void handleShowCFGCommand(Lexer* L, MCJITHelper* TheHelper, bool showInst
     #define INVALID() do { fprintf(stderr, "Invalid syntax for a CFG command!\n" \
             "Expected command of the form: CFG <function_name>\n"); \
             return; } while (0);
-    int token;
 
     if (L->getNextToken() != tok_identifier) INVALID();
     const std::string Name = L->getIdentifier();
@@ -259,7 +266,6 @@ static void handleDumpCommand(Lexer* L, MCJITHelper* TheHelper) {
     #define INVALID() do { fprintf(stderr, "Invalid syntax for a DUMP command!\n" \
             "Expected command of the form: DUMP <function_name>\n"); \
             return; } while (0);
-    int token;
 
     if (L->getNextToken() != tok_identifier) INVALID();
     const std::string Name = L->getIdentifier();

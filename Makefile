@@ -3,7 +3,7 @@ CXX				= clang++
 BUILD			= build
 SRC				= src
 INCLUDE			= include
-CXX_FLAGS		= -O0 -g -I$(INCLUDE)
+CXX_FLAGS		= -O0 -g -Wall -I$(INCLUDE)
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
 LLVM_LDFLAGS	= $(shell llvm-config  --ldflags --system-libs --libs core irreader mcjit native)
 

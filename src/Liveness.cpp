@@ -34,6 +34,7 @@ void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const Liveness
      * have been updated by a call to analyzeBB on a B's successor */
     LiveValues currInValues(outValues);
 
+    // process all the non-PHI instructions starting from the last in the block
     for (BasicBlock::InstListType::const_reverse_iterator revIt = instructions.rbegin(),
          end = instructions.rend(); revIt != end; ++revIt) {
         const Instruction *I = &*revIt;
@@ -44,9 +45,9 @@ void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const Liveness
          * Update rule: KILL[d: y <- f(x1, ..., xN)] = {y} */
         currInValues.erase(I); // remove elements that belong to KILL[B]
 
-        for (User::const_op_iterator op = I->op_begin(), opEnd = I->op_end();
-             op != opEnd; ++op) {
-            const Value *V = *op;
+        for (User::const_op_iterator opIt = I->op_begin(), opEnd = I->op_end();
+             opIt != opEnd; ++opIt) {
+            const Value *V = *opIt;
             /* Add to LIVE_IN[B] elements that belong to GEN[B]
              * Update rule: GEN[d: y <- f(x1, ..., xN)] = {x1, ..., xN} */
             if (isa<Instruction>(V) || isa<Argument>(V)) // we do not insert Constants
@@ -54,7 +55,7 @@ void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const Liveness
         }
     }
 
-    // the set can only grow across invocations to the method!
+    // the inValues set can only grow across invocations of this method
     inValues.insert(currInValues.begin(), currInValues.end());
 
     // we will need these later
@@ -62,8 +63,9 @@ void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const Liveness
     BasicBlock::const_iterator firstInstr = B->begin();
 
     // remove all the phi nodes created at this block from the set
-    for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it)
+    for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
         inValues.erase(&*it);
+    }
 
     /** Process all the values used by the PHI nodes **/
     if (firstNonPHIInstr != firstInstr) {
@@ -72,25 +74,23 @@ void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const Liveness
          * const_pred_iterator provided by CFG.h */
         const PHINode *phi = cast<PHINode>(&*firstInstr);
 
-        for (unsigned i = 0, e = phi->getNumIncomingValues(); i != e ; ++i) {
+        for (int i = 0, e = phi->getNumIncomingValues(); i != e ; ++i) {
             const BasicBlock *pred = phi->getIncomingBlock(i); // we process each incoming BB
 
             LiveValues &predOutValues = map[pred].second;
             predOutValues.insert(inValues.begin(), inValues.end());
         }
 
-        /* Now process the live values used by PHIs: I will assume
-         * that all the PHI instructions are grouped together at
-         * the beginning of the basic block.
+        /* Now process the live values used by PHIs: in LLVM all the PHI
+         * instructions are grouped together at the beginning of the block.
          *
-         * TODO: PHI instructions not processed in reverse order: this
-         *       can be a potential source of errors? I don't think so
-         * */
-        for (BasicBlock::const_iterator I = firstInstr; I != firstNonPHIInstr; ++I) {
-            const PHINode *phi = cast<PHINode>(&*I);
+         * Each incoming value in a PHI node is added to the LIVE_OUT set
+         * of the predecessor from which the value is coming.
+         */
+        for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
+            const PHINode *phi = cast<PHINode>(&*it);
 
-            for (unsigned i = 0, e = phi->getNumIncomingValues(); i != e ; ++i) {
-                 // we process each incoming BB and argument
+            for (int i = 0, e = phi->getNumIncomingValues(); i != e ; ++i) {
                 const BasicBlock *pred = phi->getIncomingBlock(i);
                 const Value *V = phi->getIncomingValue(i);
 
@@ -101,10 +101,10 @@ void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const Liveness
             }
         }
     } else {
-        /* There is no PHI node: update the LIVE_OUT set of the predecessors */
-        for (llvm::const_pred_iterator I = llvm::pred_begin(B), end = llvm::pred_end(B);
-             I != end ; ++I) {
-            LiveValues &predOutValues = map[*I].second;
+        /* There is no PHI node: update the LIVE_OUT sets of the predecessors */
+        for (const_pred_iterator it = pred_begin(B), end = pred_end(B);
+             it != end ; ++it) {
+            LiveValues &predOutValues = map[*it].second;
             predOutValues.insert(inValues.begin(), inValues.end());
         }
     }
@@ -119,9 +119,9 @@ void LivenessAnalysis::performLivenessAnalysis() {
         // use a reversed iterator as we have to perform backward analysis
         for (Function::BasicBlockListType::const_reverse_iterator rIt = blocks.rbegin(),
              end = blocks.rend(); rIt != end; ++rIt) {
-            const BasicBlock *B = &*rIt; // TODO: learn C++ better and double-check this :)
+            const BasicBlock *B = &*rIt;
             LiveInAndOutValues &currPair = map[B];
-            LiveValues oldInValues = currPair.first; // we copy it
+            LiveValues oldInValues = currPair.first; // create a copy to check for changes
 
             // we recompute LIVE_IN[B] and propagate the results to its predecessors
             analyzeBBwithPHINodes(B, currPair.second, currPair.first, map);

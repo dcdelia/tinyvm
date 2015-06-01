@@ -2,8 +2,9 @@
 #include "StateMap.hpp"
 
 #include "llvm/PassManager.h"
-#include "llvm/Analysis/DominanceFrontier.h"
-#include "llvm/Analysis/DomPrinter.h"
+//#include "llvm/Analysis/DominanceFrontier.h"
+//#include "llvm/Analysis/DomPrinter.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
@@ -36,10 +37,13 @@ using namespace llvm;
  * Public methods
  */
 
-static bool verifyAux(Function* F, raw_os_ostream* OS) {
+static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = nullptr) {
     //fprintf(stderr, "WHD!!!!!\n");
     bool ret = verifyFunction(*F, OS); // according to the docs (which version??), returns false if there are no errors
-    if (ret) F->dump();
+    if (ret) {
+        F->dump();
+        if (preventOptimize != nullptr) *preventOptimize = true;
+    }
     return ret;
 }
 
@@ -49,8 +53,9 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     // common stuff for the generation of F1' and F2'
     Function *newSrcFun, *OSRDestFun;
     raw_os_ostream errStream(std::cerr);
+    bool preventOptimize = false; // set by verifyAux in case of error
     StateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
-    std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
+    std::vector<Value*> &valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     assert(F1.getReturnType() == F2.getReturnType());
 
     // workaround: verifyFunction() segfaults if a Function is not in a Module
@@ -72,10 +77,10 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     ValueToValueMapTy updatesForDestToOSRDestVMap;
     Function* dest = &F2;
     BasicBlock* dest_block = &B2;
-    LivenessAnalysis::LiveValues& liveInAtDestBlock = M.getLivenessResultsForDestFunction().getLiveInValues(srcDestBlocks.second);
+    std::vector<Value*> &origValuesToSetAtDestBlock = M.getValuesToSetForDestFunction(srcDestBlocks);
 
     FunctionType* OSRDestFTy = generatePrototypeForOSRDest(&F1, valuesToPass); // (1)
-    Twine OSRDestFunName = F2NewName.isTriviallyEmpty() ? Twine("OSR", dest->getName()) : const_cast<Twine&>(F2NewName); // TODO index or f1@l1TOf2@l2
+    Twine OSRDestFunName = F2NewName.isTriviallyEmpty() ? Twine(dest->getName(), "DestOSR") : const_cast<Twine&>(F2NewName); // TODO index or f1@l1TOf2@l2
 
     OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), OSRDestFunName); // (2)
     Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
@@ -89,7 +94,6 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     applyAttributesToArguments(OSRDestFun, dest, valuesToPass); // (4)
 
     std::map<const Argument*, Value*> deadArgsMap = getMapForDeadArgs(dest, valuesToPass); // (5)
-    // TODO this is broken: should use SSAUpdater! (see simple_loop_SSA.ll with missing phi node entry)
 
     BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();  // (6)
     BasicBlock* newEntryPoint = M.createEntryPointForOSRDestFunction(srcDestBlocks,
@@ -101,10 +105,13 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     newEntryPoint->insertInto(OSRDestFun, oldEntryPoint); // (8)
     assert(&OSRDestFun->getEntryBlock() == newEntryPoint);
 
-    replaceUsesWithNewValues(OSRDestFun, dest_block, liveInAtDestBlock, destToOSRDestVMap, updatesForDestToOSRDestVMap); // (9)
+    SmallVector<PHINode*, 8> insertedPHINodes; // (9)
+    replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
+            destToOSRDestVMap, updatesForDestToOSRDestVMap, &insertedPHINodes);
+    fprintf(stderr, "Inserted PHI nodes: %lu\n", insertedPHINodes.size());
 
     tmpMod->getFunctionList().push_back(OSRDestFun); // (10)
-    verifyAux(OSRDestFun, &errStream);
+    verifyAux(OSRDestFun, &errStream, &preventOptimize);
 
     /* [Prepare F1' aka newSrc] Workflow:
      * (1) Duplicate F1 into newSrc
@@ -133,11 +140,9 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     BasicBlock* splittedBlock = insertOSRCond (newSrcFun, srcBlock, OSR_B, newCond, splitBlockName);
 
     tmpMod->getFunctionList().push_back(newSrcFun); // (5)
-    verifyAux(newSrcFun, &errStream);
+    verifyAux(newSrcFun, &errStream, &preventOptimize);
 
-    //newSrcFun->viewCFG();
-
-    if (true) {
+    if (!preventOptimize) {
         legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(tmpMod);
         //FPM->add(createDomOnlyPrinterPass()); // broken
         FPM->add(createCFGSimplificationPass());
@@ -293,30 +298,34 @@ void OSRLibrary::updateDestToOSRDestVMapForArguments(Function* dest, ValueToValu
     assert(index == num_args);
 }
 
-void OSRLibrary::replaceUsesWithNewValues(Function* NF, BasicBlock* origBlock, LivenessAnalysis::LiveValues &liveInForOrigBlock, ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap) {
+void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock, std::vector<Value*> &origValuesToSetForDestBlock, ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes) {
     BasicBlock* entryPoint = &NF->getEntryBlock();
-    BasicBlock* resumeBlock = cast<BasicBlock>(VMap[origBlock]);
-    Instruction* oldFirstInstInResumeBlock = resumeBlock->getInstList().begin();
+    BasicBlock* OSRdestBlock = cast<BasicBlock>(VMap[origDestBlock]);
 
-    /* For each live value at the target basic block, I have three cases:
-     * 1) value is defined through a PHI node
-     * 2) value is uniquely defined in the body
-     * 3) value is an argument
-     * In the first case, I have only to add an edge to the PHI node. In
-     * the second case, I will create a PHI node at the beginning of the
-     * target block and I will replace all the uses of the value with
-     * uses of the value defined at the newly created PHI node. The third
-     * case has already been handled in a previous step. */
+    /* For each value to set at the target basic block, I have three cases:
+     * 1) value is an argument
+     * 2) value is a PHI node defined in the target block
+     * 3) value is defined elsewhere (univocally or through a PHI node)
+     *
+     * The first case has already been handled in a previous step.
+     *
+     * The second case is handled by adding a PHI edge for the available
+     * value coming from the OSR entrypoint.
+     *
+     * The third case can be handled using SSAUpdater to account for the
+     * the new available value coming from the OSR entrypoint and to fix
+     * the CFG to keep the SSA form consistent. */
+    int updatedNodes = 0;
     int replacedUses = 0;
 
-    // use SSAUpdater to fix the CFG to keep the SSA form consistent
-    SmallVector<PHINode*, 8> insertedPHINodes;
-    SSAUpdater updateSSA(&insertedPHINodes); // TODO: use argument instead
+    SSAUpdater updateSSA(insertedPHINodes);
 
-    for (LivenessAnalysis::LiveValues::const_iterator it = liveInForOrigBlock.begin(), end = liveInForOrigBlock.end();
+    for (std::vector<Value*>::const_iterator it = origValuesToSetForDestBlock.begin(), end = origValuesToSetForDestBlock.end();
          it != end; ++it) {
         Value* origValue = const_cast<Value*>(*it);
-        if (isa<Argument>(origValue)) continue; // case 3
+        if (isa<Argument>(origValue)) continue; // case 1
+
+        fprintf(stderr, "Processing value: %s\n", origValue->getName().str().c_str());
 
         Value* oldValue = VMap[origValue];
         Instruction* oldInst = cast<Instruction>(oldValue); // TODO what about constants?
@@ -325,6 +334,18 @@ void OSRLibrary::replaceUsesWithNewValues(Function* NF, BasicBlock* origBlock, L
         Value* newValue = updatesForVMap[origValue];
         BasicBlock* newBlock = entryPoint;
 
+        if (oldBlock == OSRdestBlock) { // case 2
+            if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
+                fprintf(stderr, "--> value is a PHI node defined in the target block\n");
+
+                node->addIncoming(newValue, newBlock);
+
+                ++updatedNodes;
+                continue;
+            }
+        }
+
+        fprintf(stderr, "--> I will use SSAUpdater to fix the CFG where required!\n");
         updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_join").str())); // TODO cleaner code for name
         updateSSA.AddAvailableValue(oldBlock, oldValue);
         updateSSA.AddAvailableValue(newBlock, newValue);
@@ -336,23 +357,31 @@ void OSRLibrary::replaceUsesWithNewValues(Function* NF, BasicBlock* origBlock, L
             // Increment the iterator before removing the use from the list.
             ++UI;
 
-            // SSAUpdater can't handle a non-PHI use in the same block as an
-            // earlier def. We can easily handle those cases manually.
             Instruction *UserInst = cast<Instruction>(U.getUser());
+
+            // SSAUpdater can't handle a non-PHI use in the same block as an
+            // earlier def: we can handle those cases manually (see code in
+            // Transforms/Scalar/LoopRotation.cpp for an example). */
             if (!isa<PHINode>(UserInst)) {
                 BasicBlock *UserBB = UserInst->getParent();
+                // use in the same block as the definition of oldValue
                 if (UserBB == oldBlock) {
-                    U = oldValue; // TODO check!!!!!!!!!
+                    fprintf(stderr, "----> manually handling a use in the same block of the original value\n");
+                    U = oldValue;
+                    //updateSSA.RewriteUseAfterInsertions(U); // wrong!
                     continue;
                 }
+
+                /** TODO: check this code again :) **/
             }
 
             // Anything else can be handled by SSAUpdater.
+            fprintf(stderr, "----> use being rewritten using SSAUpdater::RewriteUse()\n");
             updateSSA.RewriteUse(U);
         }
         ++replacedUses;
     }
-    assert(replacedUses == updatesForVMap.size());
+    assert(replacedUses + updatedNodes == updatesForVMap.size());
 }
 
 Function* OSRLibrary::duplicateFunction(Function* F, const Twine &Name, ValueToValueMapTy &VMap) {

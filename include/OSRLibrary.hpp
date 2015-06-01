@@ -5,7 +5,9 @@
 
 #include <map>
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 using namespace llvm;
@@ -33,10 +35,8 @@ class OSRLibrary {
         static void updateOpMappingForClonedBody(Function* NF, Function* F, ValueToValueMapTy &VMap);
         static void updateDestToOSRDestVMapForArguments(Function* dest, ValueToValueMapTy &destToOSRDestVMap,
             std::map<const Argument*, Value*> &deadArgsMap, ValueToValueMapTy &updatesForDestToOSRDestVMap);
-        static void replaceUsesWithNewValues(Function* NF, BasicBlock* origBlock, LivenessAnalysis::LiveValues &liveInForOrigBlock,
-            ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap);
-        static void replaceUsesWithNewValues2(Function* NF, BasicBlock* origBlock, LivenessAnalysis::LiveValues &liveInForOrigBlock,
-            ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap);
+        static void replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock, std::vector<Value*> &origValuesToSetForDestBlock,
+            ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes);
         static Function* duplicateFunction(Function* F, const Twine &Name, ValueToValueMapTy &VMap);
         static OSRCond regenerateOSRCond(OSRCond &cond, ValueToValueMapTy &VMap);
         static BasicBlock* generateTriggerOSRBlock(Function* OSRDest, std::vector<Value*> &valuesToPass);

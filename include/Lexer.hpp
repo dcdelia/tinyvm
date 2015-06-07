@@ -25,12 +25,14 @@ enum Token {
     tok_to          = -18,
     tok_cfg         = -19,
     tok_cfg_full    = -20,
-    tok_dump        = -21
+    tok_dump        = -21,
+    tok_track_asm   = -22,
+    tok_show_asm    = -23
 };
 
 class Lexer {
 public:
-    Lexer(FILE* stream) : InputStream(stream), CurToken(tok_error), LastChar(' '), CurString("") {}
+    Lexer(FILE* stream) : InputStream(stream), LastChar(' '), CurString("") {}
     ~Lexer() {}
     int getNextToken();
     const std::string getIdentifier();
@@ -39,7 +41,6 @@ public:
 
 private:
     FILE* InputStream;
-    Token CurToken;
     int LastChar;
     std::string CurString;
 };

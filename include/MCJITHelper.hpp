@@ -20,7 +20,8 @@ using namespace llvm;
 
 class MCJITHelper {
 public:
-    MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) : Context(C) {
+    MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) : Context(C),
+                    trackAsmCode(false), asmFdStream(nullptr), asmFileName("session.asm") {
         if (InitialModule == nullptr) {
             // unfortunately we need a module for EngineBuilder (TODO: check again)
             InitialModule = llvm::make_unique<Module>("empty", Context);
@@ -52,6 +53,8 @@ public:
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);
     int runFunction(const std::string &FunctionName, std::vector<int> &Arguments);
+    bool toggleTrackAsm();
+    void showTrackedAsm();
     CmpInst* generateAlwaysTrueCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
 
@@ -60,7 +63,11 @@ private:
     IRBuilder<>                     *Builder;
     std::vector<StackMap*>          StackMaps;
     std::vector<JITEventListener*>  Listeners;
+    bool            trackAsmCode;
+    raw_ostream     *asmFdStream;
+    const char      *asmFileName;
 
+    raw_ostream* initializeFdStream(const char* fileName);
 };
 
 #endif

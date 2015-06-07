@@ -11,14 +11,22 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/PassManager.h"
-#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/raw_ostream.h" // SMDiagnostic print
+#include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
+#include <cstdio>
+#include <cerrno>
+#include <cstring>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include <fcntl.h>
 
 using namespace llvm;
 
@@ -32,13 +40,15 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     Module* M_ptr = M.get();
     //Modules.push_back(M_ptr);
 
+    M_ptr->setDataLayout(JIT->getDataLayout());
+
     if (OptimizeModule) {
         legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(M_ptr);
 
         /* OPTIMIZER PIPELINE */
 
         // Register info about how the target lays out data structures
-        M_ptr->setDataLayout(JIT->getDataLayout());
+        //M_ptr->setDataLayout(JIT->getDataLayout()); // HOISTED
         FPM->add(new DataLayoutPass());
 
         // Provide basic AliasAnalysis support for GVN
@@ -64,6 +74,16 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
         }
 
         delete FPM; // cannot be reused for different modules
+    }
+
+    // for showing assembly code when generated
+    if (trackAsmCode) {
+        formatted_raw_ostream formAsmFdStream(*asmFdStream);
+        legacy::PassManager PM;
+        PM.add(new DataLayoutPass());
+        TargetMachine *TM = JIT->getTargetMachine();
+        TM->addPassesToEmitFile(PM, formAsmFdStream, TargetMachine::CGFT_AssemblyFile);
+        PM.run(*M_ptr);
     }
 
     JIT->addModule(std::move(M));
@@ -151,6 +171,51 @@ int MCJITHelper::runFunction(const std::string &FunctionName, std::vector<int> &
     ++i; // increment ID (TODO: change the linkage type?)
 
     return fun();
+}
+
+bool MCJITHelper::toggleTrackAsm() {
+    if (asmFdStream == nullptr) {
+        asmFdStream = initializeFdStream(asmFileName);
+    }
+
+    return !(trackAsmCode = !trackAsmCode); // return the old status
+}
+
+void MCJITHelper::showTrackedAsm() {
+    if (asmFdStream == nullptr) {
+        std::cerr << "Invoking showTrackedAsm() while raw_fd_ostream has not been created yet! Exiting...\n";
+        exit(EXIT_FAILURE);
+    }
+
+    std::string line;
+    std::ifstream f(asmFileName);
+    if (!f.is_open()) {
+        fprintf(stderr, "Cannot open \"%s\" written by the raw_fd_ostream for ASM: %s. Exiting...\n", asmFileName, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    while(getline(f, line)) {
+        std::cerr << line << "\n";
+    }
+
+    if (f.bad()) {
+        fprintf(stderr, "Error while reading file \"%s\" written by the raw_fd_ostream for ASM: %s. Exiting...\n", asmFileName, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+}
+
+raw_ostream* MCJITHelper::initializeFdStream(const char* fileName) {
+    int desc = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (desc < 0) {
+        fprintf(stderr, "Cannot open \"%s\" file for creating a raw_fd_ostream: %s. Exiting...\n", fileName, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // setting 2nd arg to true means that desc is closed when fdStream is destroyed
+    raw_ostream* fdStream = new raw_fd_ostream(desc, true, false);
+
+    return fdStream;
 }
 
 CmpInst* MCJITHelper::generateAlwaysTrueCond() {

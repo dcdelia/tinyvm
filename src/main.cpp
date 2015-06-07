@@ -280,6 +280,16 @@ static void handleDumpCommand(Lexer* L, MCJITHelper* TheHelper) {
     }
 }
 
+static void handleTrackAsmCommand(Lexer* L, MCJITHelper* TheHelper) {
+    bool enabled = TheHelper->toggleTrackAsm();
+    if (enabled) {
+        std::cerr << "Current status: tracking is enabled. Now disabling it!\n";
+    } else {
+        std::cerr << "Current status: tracking is disabled. Now enabling it!\n";
+    }
+    std::cerr << "Notice that only modules loaded from now on will be affected by this change.\n";
+}
+
 static void handleHelpCommand(Lexer* L) {
     // simple commands
     std::cerr << "List of available commands:\n";
@@ -288,6 +298,8 @@ static void handleHelpCommand(Lexer* L) {
     std::cerr << "--> CFG <function_name>\n" << "\tShows a compact view of the CFG of a given function.\n";
     std::cerr << "--> CFG_FULL <function_name>\n" << "\tShows the full CFG (with instructions) of a given function.\n";
     std::cerr << "--> DUMP <function_name>\n" << "\tShows the IR code of a given function.\n";
+    std::cerr << "--> TRACK_ASM\n" << "\tEnable/disable logging of generated x86-64 assembly code.\n";
+    std::cerr << "--> SHOW_ASM\n" << "\tShow logged x86-64 assembly code.\n";
     std::cerr << "--> QUIT\n" << "\tExits TinyVM.\n";
 
     // function invocation
@@ -321,6 +333,8 @@ static void mainLoop(Lexer* L, MCJITHelper* H) {
             case tok_cfg:           handleShowCFGCommand(L, H, false); break;
             case tok_cfg_full:      handleShowCFGCommand(L, H, true); break;
             case tok_dump:          handleDumpCommand(L, H); break;
+            case tok_track_asm:     handleTrackAsmCommand(L, H); break;
+            case tok_show_asm:      H->showTrackedAsm(); break;
             case tok_quit:          fprintf(stderr, "Exiting...\n"); return;
             case tok_identifier:    handleFunctionInvocation(L, H); break;
             case tok_eof:           fprintf(stderr, "CTRL+D or EOF reached.\n"); return;

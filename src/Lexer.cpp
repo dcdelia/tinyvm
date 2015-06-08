@@ -44,6 +44,7 @@ int Lexer::getNextToken() {
         if (command == "DUMP")          return tok_dump;
         if (command == "TRACK_ASM")     return tok_track_asm;
         if (command == "SHOW_ASM")      return tok_show_asm;
+        if (command == "REPEAT")        return tok_repeat;
 
         return tok_identifier;
     }

@@ -9,6 +9,7 @@
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
+#include "Timer.hpp"
 
 #include <cstdio>
 #include <iostream>
@@ -17,7 +18,7 @@
 
 using namespace llvm;
 
-static void handleFunctionInvocation(Lexer* L, MCJITHelper* TheHelper) {
+static void handleFunctionInvocation(Lexer* L, MCJITHelper* TheHelper, int iterations) {
     #define INVALID() do { fprintf(stderr, "Invalid syntax for a function invocation!\n"); return; } while (0);
     const std::string &FunctionName = L->getIdentifier();
 
@@ -45,8 +46,33 @@ static void handleFunctionInvocation(Lexer* L, MCJITHelper* TheHelper) {
     }
     #undef INVALID
 
-    int ret = TheHelper->runFunction(FunctionName, Arguments);
-    fprintf(stderr, "Evaluated to: %d\n", ret);
+
+    int (*fun)() = TheHelper->createAnonymousFunctionForCall(FunctionName, Arguments);
+
+    // run anonymous function and show elapsed time
+    tinyvm_timer_t timer;
+    if (iterations == 1) {
+
+        timer_start(&timer);
+        int result = fun();
+        timer_end(&timer);
+
+        timer_print_elapsed(&timer);
+        fprintf(stderr, "Evaluated to: %d\n", result);
+    } else {
+        int i, result;
+
+        timer_start(&timer);
+        for (i = 0; i < iterations; ++i) {
+            result = fun();
+        }
+        timer_end(&timer);
+
+        timer_print_elapsed(&timer);
+        timer_print_avg(&timer, iterations);
+        fprintf(stderr, "Number of iterations: %d\n", iterations);
+        fprintf(stderr, "Last call evaluated to: %d\n", result);
+    }
 }
 
 static void handleLoadCommand(Lexer* L, MCJITHelper* TheHelper) {
@@ -280,6 +306,18 @@ static void handleDumpCommand(Lexer* L, MCJITHelper* TheHelper) {
     }
 }
 
+static void handleRepeatCommand(Lexer* L, MCJITHelper* TheHelper) {
+    #define INVALID() do { fprintf(stderr, "Invalid syntax for a REPEAT command!\n" \
+            "Expected command of the form: REPEAT <iterations> <function call>\n"); \
+            return; } while (0);
+    if (L->getNextToken() != tok_integer) INVALID();
+    int iterations = L->getInteger();
+    if (L->getNextToken() != tok_identifier) INVALID();
+    #undef INVALID
+
+    handleFunctionInvocation(L, TheHelper, iterations);
+}
+
 static void handleTrackAsmCommand(Lexer* L, MCJITHelper* TheHelper) {
     bool enabled = TheHelper->toggleTrackAsm();
     if (enabled) {
@@ -298,6 +336,7 @@ static void handleHelpCommand(Lexer* L) {
     std::cerr << "--> CFG <function_name>\n" << "\tShows a compact view of the CFG of a given function.\n";
     std::cerr << "--> CFG_FULL <function_name>\n" << "\tShows the full CFG (with instructions) of a given function.\n";
     std::cerr << "--> DUMP <function_name>\n" << "\tShows the IR code of a given function.\n";
+    std::cerr << "--> REPEAT <iterations> <function call>\n" << "\tPerforms a function call (see next paragraph) repeatedly.\n";
     std::cerr << "--> TRACK_ASM\n" << "\tEnable/disable logging of generated x86-64 assembly code.\n";
     std::cerr << "--> SHOW_ASM\n" << "\tShow logged x86-64 assembly code.\n";
     std::cerr << "--> QUIT\n" << "\tExits TinyVM.\n";
@@ -333,10 +372,11 @@ static void mainLoop(Lexer* L, MCJITHelper* H) {
             case tok_cfg:           handleShowCFGCommand(L, H, false); break;
             case tok_cfg_full:      handleShowCFGCommand(L, H, true); break;
             case tok_dump:          handleDumpCommand(L, H); break;
+            case tok_repeat:        handleRepeatCommand(L, H); break;
             case tok_track_asm:     handleTrackAsmCommand(L, H); break;
             case tok_show_asm:      H->showTrackedAsm(); break;
             case tok_quit:          fprintf(stderr, "Exiting...\n"); return;
-            case tok_identifier:    handleFunctionInvocation(L, H); break;
+            case tok_identifier:    handleFunctionInvocation(L, H, 1); break;
             case tok_eof:           fprintf(stderr, "CTRL+D or EOF reached.\n"); return;
             default:                fprintf(stderr, "Unexpected token. Exiting...\n"); return;
         }

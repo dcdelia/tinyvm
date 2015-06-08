@@ -1,5 +1,4 @@
 #include "MCJITHelper.hpp"
-#include "Timer.hpp"
 
 #include "llvm/Analysis/Passes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -130,7 +129,7 @@ Function* MCJITHelper::getFunction(const std::string &Name) {
     **/
 }
 
-int MCJITHelper::runFunction(const std::string &FunctionName, std::vector<int> &Arguments) {
+int (*MCJITHelper::createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))() {
     static int i = 1;
     char buf[256];
 
@@ -171,16 +170,7 @@ int MCJITHelper::runFunction(const std::string &FunctionName, std::vector<int> &
 
     ++i; // increment ID (TODO: change the linkage type?)
 
-    // run anonymous function and show elapsed time
-    tinyvm_timer_t timer;
-    timer_start(&timer);
-
-    int result = fun();
-
-    timer_end(&timer);
-    timer_print_elapsed(&timer);
-
-    return result;
+    return fun;
 }
 
 bool MCJITHelper::toggleTrackAsm() {

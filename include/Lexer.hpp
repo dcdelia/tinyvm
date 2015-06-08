@@ -27,7 +27,8 @@ enum Token {
     tok_cfg_full    = -20,
     tok_dump        = -21,
     tok_track_asm   = -22,
-    tok_show_asm    = -23
+    tok_show_asm    = -23,
+    tok_repeat      = -24
 };
 
 class Lexer {

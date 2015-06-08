@@ -52,7 +52,7 @@ public:
     std::unique_ptr<Module> createModuleFromFile(const std::string &FileName);
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);
-    int runFunction(const std::string &FunctionName, std::vector<int> &Arguments);
+    int (*createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
     bool toggleTrackAsm();
     void showTrackedAsm();
     CmpInst* generateAlwaysTrueCond();

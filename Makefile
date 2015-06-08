@@ -9,7 +9,7 @@ LLVM_LDFLAGS	= $(shell llvm-config  --ldflags --system-libs --libs core irreader
 
 all: TinyVM
 
-TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o
+TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Timer.o
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
@@ -21,7 +21,7 @@ $(BUILD)/main.o: $(SRC)/main.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp
 $(BUILD)/Lexer.o: $(SRC)/Lexer.cpp $(INCLUDE)/Lexer.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Lexer.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Lexer.o
 
-$(BUILD)/MCJITHelper.o: $(SRC)/MCJITHelper.cpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/CustomMemoryManager.hpp
+$(BUILD)/MCJITHelper.o: $(SRC)/MCJITHelper.cpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/Timer.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/MCJITHelper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/MCJITHelper.o
 
 $(BUILD)/CustomMemoryManager.o: $(SRC)/CustomMemoryManager.cpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/MCJITHelper.hpp
@@ -38,6 +38,9 @@ $(BUILD)/StateMap.o: $(SRC)/StateMap.cpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Live
 
 $(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/OSRLibrary.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSRLibrary.o
+
+$(BUILD)/Timer.o: $(SRC)/Timer.cpp $(INCLUDE)/Timer.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/Timer.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Timer.o
 
 clean:
 	rm -f $(BUILD)/*.o

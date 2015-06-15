@@ -33,7 +33,9 @@ enum Token {
 
 class Lexer {
 public:
-    Lexer(FILE* stream) : InputStream(stream), LastChar(' '), CurString("") {}
+    Lexer(FILE* stream) : InputStream(stream), LastChar(' '), CurString(""), userGetInputCharFun(nullptr) {}
+    Lexer(int (*getInputCharFun)()) : InputStream(nullptr), LastChar(' '), CurString(""), userGetInputCharFun(getInputCharFun) {}
+
     ~Lexer() {}
     int getNextToken();
     const std::string getIdentifier();
@@ -41,9 +43,12 @@ public:
     std::string *getLine(); // returns nullptr when EOF
 
 private:
+    int getInputChar();
+
     FILE* InputStream;
     int LastChar;
     std::string CurString;
+    int (*userGetInputCharFun)();
 };
 
 #endif

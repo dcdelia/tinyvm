@@ -1,21 +1,24 @@
 # A poorly written Makefile
+CC				= clang
 CXX				= clang++
 BUILD			= build
 SRC				= src
 INCLUDE			= include
+CFLAGS			= -O0 -g -Wall -I$(INCLUDE)
 CXX_FLAGS		= -O0 -g -Wall -I$(INCLUDE)
+LLVM_CFLAGS		=
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
 LLVM_LDFLAGS	= $(shell llvm-config  --ldflags --system-libs --libs core irreader mcjit native)
 
 all: TinyVM
 
-TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Timer.o
+TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/timer.o
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/main.o: $(SRC)/main.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/Timer.hpp
+$(BUILD)/main.o: $(SRC)/main.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/timer.h
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/main.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/main.o
 
 $(BUILD)/Lexer.o: $(SRC)/Lexer.cpp $(INCLUDE)/Lexer.hpp
@@ -39,8 +42,8 @@ $(BUILD)/StateMap.o: $(SRC)/StateMap.cpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Live
 $(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/OSRLibrary.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSRLibrary.o
 
-$(BUILD)/Timer.o: $(SRC)/Timer.cpp $(INCLUDE)/Timer.hpp
-	$(CXX) $(CXX_FLAGS) -c $(SRC)/Timer.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Timer.o
+$(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
+	$(CC) $(CFLAGS) -c $(SRC)/timer.c $(LLVM_CFLAGS) -o $(BUILD)/timer.o
 
 clean:
 	rm -f $(BUILD)/*.o

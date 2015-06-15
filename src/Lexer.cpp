@@ -19,13 +19,13 @@ int Lexer::getNextToken() {
 
     /* now I can skip any white-space character: space, form feed, new
      * line, carriage return, horizontal tab or vertical tab */
-    while (isspace(LastChar)) LastChar = getc(InputStream);
+    while (isspace(LastChar)) LastChar = getInputChar();
 
     CurString = LastChar;
 
     // parse a C-valid identifier or special command for the VM
     if (isalpha(LastChar) || (LastChar == '_')) {
-        while (isalnum((LastChar = getc(InputStream))) || (LastChar == '_')) CurString += LastChar;
+        while (isalnum((LastChar = getInputChar())) || (LastChar == '_')) CurString += LastChar;
 
         std::string command = CurString;
         std::transform(command.begin(), command.end(), command.begin(), ::toupper);
@@ -50,15 +50,15 @@ int Lexer::getNextToken() {
     }
 
     if (isdigit(LastChar)) {
-        while (isdigit((LastChar = getc(InputStream)))) CurString += LastChar;
+        while (isdigit((LastChar = getInputChar()))) CurString += LastChar;
         return tok_integer;
     }
 
     // LastChar is not an alphanumeric or underscore character
     switch (LastChar) {
         case EOF:   return tok_eof;
-        case '\n':  LastChar = getc(InputStream); return tok_newline;
-        default:    int ret = LastChar; LastChar = getc(InputStream); return ret;
+        case '\n':  LastChar = getInputChar(); return tok_newline;
+        default:    int ret = LastChar; LastChar = getInputChar(); return ret;
     }
 }
 
@@ -68,14 +68,14 @@ const std::string Lexer::getIdentifier() {
 
 std::string* Lexer::getLine() {
     // trim any initial white-space
-    while (isspace(LastChar)) LastChar = getc(InputStream);
+    while (isspace(LastChar)) LastChar = getInputChar();
 
     if (LastChar == EOF) return nullptr;
 
     std::string *line = new std::string("");
     do {
         *line += LastChar;
-        LastChar = getc(InputStream);
+        LastChar = getInputChar();
     } while (LastChar != '\n' && LastChar != EOF);
 
     return line;
@@ -83,4 +83,13 @@ std::string* Lexer::getLine() {
 
 int Lexer::getInteger() {
     return std::stoi(CurString);
+}
+
+int Lexer::getInputChar() {
+    if (InputStream == nullptr) {
+        return userGetInputCharFun();
+    }
+    else {
+        return getc(InputStream);
+    }
 }

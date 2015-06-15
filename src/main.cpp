@@ -9,7 +9,7 @@
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
-#include "Timer.hpp"
+#include "timer.h"
 
 #include <cstdio>
 #include <iostream>
@@ -408,7 +408,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    TheLexer = new Lexer(stdin);
+    TheLexer = new Lexer(getchar);
     mainLoop(TheLexer, TheHelper);
     delete TheLexer;
 

@@ -55,6 +55,8 @@ public:
     int (*createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
     bool toggleTrackAsm();
     void showTrackedAsm();
+    void addSymbols(Module* M);
+    void showSymbols();
     CmpInst* generateAlwaysTrueCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
 
@@ -63,6 +65,7 @@ private:
     IRBuilder<>                     *Builder;
     std::vector<StackMap*>          StackMaps;
     std::vector<JITEventListener*>  Listeners;
+    std::vector<std::pair<std::string, std::vector<std::string>>>  Symbols;
     bool            trackAsmCode;
     raw_ostream     *asmFdStream;
     const char      *asmFileName;

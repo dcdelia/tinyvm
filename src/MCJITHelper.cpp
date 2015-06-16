@@ -86,6 +86,8 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
         PM.run(*M_ptr);
     }
 
+    addSymbols(M_ptr);
+
     JIT->addModule(std::move(M));
 }
 
@@ -179,6 +181,48 @@ bool MCJITHelper::toggleTrackAsm() {
     }
 
     return !(trackAsmCode = !trackAsmCode); // return the old status
+}
+
+void MCJITHelper::addSymbols(Module* M) {
+
+    std::pair<std::string, std::vector<std::string>> p;
+    p.first = M->getModuleIdentifier(); // copy constructor
+
+    for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
+        Function &F = *it;
+        std::string sym;
+        sym.append(F.getName().str());
+
+        sym.append(" (");
+        for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
+            Argument &arg = *it;
+            sym.append(arg.getName().str());
+            if (++it != end) {
+                sym.append(", ");
+            } else {
+                break;
+            }
+        }
+        sym.append(")");
+
+        p.second.push_back(sym);
+    }
+
+    Symbols.push_back(p);
+}
+
+void MCJITHelper::showSymbols() {
+    if (Symbols.empty()) {
+        std::cerr << "No function symbols have been defined yet!\n";
+        return;
+    }
+
+    for (std::pair<std::string, std::vector<std::string>> &p: Symbols) {
+        std::cerr << "[Module: " << p.first << "]\n";
+        for (std::string &f: p.second) {
+            std::cerr << f << "\n";
+        }
+    }
 }
 
 void MCJITHelper::showTrackedAsm() {

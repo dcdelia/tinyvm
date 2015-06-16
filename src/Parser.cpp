@@ -30,6 +30,7 @@ void Parser::start() {
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
+            case tok_show_syms:     TheHelper->showSymbols(); break;
             case tok_quit:          fprintf(stderr, "Exiting...\n"); return;
             case tok_identifier:    handleFunctionInvocation(1); break;
             case tok_eof:           fprintf(stderr, "CTRL+D or EOF reached.\n"); return;
@@ -173,6 +174,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> REPEAT <iterations> <function call>\n" << "\tPerforms a function call (see next paragraph) repeatedly.\n";
     std::cerr << "--> TRACK_ASM\n" << "\tEnable/disable logging of generated x86-64 assembly code.\n";
     std::cerr << "--> SHOW_ASM\n" << "\tShow logged x86-64 assembly code.\n";
+    std::cerr << "--> SHOW_SYMS\n" << "\tShow available function symbols.\n";
     std::cerr << "--> QUIT\n" << "\tExits TinyVM.\n";
 
     // function invocation

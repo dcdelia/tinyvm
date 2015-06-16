@@ -8,10 +8,21 @@
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
 #include "Parser.hpp"
+#include "history.h"
 
 #include <cstdio>
 
 using namespace llvm;
+
+#define USE_CMD_HISTORY 1
+
+#if USE_CMD_HISTORY
+history_t cmd_history;
+
+int getCharFromHistory() {
+    return get_input_char(&cmd_history);
+}
+#endif
 
 int main(int argc, char* argv[]) {
     InitializeNativeTarget();
@@ -41,13 +52,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    #if USE_CMD_HISTORY
+    init_history(&cmd_history, "TinyVM> ");
+    TheLexer = new Lexer(getCharFromHistory);
+    #else
     TheLexer = new Lexer(getchar);
+    #endif
 
     Parser parser(TheLexer, TheHelper);
     parser.start();
 
     delete TheLexer;
     delete TheHelper;
+
+    #if USE_CMD_HISTORY
+    restore_term(&cmd_history);
+    #endif
 
     exit(0);
 }

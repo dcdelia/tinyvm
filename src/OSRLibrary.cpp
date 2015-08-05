@@ -1,4 +1,5 @@
 #include "OSRLibrary.hpp"
+#include "OldStateMap.hpp"
 #include "StateMap.hpp"
 
 #include "llvm/PassManager.h"
@@ -38,8 +39,7 @@ using namespace llvm;
  */
 
 static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = nullptr) {
-    //fprintf(stderr, "WHD!!!!!\n");
-    bool ret = verifyFunction(*F, OS); // according to the docs (which version??), returns false if there are no errors
+    bool ret = verifyFunction(*F, OS); // returns false if there are no errors
     if (ret) {
         F->dump();
         if (preventOptimize != nullptr) *preventOptimize = true;
@@ -98,7 +98,7 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, OldStateMap
     SmallVector<PHINode*, 8> insertedPHINodes; // (9)
     replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
             destToOSRDestVMap, updatesForDestToOSRDestVMap, &insertedPHINodes);
-    fprintf(stderr, "Inserted PHI nodes: %lu\n", insertedPHINodes.size());
+    std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
 
     return OSRDestFun;
 
@@ -200,9 +200,12 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
      */
 
     // step (1)
-    std::vector<Value*>* valuesToPasstmp = (valuesToTransfer == nullptr)
-                                         ? defaultValuesToTransferForOpenOSR(*src, *srcBlock)
-                                         : valuesToTransfer;
+    std::vector<Value*>* valuesToPasstmp = valuesToTransfer;
+    if (valuesToTransfer == nullptr) {
+        LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(src);
+        LivenessAnalysis::LiveValues& liveInAtSrcBlock = livenessAnalysisForSrcFunction.getLiveInValues(srcBlock);
+        valuesToPasstmp = StateMap::getValuesToSetForBlock(*srcBlock, liveInAtSrcBlock);
+    }
     std::vector<Value*> &valuesToPass = *valuesToPasstmp;
 
     std::vector<Type*> stubArgTypes;
@@ -521,7 +524,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
         Value* origValue = const_cast<Value*>(*it);
         if (isa<Argument>(origValue)) continue; // case 1
 
-        fprintf(stderr, "Processing value: %s\n", origValue->getName().str().c_str());
+        std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
 
         Value* oldValue = VMap[origValue];
         Instruction* oldInst = cast<Instruction>(oldValue); // TODO what about constants?
@@ -532,7 +535,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
 
         if (oldBlock == OSRdestBlock) { // case 2
             if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
-                fprintf(stderr, "--> value is a PHI node defined in the target block\n");
+                std::cerr << "--> value is a PHI node defined in the target block" << std::endl;
 
                 node->addIncoming(newValue, newBlock);
 
@@ -541,7 +544,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             }
         }
 
-        fprintf(stderr, "--> I will use SSAUpdater to fix the CFG where required!\n");
+        std::cerr << "--> I will use SSAUpdater to fix the CFG where required!" << std::endl;
         updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_join").str())); // TODO cleaner code for name
         updateSSA.AddAvailableValue(oldBlock, oldValue);
         updateSSA.AddAvailableValue(newBlock, newValue);
@@ -562,7 +565,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                 BasicBlock *UserBB = UserInst->getParent();
                 // use in the same block as the definition of oldValue
                 if (UserBB == oldBlock) {
-                    fprintf(stderr, "----> manually handling a use in the same block of the original value\n");
+                    std::cerr << "----> manually handling a use in the same block of the original value" << std::endl;
                     U = oldValue;
                     //updateSSA.RewriteUseAfterInsertions(U); // wrong!
                     continue;
@@ -572,7 +575,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             }
 
             // Anything else can be handled by SSAUpdater.
-            fprintf(stderr, "----> use being rewritten using SSAUpdater::RewriteUse()\n");
+            std::cerr << "----> use being rewritten using SSAUpdater::RewriteUse()" << std::endl;
             updateSSA.RewriteUse(U);
         }
         ++replacedUses;
@@ -653,19 +656,4 @@ BasicBlock* OSRLibrary::insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OS
     B->getInstList().push_back(br);
 
     return NB;
-}
-
-/* We define an auxiliary method for this task so it can be reused by the destFunGenerator() */
-std::vector<Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(Function &F, BasicBlock &B) {
-    LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(&F);
-    LivenessAnalysis::LiveValues& liveInAtSrcBlock = livenessAnalysisForSrcFunction.getLiveInValues(&B);
-
-    std::vector<Value*> *valuesToPass = new std::vector<Value*>();
-
-    for (const Value* cdest_v: liveInAtSrcBlock) {
-        Value* src_v = const_cast<Value*>(cdest_v);
-        valuesToPass->push_back(src_v);
-    }
-
-    return valuesToPass;
 }

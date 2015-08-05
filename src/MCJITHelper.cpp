@@ -30,7 +30,7 @@
 #include <fcntl.h>
 
 #include "OSRLibrary.hpp"
-#include "StateMap.hpp"
+#include "OldStateMap.hpp"
 
 using namespace llvm;
 
@@ -294,7 +294,8 @@ void MCJITHelper::showTrackedAsm() {
     std::string line;
     std::ifstream f(asmFileName);
     if (!f.is_open()) {
-        fprintf(stderr, "Cannot open \"%s\" written by the raw_fd_ostream for ASM: %s. Exiting...\n", asmFileName, strerror(errno));
+        std::cerr << "Cannot open\"" << asmFileName << "\" written by the raw_fd_ostream for ASM: "
+                << strerror(errno) << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -303,7 +304,8 @@ void MCJITHelper::showTrackedAsm() {
     }
 
     if (f.bad()) {
-        fprintf(stderr, "Error while reading file \"%s\" written by the raw_fd_ostream for ASM: %s. Exiting...\n", asmFileName, strerror(errno));
+        std::cerr << "Error while reading file \"" << asmFileName << "\" written by the raw_fd_ostream for ASM: "
+                << strerror(errno) << std::endl;
         exit(EXIT_FAILURE);
     }
 }
@@ -312,7 +314,8 @@ raw_ostream* MCJITHelper::initializeFdStream(const char* fileName) {
     int desc = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
     if (desc < 0) {
-        fprintf(stderr, "Cannot open \"%s\" file for creating a raw_fd_ostream: %s. Exiting...\n", fileName, strerror(errno));
+        std::cerr << "Cannot open \"" << fileName << "\" file for creating a raw_fd_ostream: "
+                  << strerror(errno) << std::endl;
         exit(EXIT_FAILURE);
     }
 

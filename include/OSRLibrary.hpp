@@ -1,7 +1,7 @@
 #ifndef TINYVM_OSRLIBRARY_H
 #define TINYVM_OSRLIBRARY_H
 
-#include "StateMap.hpp"
+#include "OldStateMap.hpp"
 
 #include <map>
 
@@ -17,12 +17,12 @@ class OSRLibrary {
         typedef std::vector<Instruction*> OSRCond;
         typedef std::pair<Function*, Function*> OSRPair;
 
-        typedef struct OpenOSRInfo { /* TODO: pass 5 scalars rather than 1 reference */
+        typedef struct OpenOSRInfo {
             Function*       f1;
             BasicBlock*     b1;
             Function**      f2_pp;
             BasicBlock**    b2_pp;
-            OldStateMap**      m_pp;
+            OldStateMap**   m_pp;
         } OpenOSRInfo;
 
         // to simpify raw IR generation do the casts inside the destFunGenerator (written in C++)
@@ -49,7 +49,6 @@ class OSRLibrary {
         static void enableRedirection(uint64_t f, uint64_t destination);
 
     private:
-
         static FunctionType* generatePrototypeForOSRDest(Function* src, std::vector<Value*> &valuesToPass);
         static void applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass);
         static std::map<const Argument*, Value*> getMapForDeadArgs(Function *orig, std::vector<Value*> &valuesToPass);
@@ -63,8 +62,6 @@ class OSRLibrary {
         static OSRCond regenerateOSRCond(OSRCond &cond, ValueToValueMapTy &VMap);
         static BasicBlock* generateTriggerOSRBlock(Function* OSRDest, std::vector<Value*> &valuesToPass);
         static BasicBlock* insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OSR_B, OSRCond& cond, const Twine& BBName);
-
-        //static void addValuesToFetchForOpenOSR(OpenOSRInfo& info, std::vector<Value*> &values);
 };
 
 #endif

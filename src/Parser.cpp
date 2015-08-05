@@ -2,7 +2,7 @@
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
-#include "StateMap.hpp"
+#include "OldStateMap.hpp"
 #include "timer.h"
 
 #include <cstdio>
@@ -13,7 +13,7 @@
 using namespace llvm;
 
 void Parser::start() {
-    fprintf(stderr, "Welcome! Enter 'HELP' to show the list of available commands.\n");
+    std::cerr << "Welcome! Enter 'HELP' to show the list of available commands." << std::endl;
 
     while (1) {
         fprintf(stderr, "TinyVM> ");
@@ -33,10 +33,10 @@ void Parser::start() {
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_insert_open_osr:   handleInsertOpenOSRCommand(); break;
-            case tok_quit:          fprintf(stderr, "Exiting...\n"); return;
+            case tok_quit:          std::cerr << "Exiting..." << std::endl; return;
             case tok_identifier:    handleFunctionInvocation(1); break;
-            case tok_eof:           fprintf(stderr, "CTRL+D or EOF reached.\n"); return;
-            default:                fprintf(stderr, "Unexpected token. Exiting...\n"); return;
+            case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return;
+            default:                std::cerr << "Unexpected token. Exiting..." << std::endl;; return;
         }
     }
 }
@@ -92,8 +92,8 @@ void Parser::handleBeginCommand() {
 }
 
 void Parser::handleDumpCommand() {
-    #define INVALID() do { fprintf(stderr, "Invalid syntax for a DUMP command!\n" \
-            "Expected command of the form: DUMP <function_name>\n"); \
+    #define INVALID() do { std::cerr << "Invalid syntax for a DUMP command!" << std::endl \
+            << "Expected command of the form: DUMP <function_name>" << std::endl; \
             return; } while (0);
 
     if (TheLexer->getNextToken() != tok_identifier) INVALID();
@@ -110,7 +110,7 @@ void Parser::handleDumpCommand() {
 }
 
 void Parser::handleFunctionInvocation(int iterations) {
-    #define INVALID() do { fprintf(stderr, "Invalid syntax for a function invocation!\n"); return; } while (0);
+    #define INVALID() do { std::cerr << "Invalid syntax for a function invocation!" << std::endl; return; } while (0);
     const std::string &FunctionName = TheLexer->getIdentifier();
 
     int token = TheLexer->getNextToken();
@@ -168,48 +168,48 @@ void Parser::handleFunctionInvocation(int iterations) {
 
 void Parser::handleHelpCommand() {
     // simple commands
-    std::cerr << "List of available commands:\n";
-    std::cerr << "--> BEGIN <module_name>\n" << "\tType an IR module from stdin. Press CTRL-D when finished.\n";
-    std::cerr << "--> LOAD <file_name>\n" << "\tLoads an IR module from a given file.\n";
-    std::cerr << "--> CFG <function_name>\n" << "\tShows a compact view of the CFG of a given function.\n";
-    std::cerr << "--> CFG_FULL <function_name>\n" << "\tShows the full CFG (with instructions) of a given function.\n";
-    std::cerr << "--> DUMP <function_name>\n" << "\tShows the IR code of a given function.\n";
-    std::cerr << "--> REPEAT <iterations> <function call>\n" << "\tPerforms a function call (see next paragraph) repeatedly.\n";
-    std::cerr << "--> TRACK_ASM\n" << "\tEnable/disable logging of generated x86-64 assembly code.\n";
-    std::cerr << "--> SHOW_ASM\n" << "\tShow logged x86-64 assembly code.\n";
-    std::cerr << "--> SHOW_MODS\n" << "\tShow loaded modules and their symbols.\n";
-    std::cerr << "--> QUIT\n" << "\tExits TinyVM.\n";
+    std::cerr << "List of available commands:" << std::endl;
+    std::cerr << "--> BEGIN <module_name>" << std::endl << "\tType an IR module from stdin. Press CTRL-D when finished." << std::endl;
+    std::cerr << "--> LOAD <file_name>" << std::endl << "\tLoads an IR module from a given file." << std::endl;
+    std::cerr << "--> CFG <function_name>" << std::endl << "\tShows a compact view of the CFG of a given function." << std::endl;
+    std::cerr << "--> CFG_FULL <function_name>" << std::endl << "\tShows the full CFG (with instructions) of a given function." << std::endl;
+    std::cerr << "--> DUMP <function_name>" << std::endl << "\tShows the IR code of a given function." << std::endl;
+    std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
+    std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
+    std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
+    std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
+    std::cerr << "--> QUIT" << std::endl << "\tExits TinyVM." << std::endl;
 
     // function invocation
-    std::cerr << "\nThe TinyVM command line supports the invocation of loaded functions. "
-              << "Functions can be invoked as in C, except for the final semi-colon that must not be added.\n"
-              << "For the time being, only functions with integer arguments and return values are supported.\n";
+    std::cerr << std::endl << "The TinyVM command line supports the invocation of loaded functions. "
+              << "Functions can be invoked as in C, except for the final semi-colon that must not be added." << std::endl
+              << "For the time being, only functions with integer arguments and return values are supported." << std::endl;
 
     // demo insert_osr (finalized)
-    std::cerr << "\nDemo OSR points can be inserted with the following command:\n"
-              << "--> INSERT_OSR IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>\n"
-              << "where F1 and F2 are existing functions, and B1 and B2 are basic block labels.\n";
-    std::cerr << "\nThe command generates a function F1' cloned from F1 such that when basic block B1 "
-              << "is reached during the execution of F1', an OSR transition to F2' is fired.\n";
-    std::cerr << "\nFunction F2' is generated from F2 in order to resume the execution from the "
+    std::cerr << std::endl << "Demo OSR points can be inserted with the following command:" << std::endl
+              << "--> INSERT_OSR IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>" << std::endl
+              << "where F1 and F2 are existing functions, and B1 and B2 are basic block labels." << std::endl;
+    std::cerr << std::endl << "The command generates a function F1' cloned from F1 such that when basic block B1 "
+              << "is reached during the execution of F1', an OSR transition to F2' is fired." << std::endl;
+    std::cerr << std::endl << "Function F2' is generated from F2 in order to resume the execution from the "
               << "beginning of basic block B2, and values for live variables in F1' at B1 "
-              << "are transferred as arguments for the call.\n";
+              << "are transferred as arguments for the call." << std::endl;
 
     // demo insert_open_osr
-    std::cerr << "\nDemo *open* OSR points can be inserted with the following command:\n"
-              << "--> INSERT_OPEN_OSR IN <F1> AT <B1> AS <F1'>\n"
-              << "where F1 is an existing function and B1 the label of a basic block inside F1.\n";
-    std::cerr << "\nThe command generates a function F1' cloned from F1 such that when basic block B1 "
-              << "is reached during the execution of F1', an open OSR transition is fired.\n";
-    std::cerr << "\nA function callled F1'_stub is generated to store the live state and trigger the "
+    std::cerr << std::endl << "Demo *open* OSR points can be inserted with the following command:" << std::endl
+              << "--> INSERT_OPEN_OSR IN <F1> AT <B1> AS <F1'>" << std::endl
+              << "where F1 is an existing function and B1 the label of a basic block inside F1." << std::endl;
+    std::cerr << std::endl << "The command generates a function F1' cloned from F1 such that when basic block B1 "
+              << "is reached during the execution of F1', an open OSR transition is fired." << std::endl;
+    std::cerr << std::endl << "A function callled F1'_stub is generated to store the live state and trigger the "
               << "generation and compilation of the code to continue the execution with, and values "
-              << "for live variables in F1' at B1 are transferred as arguments for the call.\n";
+              << "for live variables in F1' at B1 are transferred as arguments for the call." << std::endl;
 }
 
 void Parser::handleInsertOSRCommand() {
-    #define INVALID(left) do { fprintf(stderr, "Invalid syntax for an INSERT_OSR command!\n" \
-            "Expected command of the form: INSERT_OSR IN F1 AT B1 AS F1' TO F2 AT B2 AS F2'\n" \
-            "Error occurred at token %u after INSERT_OSR command\n", 12-left); \
+    #define INVALID(left) do { std::cerr << "Invalid syntax for an INSERT_OSR command!" << std::endl \
+            << "Expected command of the form: INSERT_OSR IN F1 AT B1 AS F1' TO F2 AT B2 AS F2'" << std::endl \
+            << "Error occurred at token " << 12-left << " after INSERT_OSR command" << std::endl; \
             int tokens_left = left; \
             while (tokens_left--) TheLexer->getNextToken(); \
             return; } while (0);
@@ -245,16 +245,16 @@ void Parser::handleInsertOSRCommand() {
     const std::string F2_OSR = TheLexer->getIdentifier();
     #undef INVALID
 
-    fprintf(stderr, "Attempting to insert an OSR point in function '%s' at basic block '%s' to "
-                    "function '%s' at basic block '%s' and thus produce functions '%s' and '%s'... Please be patient :-)\n",
-                    F1.c_str(), B1.c_str(), F2.c_str(), B2.c_str(), F1_OSR.c_str(), F2_OSR.c_str());
+    std::cerr << "Attempting to insert an OSR point in function '" << F1 << "' at basic block '" << B1 << "' to "
+                "function '" << F2 << "' at basic block '" << B2 << "' and thus produce functions '" << F1_OSR <<
+                "' and '" << F2_OSR << "'... Please be patient :-" << std::endl;
 
     Function *src, *dest;
     BasicBlock *src_bb = nullptr, *dest_bb = nullptr;
 
     src = TheHelper->getFunction(F1);
     if (src == nullptr) {
-        fprintf(stderr, "Unable to find function named %s!\n", F1.c_str());
+        std::cerr << "Unable to find function named " << F1 << "!" << std::endl;
         return;
     } else {
         for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
@@ -264,14 +264,14 @@ void Parser::handleInsertOSRCommand() {
             }
         }
         if (src_bb == nullptr) {
-            fprintf(stderr, "Unable to find basic block %s in function %s!\n", B1.c_str(), F1.c_str());
+            std::cerr << "Unable to find basic block " << B1 << " in function " << F1 << "!" << std::endl;
             return;
         }
     }
 
     dest = TheHelper->getFunction(F2);
     if (dest == nullptr) {
-        fprintf(stderr, "Unable to find function named %s!\n", F2.c_str());
+        std::cerr << "Unable to find function named " << F2 << "!" << std::endl;
         return;
     } else {
         for (Function::iterator it = dest->begin(), end = dest->end(); it != end; ++it) {
@@ -281,13 +281,13 @@ void Parser::handleInsertOSRCommand() {
             }
         }
         if (dest_bb == nullptr) {
-            fprintf(stderr, "Unable to find basic block %s in function %s!\n", B2.c_str(), F2.c_str());
+            std::cerr << "Unable to find basic block " << B2 << " in function " << F2 << "!" << std::endl;
             return;
         }
     }
 
     if (src != dest) {
-        fprintf(stderr, "Sorry, I don't support OSR transitions to a F2 != F1 function yet!\n");
+        std::cerr << "Sorry, I don't support OSR transitions to a F2 != F1 function yet!" << std::endl;
         return;
     }
 
@@ -341,18 +341,18 @@ void Parser::handleLoadCommand() {
     std::string *FileName = TheLexer->getLine();
     const char* fileName = FileName->c_str();
     if (access(fileName, F_OK) == -1 ) {
-        fprintf(stderr, "[ERROR] Cannot locate \"%s\" IR source file!\n", fileName);
+        std::cerr << "[ERROR] Cannot locate \"" << fileName << "\" IR source file!" << std::endl;
         return;
     }
-    fprintf(stderr, "[LOAD] Opening \"%s\" as IR source file...\n", fileName);
+    std::cerr << "[LOAD] Opening \"" << fileName << "\" as IR source file..." << std::endl;
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(*FileName);
     TheHelper->addModule(std::move(M)); // default: OptimizeModule = false
     delete FileName;
 }
 
 void Parser::handleRepeatCommand() {
-    #define INVALID() do { fprintf(stderr, "Invalid syntax for a REPEAT command!\n" \
-            "Expected command of the form: REPEAT <iterations> <function call>\n"); \
+    #define INVALID() do { std::cerr << "Invalid syntax for a REPEAT command!" << std::endl \
+            << "Expected command of the form: REPEAT <iterations> <function call>" << std::endl; \
             return; } while (0);
     if (TheLexer->getNextToken() != tok_integer) INVALID();
     int iterations = TheLexer->getInteger();
@@ -363,8 +363,8 @@ void Parser::handleRepeatCommand() {
 }
 
 void Parser::handleShowCFGCommand(bool showInstructions) {
-    #define INVALID() do { fprintf(stderr, "Invalid syntax for a CFG command!\n" \
-            "Expected command of the form: CFG <function_name>\n"); \
+    #define INVALID() do { std::cerr << "Invalid syntax for a CFG command!" << std::endl \
+            << "Expected command of the form: CFG <function_name>" << std::endl; \
             return; } while (0);
 
     if (TheLexer->getNextToken() != tok_identifier) INVALID();
@@ -373,7 +373,7 @@ void Parser::handleShowCFGCommand(bool showInstructions) {
 
     Function* F = TheHelper->getFunction(Name);
     if (F == nullptr) {
-        fprintf(stderr, "Unable to find function named %s!\n", Name.c_str());
+        std::cerr << "Unable to find function named " << Name << "!" << std::endl;
         return;
     } else {
         if (showInstructions) {
@@ -387,17 +387,17 @@ void Parser::handleShowCFGCommand(bool showInstructions) {
 void Parser::handleTrackAsmCommand() {
     bool enabled = TheHelper->toggleTrackAsm();
     if (enabled) {
-        std::cerr << "Current status: tracking is enabled. Now disabling it!\n";
+        std::cerr << "Current status: tracking is enabled. Now disabling it!" << std::endl;
     } else {
-        std::cerr << "Current status: tracking is disabled. Now enabling it!\n";
+        std::cerr << "Current status: tracking is disabled. Now enabling it!" << std::endl;
     }
-    std::cerr << "Notice that only modules loaded from now on will be affected by this change.\n";
+    std::cerr << "Notice that only modules loaded from now on will be affected by this change." << std::endl;
 }
 
 void Parser::handleInsertOpenOSRCommand() {
-    #define INVALID(left) do { fprintf(stderr, "Invalid syntax for an INSERT_OPEN_OSR command!\n" \
-            "Expected command of the form: INSERT_OSR IN F1 AT B1 AS F1''\n" \
-            "Error occurred at token %u after INSERT_OSR command\n", 6-left); \
+    #define INVALID(left) do { std::cerr << "Invalid syntax for an INSERT_OPEN_OSR command!" << std::endl \
+            << "Expected command of the form: INSERT_OSR IN F1 AT B1 AS F1''" << std::endl \
+            << "Error occurred at token " << 6-left << " after INSERT_OSR command" << std::endl; \
             int tokens_left = left; \
             while (tokens_left--) TheLexer->getNextToken(); \
             return; } while (0);
@@ -418,16 +418,16 @@ void Parser::handleInsertOpenOSRCommand() {
     const std::string F1_OSR = TheLexer->getIdentifier();
     #undef INVALID
 
-    fprintf(stderr, "Attempting to insert an *open* OSR point in function '%s' at basic block '%s' "
-                    "and thus produce functions '%s' and '%s_stub'... Please be patient :-)\n",
-                    F1.c_str(), B1.c_str(), F1_OSR.c_str(), F1_OSR.c_str());
+    std::cerr << "Attempting to insert an *open* OSR point in function '" << F1<< "' at basic block '"
+                << B1 << "' and thus produce functions '" << F1_OSR << "' and '" << F1_OSR <<
+                "_stub'... Please be patient :-)" << std::endl;
 
     Function *src;
     BasicBlock *src_bb = nullptr;
 
     src = TheHelper->getFunction(F1);
     if (src == nullptr) {
-        fprintf(stderr, "Unable to find function named %s!\n", F1.c_str());
+        std::cerr << "Unable to find function named " << F1 << "!" << std::endl;
         return;
     } else {
         for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
@@ -437,7 +437,7 @@ void Parser::handleInsertOpenOSRCommand() {
             }
         }
         if (src_bb == nullptr) {
-            fprintf(stderr, "Unable to find basic block %s in function %s!\n", B1.c_str(), F1.c_str());
+            std::cerr << "Unable to find basic block " << B1 << " in function " << F1 << "!" << std::endl;
             return;
         }
     }
@@ -458,7 +458,7 @@ void Parser::handleInsertOpenOSRCommand() {
     OSRLibrary::OSRCond cond;
     cond.push_back(TheHelper->generateAlwaysTrueCond());
 
-    fprintf(stderr, "OSRCond generated!\n");
+    std::cerr << "OSRCond generated!" << std::endl;
 
     Function* dest;
     BasicBlock* dest_bb;

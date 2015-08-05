@@ -145,26 +145,26 @@ void LivenessAnalysis::printResultsToScreen(BasicBlock* B) {
 
     std::ostream &sin = std::cerr; // print on stderr
 
-    sin << "Basic block: " << std::string(B->getName()) << "\n";
+    sin << "Basic block: " << std::string(B->getName()) << std::endl;
     const LivenessAnalysis::LiveValues &liveIn = pair.first;
-    sin << "LIVE_IN: " << liveIn.size() << "\n";
-    sin << liveIn << "\n";
+    sin << "LIVE_IN: " << liveIn.size() << std::endl;
+    sin << liveIn << std::endl;
     const LivenessAnalysis::LiveValues &liveOut = pair.second;
-    sin << "LIVE_OUT: " << liveOut.size() << "\n";
-    sin << liveOut << "\n";
+    sin << "LIVE_OUT: " << liveOut.size() << std::endl;
+    sin << liveOut << std::endl;
 }
 
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis) {
     for (auto it = analysis.map.begin(), end = analysis.map.end(); it != end; ++it) {
         const BasicBlock *BB = it->first;
-        sin << "Basic block: " << std::string(BB->getName()) << "\n";
+        sin << "Basic block: " << std::string(BB->getName()) << std::endl;
         const LivenessAnalysis::LiveValues &liveIn = it->second.first;
-        sin << "LIVE_IN: " << liveIn.size() << "\n";
-        sin << liveIn << "\n";
+        sin << "LIVE_IN: " << liveIn.size() << std::endl;
+        sin << liveIn << std::endl;
         const LivenessAnalysis::LiveValues &liveOut = it->second.second;
-        sin << "LIVE_OUT: " << liveOut.size() << "\n";
-        sin << liveOut << "\n";
-        sin << "\n";
+        sin << "LIVE_OUT: " << liveOut.size() << std::endl;
+        sin << liveOut << std::endl;
+        sin << std::endl;
     }
     return sin;
 }

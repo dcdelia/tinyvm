@@ -116,7 +116,10 @@ void* MCJITHelper::getPointerToNamedFunction(const std::string &Name) {
 }
 
 Function* MCJITHelper::getFunction(const std::string &Name) {
-    return JIT->FindFunctionNamed(Name.c_str());
+
+    Function* F = JIT->FindFunctionNamed(Name.c_str());
+    std::cerr << "[DEBUG] Address read for " << F->getName().str() << " is " << F << std::endl;
+    return F;
     /** BROKEN
     Function* ret = nullptr;
     for (std::vector<Module*>::iterator M_it = Modules.begin(), M_end = Modules.end(); M_it != M_end; ++M_it) {
@@ -191,19 +194,32 @@ void MCJITHelper::addSymbols(Module* M) {
     std::pair<std::string, std::vector<std::string>> p;
     p.first = M->getModuleIdentifier(); // copy constructor
 
-    // TODO: distinguish between definitions and prototypes
+    std::string type_str;
+    raw_string_ostream type_rso(type_str);
 
     for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
         Function &F = *it;
-        std::string sym;
-        //std::cerr << "[MCJITHelper] Parsing symbol " << F.getName().str() << std::endl;
-        sym.append(F.getName().str());
 
-        sym.append(" (");
+        std::cerr << "[DEBUG] Address of " << F.getName().str() << " is " << &F << std::endl;
+
+        std::string sym;
+
+        if (F.isDeclaration()) {
+            sym.append("extern ");
+        }
+        F.getReturnType()->print(type_rso);
+        sym.append(type_rso.str() + " " + F.getName().str() + "(");
+        type_str.clear();
+
         if (F.arg_size() > 0) {
             for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
                 Argument &arg = *it;
-                sym.append(arg.getName().str());
+                arg.getType()->print(type_rso);
+                sym.append(type_rso.str());
+                if (arg.hasName()) {
+                    sym.append(" " + arg.getName().str());
+                }
+                type_str.clear();
                 if (++it != end) {
                     sym.append(", ");
                 } else {

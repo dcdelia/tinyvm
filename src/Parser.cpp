@@ -293,15 +293,15 @@ void Parser::handleInsertOSRCommand() {
 
     /* From now on src == dest */
     ValueToValueMapTy* VMap = TheHelper->generateIdentityMapping(src);
-    StateMap::ValueToValuesMap* VVsMap = StateMap::convertValueToValueMapTy(*VMap);
+    OldStateMap::ValueToValuesMap* VVsMap = OldStateMap::convertValueToValueMapTy(*VMap);
 
     std::cerr << "VVsMap generated!" << std::endl;
 
-    StateMap M(src, dest, VVsMap);
+    OldStateMap M(src, dest, VVsMap);
     std::cerr << "StateMap generated!" << std::endl;
 
     // print information about values to fetch
-    StateMap::BBSrcDestPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
+    OldStateMap::BBSrcDestPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
     M.getLivenessResultsForSrcFunction().printResultsToScreen(src_bb);
     std::vector<Value*> &valuesToFetch = M.getValuesToFetchFromSrcFunction(tmpSrcDestPair);
     std::cerr << "Values to fetch: " << valuesToFetch.size() << std::endl;
@@ -462,7 +462,7 @@ void Parser::handleInsertOpenOSRCommand() {
 
     Function* dest;
     BasicBlock* dest_bb;
-    StateMap* m;
+    OldStateMap* m;
 
     OSRLibrary::OpenOSRInfo info;
     info.f1 = src;

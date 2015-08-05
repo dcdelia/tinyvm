@@ -47,8 +47,8 @@ static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = n
     return ret;
 }
 
-Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::BBSrcDestPair &srcDestBlocks,
-                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName) {
+Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, OldStateMap::BBSrcDestPair &srcDestBlocks,
+                                std::vector<Value*> &valuesToPass, OldStateMap &M, const Twine& F2NewName) {
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -105,13 +105,13 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::B
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
+                        BasicBlock &B2, OSRLibrary::OSRCond &cond, OldStateMap &M,
                         const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
     // common stuff for the generation of F1' and F2'
     Function *newSrcFun, *OSRDestFun;
     raw_os_ostream errStream(std::cerr);
     bool preventOptimize = false; // set by verifyAux in case of error
-    StateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
+    OldStateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
     std::vector<Value*> &valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     assert(F1.getReturnType() == F2.getReturnType());
 

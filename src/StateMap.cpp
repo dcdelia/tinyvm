@@ -15,21 +15,21 @@
 
 using namespace llvm;
 
-LivenessAnalysis& StateMap::getLivenessResultsForSrcFunction() {
+LivenessAnalysis& OldStateMap::getLivenessResultsForSrcFunction() {
     return srcLiveValueAnalysis;
 }
 
-LivenessAnalysis& StateMap::getLivenessResultsForDestFunction() {
+LivenessAnalysis& OldStateMap::getLivenessResultsForDestFunction() {
     return destLiveValueAnalysis;
 }
 
 /* Implements a direct state mapping starting from the results of liveness analysis.
  * Note that also PHI node values at the beginning of the block should be fetched! */
-std::vector<Value*> &StateMap::getValuesToFetchFromSrcFunction(StateMap::BBSrcDestPair &srcDestBlocks) {
+std::vector<Value*> &OldStateMap::getValuesToFetchFromSrcFunction(OldStateMap::BBSrcDestPair &srcDestBlocks) {
     BasicBlock* srcBB = srcDestBlocks.first;
     BasicBlock* destBB = srcDestBlocks.second;
 
-    StateMap::ValuesForBlockMap::iterator it = valuesToFetchFromSrc.find(srcBB);
+    OldStateMap::ValuesForBlockMap::iterator it = valuesToFetchFromSrc.find(srcBB);
     if (it == valuesToFetchFromSrc.end()) {
         std::vector<Value*> values;
 
@@ -40,7 +40,7 @@ std::vector<Value*> &StateMap::getValuesToFetchFromSrcFunction(StateMap::BBSrcDe
         * liveInAtSrcBlock, otherwise the assertion check will fail. */
         for (const Value* cdest_v: liveInAtDestBlock) {
             Value* dest_v = const_cast<Value*>(cdest_v);
-            StateMap::ValueToValuesMap::const_iterator valIt = reverseVVsMap->find(dest_v);
+            OldStateMap::ValueToValuesMap::const_iterator valIt = reverseVVsMap->find(dest_v);
             assert(valIt != reverseVVsMap->end() && valIt->second.size() == 1);
             values.push_back(valIt->second[0]);
         }
@@ -51,7 +51,7 @@ std::vector<Value*> &StateMap::getValuesToFetchFromSrcFunction(StateMap::BBSrcDe
         for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
             Instruction* dest_inst = const_cast<Instruction*>(&*it);
             Value* dest_v = cast<Value>(dest_inst);
-            StateMap::ValueToValuesMap::const_iterator valIt = reverseVVsMap->find(dest_v);
+            OldStateMap::ValueToValuesMap::const_iterator valIt = reverseVVsMap->find(dest_v);
             assert(valIt != reverseVVsMap->end() && valIt->second.size() == 1);
             if (std::find(values.begin(), values.end(), valIt->second[0]) == values.end()) {
                 values.push_back(valIt->second[0]); // avoid duplicates!
@@ -66,11 +66,11 @@ std::vector<Value*> &StateMap::getValuesToFetchFromSrcFunction(StateMap::BBSrcDe
 
 /* Implements a direct state mapping starting from the results of liveness analysis.
  * Note that also PHI node values at the beginning of the block should be fetched! */
-std::vector<Value*> &StateMap::getValuesToSetForDestFunction(StateMap::BBSrcDestPair &srcDestBlocks) {
+std::vector<Value*> &OldStateMap::getValuesToSetForDestFunction(OldStateMap::BBSrcDestPair &srcDestBlocks) {
     BasicBlock* destBB = srcDestBlocks.second;
 
     // check if this is already been computed
-    StateMap::ValuesForBlockMap::iterator it = valuesToFetchAtDest.find(destBB);
+    OldStateMap::ValuesForBlockMap::iterator it = valuesToFetchAtDest.find(destBB);
     if (it == valuesToFetchAtDest.end()) {
         std::vector<Value*> values;
 
@@ -102,7 +102,7 @@ std::vector<Value*> &StateMap::getValuesToSetForDestFunction(StateMap::BBSrcDest
  * - the key is the original Value* in dest
  * - the value is the corresponding Value* in OSRDestFun (which might also be created here!)
  * */
-BasicBlock* StateMap::createEntryPointForOSRDestFunction(StateMap::BBSrcDestPair &srcDestBlocks, Function *OSRDestFun, ValueToValueMapTy &destToOSRDestVMap, ValueToValueMapTy &updatesForDestToOSRDestVMap, std::vector<Value*> &fetchedValuesAsArgs) {
+BasicBlock* OldStateMap::createEntryPointForOSRDestFunction(OldStateMap::BBSrcDestPair &srcDestBlocks, Function *OSRDestFun, ValueToValueMapTy &destToOSRDestVMap, ValueToValueMapTy &updatesForDestToOSRDestVMap, std::vector<Value*> &fetchedValuesAsArgs) {
     std::map<const Value*, Value*> srcValueToOSRDestValueMap;
 
     BasicBlock* destBB = srcDestBlocks.second;
@@ -143,8 +143,8 @@ BasicBlock* StateMap::createEntryPointForOSRDestFunction(StateMap::BBSrcDestPair
     return entryPoint;
 }
 
-StateMap::ValueToValuesMap* StateMap::convertValueToValueMapTy(ValueToValueMapTy &Map) {
-    StateMap::ValueToValuesMap* newMap = new StateMap::ValueToValuesMap();
+OldStateMap::ValueToValuesMap* OldStateMap::convertValueToValueMapTy(ValueToValueMapTy &Map) {
+    OldStateMap::ValueToValuesMap* newMap = new OldStateMap::ValueToValuesMap();
 
     for (ValueToValueMapTy::const_iterator it = Map.begin(); it != Map.end(); ++it) {
         Value* v = const_cast<Value*>(it->first); // get rid of const :-)
@@ -155,13 +155,13 @@ StateMap::ValueToValuesMap* StateMap::convertValueToValueMapTy(ValueToValueMapTy
     return newMap;
 }
 
-StateMap::ValueToValuesMap* StateMap::flipValueToValuesMap(StateMap::ValueToValuesMap *Map) {
-    StateMap::ValueToValuesMap* revMap = new StateMap::ValueToValuesMap();
+OldStateMap::ValueToValuesMap* OldStateMap::flipValueToValuesMap(OldStateMap::ValueToValuesMap *Map) {
+    OldStateMap::ValueToValuesMap* revMap = new OldStateMap::ValueToValuesMap();
 
-    for (StateMap::ValueToValuesMap::const_iterator it = Map->begin(); it != Map->end(); ++it) {
+    for (OldStateMap::ValueToValuesMap::const_iterator it = Map->begin(); it != Map->end(); ++it) {
         Value* v_first = it->first;
         for (Value* v_second: it->second) {
-            StateMap::ValueToValuesMap::iterator revIt = revMap->find(v_second);
+            OldStateMap::ValueToValuesMap::iterator revIt = revMap->find(v_second);
             if (revIt == revMap->end()) {
                 // I have to create a vector
                 std::vector<Value*> vec;

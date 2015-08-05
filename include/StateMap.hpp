@@ -13,12 +13,12 @@
 
 using namespace llvm;
 
-class StateMap {
+class OldStateMap {
     public:
         typedef std::pair<BasicBlock*, BasicBlock*> BBSrcDestPair;
         typedef ValueMap<Value*, std::vector<Value*>> ValueToValuesMap;
         typedef std::map<BasicBlock*, std::vector<Value*>> ValuesForBlockMap;
-        StateMap(Function* src, Function* dest, ValueToValuesMap* VVsMap) : src(src), dest(dest),
+        OldStateMap(Function* src, Function* dest, ValueToValuesMap* VVsMap) : src(src), dest(dest),
             srcLiveValueAnalysis(LivenessAnalysis(src)), destLiveValueAnalysis (LivenessAnalysis(dest)),
             VVsMap(VVsMap), reverseVVsMap(flipValueToValuesMap(VVsMap)) { }
         // TODO: destructor

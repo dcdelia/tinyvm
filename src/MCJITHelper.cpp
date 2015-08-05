@@ -28,6 +28,9 @@
 
 #include <fcntl.h>
 
+#include "OSRLibrary.hpp"
+#include "StateMap.hpp"
+
 using namespace llvm;
 
 MCJITHelper::~MCJITHelper() {
@@ -188,19 +191,24 @@ void MCJITHelper::addSymbols(Module* M) {
     std::pair<std::string, std::vector<std::string>> p;
     p.first = M->getModuleIdentifier(); // copy constructor
 
+    // TODO: distinguish between definitions and prototypes
+
     for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
         Function &F = *it;
         std::string sym;
+        //std::cerr << "[MCJITHelper] Parsing symbol " << F.getName().str() << std::endl;
         sym.append(F.getName().str());
 
         sym.append(" (");
-        for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
-            Argument &arg = *it;
-            sym.append(arg.getName().str());
-            if (++it != end) {
-                sym.append(", ");
-            } else {
-                break;
+        if (F.arg_size() > 0) {
+            for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
+                Argument &arg = *it;
+                sym.append(arg.getName().str());
+                if (++it != end) {
+                    sym.append(", ");
+                } else {
+                    break;
+                }
             }
         }
         sym.append(")");
@@ -301,4 +309,39 @@ ValueToValueMapTy* MCJITHelper::generateIdentityMapping(Function* F) {
     }
 
     return VMap;
+}
+
+void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawInfo, void* profDataAddr) {
+    void* p1 = (void*)((uintptr_t)rawInfo->f1 - (uintptr_t)rawInfo->b1);
+    //void* p2 = rawInfo->f2_pp - rawInfo->b2_pp;
+    std::cerr << "Value for rawInfo is " << rawInfo << std::endl;
+    std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
+
+    std::cerr << "Value for rawInfo->f1 is " << rawInfo->f1 << std::endl;
+    std::cerr << "Value for rawInfo->b1 is " << rawInfo->b1 << std::endl;
+    std::cerr << "Value for rawInfo->f2_pp is " << rawInfo->f2_pp << std::endl;
+    std::cerr << "Value for rawInfo->b2_pp is " << rawInfo->b2_pp << std::endl;
+    std::cerr << "Value for rawInfo->m_pp is " << rawInfo->m_pp << std::endl;
+
+    return p1;
+
+/*
+
+    std::cerr << "Value for rawInfo->f1 is " << rawInfo->f1 << std::endl;
+    std::cerr << "Value for rawInfo->b1 is " << rawInfo->b1 << std::endl;
+    std::cerr << "Value for rawInfo->f2_pp is " << rawInfo->f2_pp << std::endl;
+    std::cerr << "Value for rawInfo->b2_pp is " << rawInfo->b2_pp << std::endl;
+    std::cerr << "Value for rawInfo->m_pp is " << rawInfo->m_pp << std::endl;
+
+
+    Function* f1 = (Function*)rawInfo->f1;
+    BasicBlock* b1 = (BasicBlock*)rawInfo->b1;
+
+    Function** f2_pp = (Function**)rawInfo->f2_pp;
+    BasicBlock** b2_pp = (BasicBlock**)rawInfo->b2_pp;
+    StateMap** m_pp = (StateMap**)rawInfo->m_pp;
+*/
+    // TODO: returning nullptr will make everything crash!
+
+    //return nullptr;
 }

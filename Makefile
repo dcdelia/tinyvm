@@ -1,12 +1,12 @@
 # A poorly written Makefile
-CC				= clang
-CXX				= clang++
-BUILD			= build
-SRC				= src
-INCLUDE			= include
-CFLAGS			= -O0 -g -Wall -I$(INCLUDE)
-CXX_FLAGS		= -O0 -g -Wall -I$(INCLUDE)
-LLVM_CFLAGS		=
+CC		= clang
+CXX		= clang++
+BUILD		= build
+SRC		= src
+INCLUDE		= include
+CFLAGS		= -O0 -g -Wall -I$(INCLUDE)
+CXX_FLAGS	= -O0 -g -Wall -I$(INCLUDE)
+LLVM_CFLAGS	= # LLVM C API unused
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
 LLVM_LDFLAGS	= $(shell llvm-config  --ldflags --system-libs --libs core irreader mcjit native)
 

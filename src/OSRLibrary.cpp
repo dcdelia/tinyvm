@@ -5,6 +5,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Instructions.h"
@@ -28,6 +29,8 @@ using namespace llvm;
  * - use const references more?
  * - nomi strani in OSRDestFun
  * - controllare che liveness analisis non includa valori di OSRCond
+ * - Context
+ * - verbose mode
  */
 
 /**
@@ -133,7 +136,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     OSR_B->insertInto(newSrcFun);
 
     Twine splitBlockName("splitBlockForOSRTo", OSRDestFun->getName()); // (4)
-    BasicBlock* srcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.second]);
+    BasicBlock* srcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]); // TODO check this, srcDestBlocks.second was a bug?!?
     BasicBlock* splittedBlock = insertOSRCond (newSrcFun, srcBlock, OSR_B, newCond, splitBlockName);
 
     tmpMod->getFunctionList().push_back(newSrcFun); // (5)
@@ -141,10 +144,10 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
 
     if (!preventOptimize) {
         legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(tmpMod);
-        //FPM->add(createDomOnlyPrinterPass()); // broken
-        FPM->add(createCFGSimplificationPass());
 
-        FPM->run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
+        FPM->add(createCFGSimplificationPass()); // will remove the old entrypoint and fix PHI nodes
+
+        FPM->run(*OSRDestFun);
         verifyAux(OSRDestFun, &errStream);
 
         FPM->run(*newSrcFun);
@@ -155,12 +158,192 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     OSRDestFun->removeFromParent();
     newSrcFun->removeFromParent();
 
+    // TODO delete tmpMod?
+
     return OSRPair(newSrcFun, OSRDestFun);
 }
 
-Function* OSRLibrary::insertOpenOSR(Function &F, BasicBlock&B, OSRLibrary::OSRCond &cond,
-                        OSRLibrary::DestFunGenerator callback) {
-    return nullptr;
+OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSRLibrary::OSRCond& cond,
+        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator, const Twine& F1NewName) {
+
+    LLVMContext& Context = getGlobalContext();
+    PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
+
+    Module tmpMod("OSRtmpMod", Context);
+    Function *stub, *newSrcFun;
+    Function *src = info.f1;
+    Type* retTy = src->getReturnType();
+    std::string newFunName = F1NewName.isTriviallyEmpty() ? src->getName().str() + "WithOSR" : F1NewName.str();
+
+    /* [Prepare F1'_stub aka stub] Workflow
+     * (1) Generate prototype for stub
+     * (2) Generate stub function and set argument names and attributes
+     * (3) Get a rawOpenOSRInfo struct type from LLVM Context
+     * (4) Create entry block for the new function and allocate a rawOpenOSRInfo object
+     * (5) Create pointers to access fields in rawOpenOSRInfo and store values from info
+     * (6) Create call to destFunGenerator
+     * (7) Create a prototype for the generated function and make an indirect call
+     * (8) Return the computed value
+     */
+
+    // step (1)
+    std::vector<Value*> valuesToPass;
+    addValuesToFetchForOpenOSR(info, valuesToPass);
+
+    std::vector<Type*> stubArgTypes;
+    stubArgTypes.push_back(i8PointerTy); // profDataAddr is an i8*
+    for (Value* v: valuesToPass) {
+        stubArgTypes.push_back(v->getType());
+    }
+    FunctionType *stubFTy = FunctionType::get(retTy, stubArgTypes, false);
+
+    // step (2)
+    Twine stubName = Twine(newFunName, "_stub"); // TODO provide stubName as argument to insertOpenOSR
+    stub = Function::Create(stubFTy, src->getLinkage(), stubName);
+
+    Function::arg_iterator stubArgIt = stub->arg_begin();
+    (stubArgIt++)->setName("profDataAddr");
+    for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
+        (stubArgIt++)->setName(Twine((*it)->getName(), "_osr"));
+    }
+
+    applyAttributesToArguments(stub, src, valuesToPass);
+
+    // step (3)
+    std::vector<Type*> rawOpenOSRInfoTypes;
+    rawOpenOSRInfoTypes.push_back(i8PointerTy); // f1
+    rawOpenOSRInfoTypes.push_back(i8PointerTy); // b1
+    rawOpenOSRInfoTypes.push_back(i8PointerTy); // f2_pp
+    rawOpenOSRInfoTypes.push_back(i8PointerTy); // b2_pp
+    rawOpenOSRInfoTypes.push_back(i8PointerTy); // m
+    StructType* rawOSRInfoTy = StructType::get(Context, rawOpenOSRInfoTypes);
+
+    // step (4)
+    BasicBlock* stubEntryPoint = BasicBlock::Create(Context, "entry", stub);
+
+    AllocaInst* infoAlloca = new AllocaInst(rawOSRInfoTy, "info");
+    stubEntryPoint->getInstList().push_back(infoAlloca);
+
+    // step (5)
+    Value* Idxs[2];
+    Idxs[0] = ConstantInt::get(Context, APInt(32, 0, 10));
+
+    auto lambdaForGEPAndStore = [](LLVMContext& C, AllocaInst* A, BasicBlock* B, Value* (*v)[2], int index, StringRef name,
+            void* field, Type* srcType, Type* destType) -> GetElementPtrInst* {
+        (*v)[1] = ConstantInt::get(C, APInt(32, index, 10));
+        GetElementPtrInst* GEP = GetElementPtrInst::Create(A, *v, name);
+        B->getInstList().push_back(GEP);
+        Value* V = ConstantExpr::getIntToPtr(ConstantInt::get(srcType, (uintptr_t)field), destType);
+        new StoreInst(V, GEP, B);
+        return GEP;
+    };
+
+    IntegerType* int64Ty = Type::getInt64Ty(Context);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 0, "f1_ptr", info.f1, int64Ty, i8PointerTy);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 1, "b1_ptr", info.b1, int64Ty, i8PointerTy);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 2, "f2_pp_ptr", info.f2_pp, int64Ty, i8PointerTy);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 3, "b2_pp_ptr", info.b2_pp, int64Ty, i8PointerTy);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 4, "m_pp_ptr", info.m_pp, int64Ty, i8PointerTy);
+
+    // step (6)
+    std::vector<Type*> argTypesForFunToGenerate;
+    std::vector<Value*> argsForFunToGenerate;
+    for (Function::arg_iterator it = ++(stub->arg_begin()), end = stub->arg_end(); it != end; ++it) {
+        argsForFunToGenerate.push_back(it);
+        argTypesForFunToGenerate.push_back(it->getType());
+    }
+    FunctionType* funToGenerateTy = FunctionType::get(retTy, argTypesForFunToGenerate, false);
+
+    PointerType* pointerToFunToGenerateTy = PointerType::getUnqual(funToGenerateTy);
+    PointerType* pointerToRawOSRInfoTy = PointerType::getUnqual(rawOSRInfoTy);
+
+    Type* destFunGenArgTypes[2];
+    destFunGenArgTypes[0] = pointerToRawOSRInfoTy;
+    destFunGenArgTypes[1] = i8PointerTy;
+    FunctionType* destFunGeneratorTy = FunctionType::get(pointerToFunToGenerateTy, destFunGenArgTypes, false);
+
+    //LoadInst* loadInfo = new LoadInst(infoAlloca, "info_ptr", stubEntryPoint);
+    Value* destFunGenArgs[2];
+    destFunGenArgs[0] = infoAlloca;
+    destFunGenArgs[1] = stub->arg_begin();
+    std::cerr << "Arguments for the first call: " << destFunGenArgs[0]->getName().str() << " " << destFunGenArgs[1]->getName().str() << std::endl;
+    Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)destFunGenerator),
+                                                        PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
+    CallInst* destFunGeneratorCall = CallInst::Create(destFunGenVal, destFunGenArgs, "destFunGenCall", stubEntryPoint); // direct call to absolute address
+
+    // make an indirect call to the generated function
+    CallInst* generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate, "generatedFunCall");
+    stubEntryPoint->getInstList().push_back(generatedFunCall);
+
+    // step (7)
+    ReturnInst* retInst;
+    if (retTy->isVoidTy()) {
+        retInst = ReturnInst::Create(Context);
+    } else {
+        retInst = ReturnInst::Create(Context, generatedFunCall);
+    }
+    stubEntryPoint->getInstList().push_back(retInst);
+
+    /* [Prepare F1' aka newSrc] Workflow
+     * (1) Duplicate F1 into newSrc and regenerate OSRCond
+     * (2) Generate newValuesToPass (including the address of profDataVal)
+     * (3) Generate OSRBlock to invoke stub and return its result
+     * (4) Insert code to compute OSR condition and jump to OSRBlock
+     */
+
+    ValueToValueMapTy srcToNewSrcVMap;
+
+    // step (1)
+    newSrcFun = duplicateFunction(src, newFunName, srcToNewSrcVMap);
+    OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
+
+    // step (2)
+    std::vector<Value*> newValuesToPass;
+    Value* newProfDataVal;
+    if (profDataVal != nullptr) {
+        Value* v = srcToNewSrcVMap[profDataVal];
+
+        // TODO
+        newProfDataVal = nullptr; // what if I have to insert new instructions in the code? should I do it inside the new OSR block?
+
+        std::cerr << "Sorry, this has not been implemented yet!" << std::endl;
+        exit(1);
+    } else {
+        //newProfDataVal = ConstantPointerNull::get(i8PointerTy);
+        newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy);
+    }
+    newValuesToPass.push_back(newProfDataVal);
+    for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
+        newValuesToPass.push_back(srcToNewSrcVMap[*it]);
+    }
+
+    // step (3)
+    BasicBlock* OSR_B = generateTriggerOSRBlock(stub, newValuesToPass);
+    OSR_B->insertInto(newSrcFun);
+
+    // step (4)
+    Twine splitBlockName("splitBlockForOSRTo", stub->getName());
+    BasicBlock* newSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[info.b1]);
+    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, newSrcBlock, OSR_B, newCond, splitBlockName);
+
+
+    /* Now we verify both generated functions */
+    raw_os_ostream errStream(std::cerr);
+    bool preventOptimize = false;
+
+    tmpMod.getFunctionList().push_back(stub);
+    verifyAux(stub, &errStream, &preventOptimize);
+
+    tmpMod.getFunctionList().push_back(newSrcFun);
+    verifyAux(newSrcFun, &errStream, &preventOptimize);
+
+    stub->removeFromParent();
+    newSrcFun->removeFromParent();
+
+    //stub->dump();
+    //newSrcFun->dump();
+
+    return OSRPair(newSrcFun, stub);
 }
 
 Function* OSRLibrary::prepareForRedirection(Function &F) {
@@ -454,4 +637,15 @@ BasicBlock* OSRLibrary::insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OS
     B->getInstList().push_back(br);
 
     return NB;
+}
+
+/* We define an auxiliary method for this task so it can be reused by the destFunGenerator() */
+void OSRLibrary::addValuesToFetchForOpenOSR(OSRLibrary::OpenOSRInfo& info, std::vector<Value*> &values) {
+    LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(info.f1);
+    LivenessAnalysis::LiveValues& liveInAtSrcBlock = livenessAnalysisForSrcFunction.getLiveInValues(info.b1);
+
+    for (const Value* cdest_v: liveInAtSrcBlock) {
+        Value* src_v = const_cast<Value*>(cdest_v);
+        values.push_back(src_v);
+    }
 }

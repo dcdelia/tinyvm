@@ -23,6 +23,7 @@ private:
     void handleRepeatCommand();
     void handleShowCFGCommand(bool showInstructions);
     void handleTrackAsmCommand();
+    void handleInsertOpenOSRCommand();
 };
 
 #endif

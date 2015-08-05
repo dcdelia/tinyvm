@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "CustomMemoryManager.hpp"
+#include "OSRLibrary.hpp"
 #include "StackMap.hpp"
 
 using namespace llvm;
@@ -49,6 +50,8 @@ public:
 
     // public methods
     void addModule(std::unique_ptr<Module> M, bool OptimizeModule = false);
+    void createAndAddModuleForFunction(Function* F, bool OptimizeFunction = false,
+                    bool analyzeCallsToExternalFunctions = false, bool analyzeAccessesToGlobals = false);
     std::unique_ptr<Module> createModuleFromFile(const std::string &FileName);
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);
@@ -59,6 +62,7 @@ public:
     void showSymbols();
     CmpInst* generateAlwaysTrueCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
+    static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);
 
 private:
     LLVMContext                     &Context;

@@ -15,13 +15,31 @@ using namespace llvm;
 class OSRLibrary {
     public:
         typedef std::vector<Instruction*> OSRCond;
-        typedef void (*DestFunGenerator)(Function* dest, BasicBlock* dest_b, StateMap* m);
         typedef std::pair<Function*, Function*> OSRPair;
+
+        typedef struct OpenOSRInfo { /* TODO: pass 5 scalars rather than 1 reference */
+            Function*       f1;
+            BasicBlock*     b1;
+            Function**      f2_pp;
+            BasicBlock**    b2_pp;
+            StateMap**      m_pp;
+        } OpenOSRInfo;
+
+        // to simpify raw IR generation do the casts inside the destFunGenerator (written in C++)
+        typedef struct RawOpenOSRInfo {
+            void*   f1;
+            void*   b1;
+            void*   f2_pp;
+            void*   b2_pp;
+            void*   m_pp;
+        } RawOpenOSRInfo;
+
+        typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);
 
         static OSRPair insertFinalizedOSR(Function& F1, BasicBlock& B1, Function& F2,
             BasicBlock& B2, OSRCond& cond, StateMap& M, const Twine& F1NewName="", const Twine& F2NewName="");
-        static Function* insertOpenOSR(Function& F, BasicBlock& B, OSRCond& cond,
-            DestFunGenerator callback);
+        static OSRPair insertOpenOSR(OpenOSRInfo& info, OSRCond& cond, Value* profDataVal,
+            DestFunGenerator destFunGenerator, const Twine& F1NewName="");
 
         static Function* prepareForRedirection(Function& F);
         static void enableRedirection(uint64_t f, uint64_t destination);
@@ -41,6 +59,8 @@ class OSRLibrary {
         static OSRCond regenerateOSRCond(OSRCond &cond, ValueToValueMapTy &VMap);
         static BasicBlock* generateTriggerOSRBlock(Function* OSRDest, std::vector<Value*> &valuesToPass);
         static BasicBlock* insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OSR_B, OSRCond& cond, const Twine& BBName);
+
+        static void addValuesToFetchForOpenOSR(OpenOSRInfo& info, std::vector<Value*> &values);
 };
 
 #endif

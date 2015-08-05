@@ -39,7 +39,11 @@ class OSRLibrary {
         static OSRPair insertFinalizedOSR(Function& F1, BasicBlock& B1, Function& F2,
             BasicBlock& B2, OSRCond& cond, StateMap& M, const Twine& F1NewName="", const Twine& F2NewName="");
         static OSRPair insertOpenOSR(OpenOSRInfo& info, OSRCond& cond, Value* profDataVal,
-            DestFunGenerator destFunGenerator, const Twine& F1NewName="");
+            DestFunGenerator destFunGenerator, const Twine& F1NewName="", std::vector<Value*> *valuesToTransfer = nullptr);
+
+        static std::vector<Value*>* defaultValuesToTransferForOpenOSR(Function& F, BasicBlock &B);
+        static Function* generateOSRDestFun(Function &F1, Function &F2, StateMap::BBSrcDestPair &srcDestBlocks,
+                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName);
 
         static Function* prepareForRedirection(Function& F);
         static void enableRedirection(uint64_t f, uint64_t destination);
@@ -60,7 +64,7 @@ class OSRLibrary {
         static BasicBlock* generateTriggerOSRBlock(Function* OSRDest, std::vector<Value*> &valuesToPass);
         static BasicBlock* insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OSR_B, OSRCond& cond, const Twine& BBName);
 
-        static void addValuesToFetchForOpenOSR(OpenOSRInfo& info, std::vector<Value*> &values);
+        //static void addValuesToFetchForOpenOSR(OpenOSRInfo& info, std::vector<Value*> &values);
 };
 
 #endif

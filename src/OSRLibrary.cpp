@@ -47,19 +47,8 @@ static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = n
     return ret;
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
-                        const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
-    // common stuff for the generation of F1' and F2'
-    Function *newSrcFun, *OSRDestFun;
-    raw_os_ostream errStream(std::cerr);
-    bool preventOptimize = false; // set by verifyAux in case of error
-    StateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
-    std::vector<Value*> &valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
-    assert(F1.getReturnType() == F2.getReturnType());
-
-    // workaround: verifyFunction() segfaults if a Function is not in a Module
-    Module *tmpMod = new Module("OSRtmpMod", getGlobalContext());
+Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::BBSrcDestPair &srcDestBlocks,
+                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName) {
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -75,8 +64,9 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
      */
     ValueToValueMapTy destToOSRDestVMap;
     ValueToValueMapTy updatesForDestToOSRDestVMap;
+    Function* OSRDestFun;
     Function* dest = &F2;
-    BasicBlock* dest_block = &B2;
+    BasicBlock* dest_block = srcDestBlocks.second;
     std::vector<Value*> &origValuesToSetAtDestBlock = M.getValuesToSetForDestFunction(srcDestBlocks);
 
     FunctionType* OSRDestFTy = generatePrototypeForOSRDest(&F1, valuesToPass); // (1)
@@ -109,6 +99,27 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
             destToOSRDestVMap, updatesForDestToOSRDestVMap, &insertedPHINodes);
     fprintf(stderr, "Inserted PHI nodes: %lu\n", insertedPHINodes.size());
+
+    return OSRDestFun;
+
+}
+
+OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
+                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
+                        const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
+    // common stuff for the generation of F1' and F2'
+    Function *newSrcFun, *OSRDestFun;
+    raw_os_ostream errStream(std::cerr);
+    bool preventOptimize = false; // set by verifyAux in case of error
+    StateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
+    std::vector<Value*> &valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
+    assert(F1.getReturnType() == F2.getReturnType());
+
+    // verifyFunction() segfaults if a Function is not in a Module
+    Module *tmpMod = new Module("OSRtmpMod", getGlobalContext());
+
+    /* Prepare F2' aka OSRDestFun */
+    OSRDestFun = generateOSRDestFun(F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
 
     tmpMod->getFunctionList().push_back(OSRDestFun); // (10)
     verifyAux(OSRDestFun, &errStream, &preventOptimize);
@@ -164,7 +175,8 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSRLibrary::OSRCond& cond,
-        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator, const Twine& F1NewName) {
+        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator, const Twine& F1NewName,
+        std::vector<Value*>* valuesToTransfer) {
 
     LLVMContext& Context = getGlobalContext();
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
@@ -172,6 +184,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     Module tmpMod("OSRtmpMod", Context);
     Function *stub, *newSrcFun;
     Function *src = info.f1;
+    BasicBlock* srcBlock = info.b1;
     Type* retTy = src->getReturnType();
     std::string newFunName = F1NewName.isTriviallyEmpty() ? src->getName().str() + "WithOSR" : F1NewName.str();
 
@@ -187,8 +200,10 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
      */
 
     // step (1)
-    std::vector<Value*> valuesToPass;
-    addValuesToFetchForOpenOSR(info, valuesToPass);
+    std::vector<Value*>* valuesToPasstmp = (valuesToTransfer == nullptr)
+                                         ? defaultValuesToTransferForOpenOSR(*src, *srcBlock)
+                                         : valuesToTransfer;
+    std::vector<Value*> &valuesToPass = *valuesToPasstmp;
 
     std::vector<Type*> stubArgTypes;
     stubArgTypes.push_back(i8PointerTy); // profDataAddr is an i8*
@@ -323,7 +338,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
 
     // step (4)
     Twine splitBlockName("splitBlockForOSRTo", stub->getName());
-    BasicBlock* newSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[info.b1]);
+    BasicBlock* newSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcBlock]);
     BasicBlock* splittedBlock = insertOSRCond (newSrcFun, newSrcBlock, OSR_B, newCond, splitBlockName);
 
 
@@ -340,8 +355,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     stub->removeFromParent();
     newSrcFun->removeFromParent();
 
-    //stub->dump();
-    //newSrcFun->dump();
+    if (valuesToTransfer == nullptr) {
+        delete valuesToPasstmp;
+    }
 
     return OSRPair(newSrcFun, stub);
 }
@@ -640,12 +656,16 @@ BasicBlock* OSRLibrary::insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OS
 }
 
 /* We define an auxiliary method for this task so it can be reused by the destFunGenerator() */
-void OSRLibrary::addValuesToFetchForOpenOSR(OSRLibrary::OpenOSRInfo& info, std::vector<Value*> &values) {
-    LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(info.f1);
-    LivenessAnalysis::LiveValues& liveInAtSrcBlock = livenessAnalysisForSrcFunction.getLiveInValues(info.b1);
+std::vector<Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(Function &F, BasicBlock &B) {
+    LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(&F);
+    LivenessAnalysis::LiveValues& liveInAtSrcBlock = livenessAnalysisForSrcFunction.getLiveInValues(&B);
+
+    std::vector<Value*> *valuesToPass = new std::vector<Value*>();
 
     for (const Value* cdest_v: liveInAtSrcBlock) {
         Value* src_v = const_cast<Value*>(cdest_v);
-        values.push_back(src_v);
+        valuesToPass->push_back(src_v);
     }
+
+    return valuesToPass;
 }

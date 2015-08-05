@@ -480,12 +480,12 @@ void Parser::handleInsertOpenOSRCommand() {
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(info, cond, nullptr, generator, F1_OSR);
-    fprintf(stderr, "insertOpenOSR succeded!\n");
+    std::cerr << "insertOpenOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *stub = pair.second;
 
-    fprintf(stderr, "First function generated: %s\n", src_new->getName().str().c_str());
-    fprintf(stderr, "Second function generated: %s\n", stub->getName().str().c_str());
+    std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
+    std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
 
     std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", getGlobalContext()); // TODO unique names, get Context from Helper
     Module* OSRModule_p = OSRModule.get();
@@ -493,7 +493,7 @@ void Parser::handleInsertOpenOSRCommand() {
     OSRModule_p->getFunctionList().push_back(src_new);
     OSRModule_p->getFunctionList().push_back(stub);
 
-    fprintf(stderr, "Module %s generated!\n", OSRModule_p->getModuleIdentifier().c_str());
+    std::cerr << "Module " << OSRModule_p->getModuleIdentifier() << " generated!" << std::endl;
 
     TheHelper->addModule(std::move(OSRModule), false);
 }

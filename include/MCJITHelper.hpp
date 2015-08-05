@@ -8,9 +8,11 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 #include <string>
+#include <map>
 #include <vector>
 
 #include "CustomMemoryManager.hpp"
@@ -24,13 +26,15 @@ public:
     MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) : Context(C),
                     trackAsmCode(false), asmFdStream(nullptr), asmFileName("session.asm") {
         if (InitialModule == nullptr) {
-            // unfortunately we need a module for EngineBuilder (TODO: check again)
-            InitialModule = llvm::make_unique<Module>("empty", Context);
+            InitialModule = llvm::make_unique<Module>("empty", Context); // TODO we still need it right?
         }
 
-        Listeners.push_back(new StackMapJITEventListener(&StackMaps)); // TODO use a shared_ptr instead?
+        Modules.push_back(InitialModule.get());
+
+        Listeners.push_back(new StackMapJITEventListener(&StackMaps));
 
         std::unique_ptr<CustomMemoryManager> MemoryManager(new CustomMemoryManager(this));
+        MManager = MemoryManager.get();
         std::string ErrStr;
         JIT = EngineBuilder(std::move(InitialModule))
                             .setEngineKind(EngineKind::JIT)
@@ -58,8 +62,8 @@ public:
     int (*createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
     bool toggleTrackAsm();
     void showTrackedAsm();
-    void addSymbols(Module* M);
-    void showSymbols();
+    void showModules();
+    void showFunctions();
     CmpInst* generateAlwaysTrueCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
     static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);
@@ -67,14 +71,21 @@ public:
 private:
     LLVMContext                     &Context;
     IRBuilder<>                     *Builder;
+    CustomMemoryManager             *MManager;
+    std::vector<Module*>            Modules;
     std::vector<StackMap*>          StackMaps;
     std::vector<JITEventListener*>  Listeners;
+    std::map<std::string, Function*>                ActiveFunctions;
+    std::map<std::string, std::vector<Function*>>   PrevFunctions;
+    std::map<std::string, std::vector<Function*>>   FunctionPrototypes;
     std::vector<std::pair<std::string, std::vector<std::string>>>  Symbols;
     bool            trackAsmCode;
     raw_ostream     *asmFdStream;
     const char      *asmFileName;
 
-    raw_ostream* initializeFdStream(const char* fileName);
+    raw_ostream*    initializeFdStream(const char* fileName);
+    void            registerFunction(Function* F);
+    void            prototypeToString(Function& F, std::string &sym_str, std::string &type_str, raw_string_ostream &type_rso);
 };
 
 #endif

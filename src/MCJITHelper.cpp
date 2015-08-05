@@ -12,7 +12,7 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/raw_os_ostream.h"
-#include "llvm/Support/raw_ostream.h" // SMDiagnostic print
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar.h"
@@ -23,6 +23,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -41,7 +42,6 @@ MCJITHelper::~MCJITHelper() {
 
 void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     Module* M_ptr = M.get();
-    //Modules.push_back(M_ptr);
 
     M_ptr->setDataLayout(JIT->getDataLayout());
 
@@ -51,7 +51,6 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
         /* OPTIMIZER PIPELINE */
 
         // Register info about how the target lays out data structures
-        //M_ptr->setDataLayout(JIT->getDataLayout()); // HOISTED
         FPM->add(new DataLayoutPass());
 
         // Provide basic AliasAnalysis support for GVN
@@ -89,7 +88,13 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
         PM.run(*M_ptr);
     }
 
-    addSymbols(M_ptr);
+    Modules.push_back(M_ptr);
+
+    for (Module::iterator it = M_ptr->begin(), end = M_ptr->end(); it != end; ++it) {
+        registerFunction(it);
+    }
+
+    //trackSymbols(M_ptr);
 
     JIT->addModule(std::move(M));
 }
@@ -116,25 +121,14 @@ void* MCJITHelper::getPointerToNamedFunction(const std::string &Name) {
 }
 
 Function* MCJITHelper::getFunction(const std::string &Name) {
-
-    Function* F = JIT->FindFunctionNamed(Name.c_str());
-    std::cerr << "[DEBUG] Address read for " << F->getName().str() << " is " << F << std::endl;
-    return F;
-    /** BROKEN
-    Function* ret = nullptr;
-    for (std::vector<Module*>::iterator M_it = Modules.begin(), M_end = Modules.end(); M_it != M_end; ++M_it) {
-        Module* M = *M_it;
-        for (Module::iterator F_it = M->begin(), F_end = M->end(); F_it != F_end; ++F_it) {
-            Function& F = *F_it;
-            if (Name == F.getName().str()) {
-                ret = &F;
-                break; // TODO what about prototypes?
-            }
-        }
+    std::map<std::string, Function*>::iterator it = ActiveFunctions.find(Name);
+    if (it == ActiveFunctions.end()) {
+        std::cerr << "[MCJITHelper] Couldn't locate Function* object for function " << Name
+                  << ", I will rely on the ExecutionEngine!" << std::endl;
+        return JIT->FindFunctionNamed(Name.c_str());
+    } else {
+        return it->second;
     }
-
-    return ret;
-    **/
 }
 
 int (*MCJITHelper::createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))() {
@@ -159,7 +153,7 @@ int (*MCJITHelper::createAnonymousFunctionForCall(const std::string &FunctionNam
 
     Function *Callee = P;
     if (Callee == nullptr) {
-        std::cerr << "[ERROR] cannot resolve function " << FunctionName.c_str() << "\n";
+        std::cerr << "[ERROR] cannot resolve function " << FunctionName.c_str() << std::endl;
         return 0; // TODO
     }
     std::vector<Value*> CalleeArgs;
@@ -189,69 +183,111 @@ bool MCJITHelper::toggleTrackAsm() {
     return !(trackAsmCode = !trackAsmCode); // return the old status
 }
 
-void MCJITHelper::addSymbols(Module* M) {
+void MCJITHelper::registerFunction(Function* F) {
+    std::string name = F->getName().str();
+    if (F->empty()) { // declare
+        std::map<std::string, std::vector<Function*>>::iterator it = FunctionPrototypes.find(name);
+        if (it == FunctionPrototypes.end()) {
+            FunctionPrototypes.insert(std::pair<std::string, std::vector<Function*>>(name, std::vector<Function*>{F}));
+        } else {
+            it->second.push_back(F);
+        }
+    } else { // define
+        std::map<std::string, Function*>::iterator activeIt = ActiveFunctions.find(name);
+        if (activeIt == ActiveFunctions.end()) {
+            ActiveFunctions.insert(std::pair<std::string, Function*>(name, F));
+        } else {
+            // an active symbole exists: replace it and update PrevFunctions
+            Function* oldF = activeIt->second;
+            activeIt->second = F;
+            std::map<std::string, std::vector<Function*>>::iterator it = PrevFunctions.find(name);
+            if (it == PrevFunctions.end()) {
+                PrevFunctions.insert(std::pair<std::string, std::vector<Function*>>(name, std::vector<Function*>{oldF}));
+            } else {
+                it->second.push_back(oldF);
+            }
+        }
+    }
+}
 
-    std::pair<std::string, std::vector<std::string>> p;
-    p.first = M->getModuleIdentifier(); // copy constructor
+void MCJITHelper::prototypeToString(Function& F, std::string &sym_str, std::string &type_str, raw_string_ostream &type_rso) {
+    if (F.isDeclaration()) {
+        sym_str.append("extern ");
+    }
+    F.getReturnType()->print(type_rso);
+    sym_str.append(type_rso.str() + " " + F.getName().str() + "(");
+    type_str.clear();
 
+    if (F.arg_size() > 0) {
+        for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
+            Argument &arg = *it;
+            arg.getType()->print(type_rso);
+            sym_str.append(type_rso.str());
+            type_str.clear();
+            if (arg.hasName()) {
+                sym_str.append(" " + arg.getName().str());
+            }
+            if (++it != end) {
+                sym_str.append(", ");
+            } else {
+                break;
+            }
+        }
+    }
+    sym_str.append(")");
+}
+
+void MCJITHelper::showModules() {
     std::string type_str;
     raw_string_ostream type_rso(type_str);
 
-    for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
-        Function &F = *it;
-
-        std::cerr << "[DEBUG] Address of " << F.getName().str() << " is " << &F << std::endl;
-
-        std::string sym;
-
-        if (F.isDeclaration()) {
-            sym.append("extern ");
+    for (Module* M: Modules) {
+        std::cerr << "[Module: " << M->getModuleIdentifier() << "]" << std::endl;
+        if (M->empty() && M->global_empty()) {
+            std::cerr << "-" << std::endl;
+            continue;
         }
-        F.getReturnType()->print(type_rso);
-        sym.append(type_rso.str() + " " + F.getName().str() + "(");
-        type_str.clear();
 
-        if (F.arg_size() > 0) {
-            for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
-                Argument &arg = *it;
-                arg.getType()->print(type_rso);
-                sym.append(type_rso.str());
-                if (arg.hasName()) {
-                    sym.append(" " + arg.getName().str());
-                }
-                type_str.clear();
-                if (++it != end) {
-                    sym.append(", ");
-                } else {
-                    break;
-                }
-            }
+        // TODO globals
+
+        for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
+            std::string fun_str;
+            prototypeToString(*it, fun_str, type_str, type_rso);
+            std::cerr << fun_str << std::endl;
         }
-        sym.append(")");
-
-        p.second.push_back(sym);
     }
-
-    Symbols.push_back(p);
 }
 
-void MCJITHelper::showSymbols() {
-    if (Symbols.empty()) {
-        std::cerr << "No function symbols have been defined yet!\n";
-        return;
-    }
-
-    for (std::pair<std::string, std::vector<std::string>> &p: Symbols) {
-        std::cerr << "[Module: " << p.first << "]\n";
-        for (std::string &f: p.second) {
-            std::cerr << f << "\n";
+void MCJITHelper::showFunctions() {
+    std::cerr << "[Currently active functions]" << std::endl;
+    if (ActiveFunctions.empty()) {
+        std::cerr << "No functions are present." << std::endl;
+    } else {
+        std::string type_str;
+        raw_string_ostream type_rso(type_str);
+        for (std::map<std::string, Function*>::iterator it = ActiveFunctions.begin(),
+                end = ActiveFunctions.end(); it != end; ++it) {
+            Function* F = it->second;
+            std::string fun_str;
+            prototypeToString(*F, fun_str, type_str, type_rso);
+            std::cerr << fun_str << " [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
+        }
+        if (!PrevFunctions.empty()) {
+            std::cerr << std::endl << "[Previously active functions]" << std::endl;
+            for (std::map<std::string, std::vector<Function*>>::iterator it = PrevFunctions.begin(),
+                    end = PrevFunctions.end(); it != end; ++it) {
+                std::cerr << it->first << " defined in:" << std::endl;
+                for (Function* F: it->second) {
+                    std::cerr << "-> [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
+                }
+            }
         }
     }
 }
 
 void MCJITHelper::showTrackedAsm() {
     if (asmFdStream == nullptr) {
-        std::cerr << "Invoking showTrackedAsm() while raw_fd_ostream has not been created yet! Exiting...\n";
+        std::cerr << "Invoking showTrackedAsm() while raw_fd_ostream has not been created yet! Exiting..." << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -263,7 +299,7 @@ void MCJITHelper::showTrackedAsm() {
     }
 
     while(getline(f, line)) {
-        std::cerr << line << "\n";
+        std::cerr << line << std::endl;
     }
 
     if (f.bad()) {

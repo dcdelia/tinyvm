@@ -30,7 +30,8 @@ void Parser::start() {
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
-            case tok_show_syms:     TheHelper->showSymbols(); break;
+            case tok_show_mods:     TheHelper->showModules(); break;
+            case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_insert_open_osr:   handleInsertOpenOSRCommand(); break;
             case tok_quit:          fprintf(stderr, "Exiting...\n"); return;
             case tok_identifier:    handleFunctionInvocation(1); break;
@@ -42,13 +43,13 @@ void Parser::start() {
 
 void Parser::handleBeginCommand() {
     if (TheLexer->getNextToken() != tok_identifier) {
-        fprintf(stderr, "[ERROR] You must specify a name for the module!\n");
+        std::cerr << "[ERROR] You must specify a name for the module!" << std::endl;
         return;
     }
     std::string ModuleName = TheLexer->getIdentifier();
 
     if ( TheLexer->getNextToken() != tok_newline) {
-        fprintf(stderr, "[ERROR] Invalid syntax for typing a module!\n");
+        std::cerr << "[ERROR] Invalid syntax for typing a module!" << std::endl;
         return;
     }
 
@@ -62,11 +63,11 @@ void Parser::handleBeginCommand() {
 
     FILE* out = fopen(fileName, "w+");
     if (out == nullptr) {
-        fprintf(stderr, "[ERROR] Fatal error when creating IR source file \"%s\".\n", fileName);
+        std::cerr << "[ERROR] Fatal error when creating IR source file \"" << fileName << "\"." << std::endl;
         exit(1);
     }
 
-    fprintf(stderr, "[MODULE] Press CTRL+D when you've entered all the code.\n");
+    std::cerr << "[MODULE] Press CTRL+D when you've entered all the code." << std::endl;
 
     std::string *curLine;
 
@@ -74,19 +75,20 @@ void Parser::handleBeginCommand() {
         curLine = TheLexer->getLine();
         if (curLine == nullptr) break;
 
-        fprintf(out, "%s\n", curLine->c_str());
+        //fprintf(out, "%s\n", curLine->c_str()); // TODO
+        std::cerr << *(curLine) << std::endl;
         TheLexer->getNextToken();
         delete curLine;
     }
 
     TheLexer->getNextToken(); // eats the EOF in the Lexer
     delete curLine;
-    fprintf(stderr, "[MODULE] Module parsed and stored into \"%s\".\n", fileName);
+    std::cerr << "[MODULE] Module parsed and stored into \"" << fileName << "\"." << std::endl,
     fclose(out);
 
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(std::string(fileName));
     TheHelper->addModule(std::move(M)); // default: OptimizeModule = true
-    fprintf(stderr, "[LOAD] The new module has been loaded.\n");
+    std::cerr << "[LOAD] The new module has been loaded." << std::endl;
 }
 
 void Parser::handleDumpCommand() {
@@ -100,7 +102,7 @@ void Parser::handleDumpCommand() {
 
     Function* F = TheHelper->getFunction(Name);
     if (F == nullptr) {
-        fprintf(stderr, "Unable to find function named %s!\n", Name.c_str());
+        std::cerr << "Unable to find function named " << Name << "!" << std::endl;
         return;
     } else {
         F->dump();
@@ -147,7 +149,7 @@ void Parser::handleFunctionInvocation(int iterations) {
         timer_end(&timer);
 
         timer_print_elapsed(&timer);
-        fprintf(stderr, "Evaluated to: %d\n", result);
+        std::cerr << "Evaluated to: " << result << std::endl;
     } else {
         int i, result;
 
@@ -159,8 +161,8 @@ void Parser::handleFunctionInvocation(int iterations) {
 
         timer_print_elapsed(&timer);
         timer_print_avg(&timer, iterations);
-        fprintf(stderr, "Number of iterations: %d\n", iterations);
-        fprintf(stderr, "Last call evaluated to: %d\n", result);
+        std::cerr << "Number of iterations: " << iterations << std::endl;
+        std::cerr << "Last call evaluated to: " << result << std::endl;
     }
 }
 
@@ -175,7 +177,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> REPEAT <iterations> <function call>\n" << "\tPerforms a function call (see next paragraph) repeatedly.\n";
     std::cerr << "--> TRACK_ASM\n" << "\tEnable/disable logging of generated x86-64 assembly code.\n";
     std::cerr << "--> SHOW_ASM\n" << "\tShow logged x86-64 assembly code.\n";
-    std::cerr << "--> SHOW_SYMS\n" << "\tShow available function symbols.\n";
+    std::cerr << "--> SHOW_MODS\n" << "\tShow loaded modules and their symbols.\n";
     std::cerr << "--> QUIT\n" << "\tExits TinyVM.\n";
 
     // function invocation
@@ -293,34 +295,35 @@ void Parser::handleInsertOSRCommand() {
     ValueToValueMapTy* VMap = TheHelper->generateIdentityMapping(src);
     StateMap::ValueToValuesMap* VVsMap = StateMap::convertValueToValueMapTy(*VMap);
 
-    fprintf(stderr, "VVsMap generated!\n");
+    std::cerr << "VVsMap generated!" << std::endl;
 
     StateMap M(src, dest, VVsMap);
-    fprintf(stderr, "StateMap generated!\n");
+    std::cerr << "StateMap generated!" << std::endl;
 
     // print information about values to fetch
     StateMap::BBSrcDestPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
     M.getLivenessResultsForSrcFunction().printResultsToScreen(src_bb);
     std::vector<Value*> &valuesToFetch = M.getValuesToFetchFromSrcFunction(tmpSrcDestPair);
-    fprintf(stderr, "Values to fetch: %lu\n", valuesToFetch.size());
+    std::cerr << "Values to fetch: " << valuesToFetch.size() << std::endl;
     for (int i = 0, e = valuesToFetch.size(); i < e; ++i) {
-        fprintf(stderr, "%s ", valuesToFetch[i]->getName().str().c_str());
+        std::cerr << valuesToFetch[i]->getName().str() << " ";
     }
-    fprintf(stderr, "\n");
+    std::cerr << std::endl;
 
     // we generate a condition that is always true as OSRCond
     OSRLibrary::OSRCond cond;
     cond.push_back(TheHelper->generateAlwaysTrueCond());
 
-    fprintf(stderr, "OSRCond generated!\n");
+    std::cerr << "OSRCond generated!" << std::endl;
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(*src, *src_bb, *dest, *dest_bb, cond, M, F1_OSR, F2_OSR);
-    fprintf(stderr, "insertFinalizedOSR succeded!\n");
+
+    std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *dest_new = pair.second;
 
-    fprintf(stderr, "First function generated: %s\n", src_new->getName().str().c_str());
-    fprintf(stderr, "Second function generated: %s\n", dest_new->getName().str().c_str());
+    std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
+    std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
     std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", getGlobalContext()); // TODO unique names, get Context from Helper
     Module* OSRModule_p = OSRModule.get();
@@ -328,7 +331,7 @@ void Parser::handleInsertOSRCommand() {
     OSRModule_p->getFunctionList().push_back(src_new);
     OSRModule_p->getFunctionList().push_back(dest_new);
 
-    fprintf(stderr, "Module %s generated!\n", OSRModule_p->getModuleIdentifier().c_str());
+    std::cerr << "Module " << OSRModule_p->getModuleIdentifier() << " generated!" << std::endl;
 
     TheHelper->addModule(std::move(OSRModule), false);
 }

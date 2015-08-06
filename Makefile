@@ -6,13 +6,13 @@ SRC		= src
 INCLUDE		= include
 CFLAGS		= -O0 -g -Wall -I$(INCLUDE)
 CXX_FLAGS	= -O0 -g -Wall -I$(INCLUDE)
-LLVM_CFLAGS	= # LLVM C API unused
+LLVM_CFLAGS	= # we do not use LLVM C API
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
 LLVM_LDFLAGS	= $(shell llvm-config  --ldflags --system-libs --libs core irreader mcjit native)
 
 all: TinyVM
 
-TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OldStateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o $(BUILD)/timer.o $(BUILD)/history.o
+TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o $(BUILD)/timer.o $(BUILD)/history.o
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
@@ -36,16 +36,13 @@ $(BUILD)/StackMap.o: $(SRC)/StackMap.cpp $(INCLUDE)/StackMap.hpp
 $(BUILD)/Liveness.o: $(SRC)/Liveness.cpp $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Liveness.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Liveness.o
 
-$(BUILD)/OldStateMap.o: $(SRC)/OldStateMap.cpp $(INCLUDE)/OldStateMap.hpp $(INCLUDE)/Liveness.hpp
-	$(CXX) $(CXX_FLAGS) -c $(SRC)/OldStateMap.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OldStateMap.o
-
 $(BUILD)/StateMap.o: $(SRC)/StateMap.cpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/StateMap.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/StateMap.o
 
-$(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/OldStateMap.hpp
+$(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/OSRLibrary.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSRLibrary.o
 
-$(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/OldStateMap.hpp $(INCLUDE)/timer.h
+$(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Parser.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Parser.o
 
 $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h

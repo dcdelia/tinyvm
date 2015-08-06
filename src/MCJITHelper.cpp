@@ -30,7 +30,7 @@
 #include <fcntl.h>
 
 #include "OSRLibrary.hpp"
-#include "OldStateMap.hpp"
+#include "StateMap.hpp"
 
 using namespace llvm;
 

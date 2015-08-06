@@ -2,7 +2,7 @@
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
-#include "OldStateMap.hpp"
+#include "StateMap.hpp"
 #include "timer.h"
 
 #include <cstdio>
@@ -291,19 +291,15 @@ void Parser::handleInsertOSRCommand() {
         return;
     }
 
-    /* From now on src == dest */
-    ValueToValueMapTy* VMap = TheHelper->generateIdentityMapping(src);
-    OldStateMap::ValueToValuesMap* VVsMap = OldStateMap::convertValueToValueMapTy(*VMap);
-
-    std::cerr << "VVsMap generated!" << std::endl;
-
-    OldStateMap M(src, dest, VVsMap);
-    std::cerr << "StateMap generated!" << std::endl;
+    std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
+    StateMap* M = tmpMapPair.second;
+    dest = tmpMapPair.first;
+    dest_bb = cast<BasicBlock>(M->getCorrespondingOneToOneValue(src_bb)); // TODO
 
     // print information about values to fetch
-    OldStateMap::BBSrcDestPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
-    M.getLivenessResultsForSrcFunction().printResultsToScreen(src_bb);
-    std::vector<Value*> &valuesToFetch = M.getValuesToFetchFromSrcFunction(tmpSrcDestPair);
+    StateMap::BlockPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
+    M->getLivenessResults().first.printResultsToScreen(src_bb);
+    std::vector<Value*> valuesToFetch = M->getValuesToFetchFromSrcFunction(tmpSrcDestPair);
     std::cerr << "Values to fetch: " << valuesToFetch.size() << std::endl;
     for (int i = 0, e = valuesToFetch.size(); i < e; ++i) {
         std::cerr << valuesToFetch[i]->getName().str() << " ";
@@ -316,7 +312,7 @@ void Parser::handleInsertOSRCommand() {
 
     std::cerr << "OSRCond generated!" << std::endl;
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(*src, *src_bb, *dest, *dest_bb, cond, M, F1_OSR, F2_OSR);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(*src, *src_bb, *dest, *dest_bb, cond, *M, F1_OSR, F2_OSR);
 
     std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 
@@ -462,7 +458,7 @@ void Parser::handleInsertOpenOSRCommand() {
 
     Function* dest;
     BasicBlock* dest_bb;
-    OldStateMap* m;
+    StateMap *m; // TODO
 
     OSRLibrary::OpenOSRInfo info;
     info.f1 = src;

@@ -1,5 +1,4 @@
 #include "OSRLibrary.hpp"
-#include "OldStateMap.hpp"
 #include "StateMap.hpp"
 
 #include "llvm/PassManager.h"
@@ -27,11 +26,13 @@ using namespace llvm;
  * Global TODO list
  * - check hasName() before setName()
  * - use better aliases for types
- * - use const references more?
- * - nomi strani in OSRDestFun
- * - controllare che liveness analisis non includa valori di OSRCond
- * - Context
+ * - use const references more
+ * - fix names in OSRDestFun
+ * - live values vs OSRCond
+ * - Context parameter
  * - verbose mode
+ * - what would happen to reassigned Argument??
+ * - general attributes of the Function? (http://llvm.org/docs/HowToUseAttributes.html)
  */
 
 /**
@@ -47,81 +48,119 @@ static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = n
     return ret;
 }
 
-Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, OldStateMap::BBSrcDestPair &srcDestBlocks,
-                                std::vector<Value*> &valuesToPass, OldStateMap &M, const Twine& F2NewName) {
+Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::BlockPair &srcDestBlocks,
+                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName) {
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
      * (2)  Generate OSRDest function and set argument names
      * (3)  Duplicate the body of F2 inside OSRDest
-     * (4)  Apply attributes (e.g., by value) to "copied" live arguments when required
-     * (5)  Compute information for dead arguments in dest
-     * (6)  Generate new entrypoint and retrieve mapping for live values
-     * (7)  Perform updates of uses using ValueToValueMapTy information
+     * (4)  Apply attributes to fetched Argument values
+     * (5)  Ask the StateMap to generate the new entrypoint and retrieve mapping for [reconstructed] live values
+     * (6)  Replace dead arguments with a default null value and match live arguments
+     * (7)  Fix operand references using destToOSRDestVMap
      * (8)  Insert new entrypoint
-     * (9)  Replace all updated uses and insert phi nodes
-     * (10) Check generated function for correctness
+     * (9)  Replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
      */
+    ValueToValueMapTy fetchedValuesToOSRDestArgs;
     ValueToValueMapTy destToOSRDestVMap;
-    ValueToValueMapTy updatesForDestToOSRDestVMap;
     Function* OSRDestFun;
     Function* dest = &F2;
     BasicBlock* dest_block = srcDestBlocks.second;
+
     std::vector<Value*> &origValuesToSetAtDestBlock = M.getValuesToSetForDestFunction(srcDestBlocks);
 
-    FunctionType* OSRDestFTy = generatePrototypeForOSRDest(&F1, valuesToPass); // (1)
-    Twine OSRDestFunName = F2NewName.isTriviallyEmpty() ? Twine(dest->getName(), "DestOSR") : const_cast<Twine&>(F2NewName); // TODO index or f1@l1TOf2@l2
+    // step (1): generate prototype for OSRDest function
+    std::vector<Type*> ArgTypes;
+    for (Value* v: valuesToPass) {
+        ArgTypes.push_back(v->getType());
+    }
+    FunctionType *OSRDestFTy = FunctionType::get(dest->getReturnType(), ArgTypes, false);
 
+    // step (2): generate OSRDest function and set argument names
+    Twine OSRDestFunName = F2NewName.isTriviallyEmpty() ?
+                            Twine(dest->getName(), "DestOSR") : const_cast<Twine&>(F2NewName); // TODO index or f1@l1TOf2@l2
     OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), OSRDestFunName); // (2)
     Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
     for (Value* src_v: valuesToPass) {
-        (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr")); // maybe from dest rather than src function???
+        fetchedValuesToOSRDestArgs[src_v] = OSRDestArgIt;
+        (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr"));
     }
     assert(OSRDestArgIt == OSRDestFun->arg_end());
 
-    copyBodyIntoNewFunction(dest, OSRDestFun, destToOSRDestVMap); // (3)
+    // step (3): duplicate the body of F2 inside OSRDest
+    duplicateBodyIntoNewFunction(dest, OSRDestFun, destToOSRDestVMap);
 
-    applyAttributesToArguments(OSRDestFun, dest, valuesToPass); // (4)
+    // step (4): apply attributes to fetched Argument values
+    applyAttributesToArguments(OSRDestFun, dest, valuesToPass);
 
-    std::map<const Argument*, Value*> deadArgsMap = getMapForDeadArgs(dest, valuesToPass); // (5)
+    // step (5): ask the StateMap to generate the new entrypoint and retrieve
+    //           mapping for [reconstructed] live values
+    BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();
+    BasicBlock* newDestBlock = cast<BasicBlock>(destToOSRDestVMap[dest_block]);
 
-    BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();  // (6)
-    BasicBlock* newEntryPoint = M.createEntryPointForOSRDestFunction(srcDestBlocks,
-                OSRDestFun, destToOSRDestVMap, updatesForDestToOSRDestVMap, valuesToPass);
+    std::vector<Value*>& valuesToSetAtDest = M.getValuesToSetForDestFunction(srcDestBlocks);
+    std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.createEntryPointForNewDestFunction(srcDestBlocks,
+            newDestBlock, valuesToSetAtDest, fetchedValuesToOSRDestArgs, getGlobalContext());
 
-    updateDestToOSRDestVMapForArguments(dest, destToOSRDestVMap, deadArgsMap, updatesForDestToOSRDestVMap); // (7)
-    updateOpMappingForClonedBody(OSRDestFun, dest, destToOSRDestVMap);
+    BasicBlock* newEntryPoint = entryPointPair.first;
+    ValueToValueMapTy *updatesForDestToOSRDestVMap = entryPointPair.second;
 
-    newEntryPoint->insertInto(OSRDestFun, oldEntryPoint); // (8)
+    // step (6): replace dead arguments with a default null value and match live arguments
+    int dead_args = 0, live_args = 0;
+    for (const Argument &destArg: dest->args()) {
+        ValueToValueMapTy::iterator it = updatesForDestToOSRDestVMap->find(&destArg);
+        if (it == updatesForDestToOSRDestVMap->end()) { // argument is dead
+            Value* v = UndefValue::get(destArg.getType());
+            destToOSRDestVMap.insert(std::pair<const Argument*, Value*>(&destArg, v));
+            dead_args++;
+        } else { // argument is live
+            destToOSRDestVMap.insert(std::pair<const Argument*, Value*>(&destArg, it->second));
+            // updateOpMappingForClonedBody() will update each Use of this argument
+            updatesForDestToOSRDestVMap->erase(it);
+            live_args++;
+        }
+    }
+    assert(dead_args + live_args == dest->getArgumentList().size());
+
+    // step (7): fix operand references using destToOSRDestVMap
+    fixOperandReferencesFromVMap(OSRDestFun, dest, destToOSRDestVMap);
+
+    // step (8): insert new entrypoint
+    newEntryPoint->insertInto(OSRDestFun, oldEntryPoint);
     assert(&OSRDestFun->getEntryBlock() == newEntryPoint);
 
-    SmallVector<PHINode*, 8> insertedPHINodes; // (9)
+    // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
+    SmallVector<PHINode*, 8> insertedPHINodes;
     replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
-            destToOSRDestVMap, updatesForDestToOSRDestVMap, &insertedPHINodes);
+            destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes);
     std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
+
+    delete updatesForDestToOSRDestVMap;
 
     return OSRDestFun;
 
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, OldStateMap &M,
+                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
                         const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
     // common stuff for the generation of F1' and F2'
     Function *newSrcFun, *OSRDestFun;
     raw_os_ostream errStream(std::cerr);
     bool preventOptimize = false; // set by verifyAux in case of error
-    OldStateMap::BBSrcDestPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
-    std::vector<Value*> &valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
+    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
+    std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     assert(F1.getReturnType() == F2.getReturnType());
 
-    // verifyFunction() segfaults if a Function is not in a Module
-    Module *tmpMod = new Module("OSRtmpMod", getGlobalContext());
+    // verifyFunction() needs a Module
+    Module tmpMod("OSRtmpMod", getGlobalContext());
 
     /* Prepare F2' aka OSRDestFun */
     OSRDestFun = generateOSRDestFun(F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
 
-    tmpMod->getFunctionList().push_back(OSRDestFun); // (10)
+    /* Check generated OSRDestFun for well-formedness */
+    tmpMod.getFunctionList().push_back(OSRDestFun);
     verifyAux(OSRDestFun, &errStream, &preventOptimize);
 
     /* [Prepare F1' aka newSrc] Workflow:
@@ -129,12 +168,13 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
      * (2) Regenerate OSRCond using information from VMap (updates the map too!)
      * (3) Generate OSRBlock to invoke OSRDestFun and return its result
      * (4) Insert code to compute OSR condition and jump to OSRBlock
-     * (5) Check generated function for correctness
+     * (5) Check generated function for well-formedness
      */
     Function* src = &F1;
     ValueToValueMapTy srcToNewSrcVMap;
 
-    Twine newSrcFunName = F1NewName.isTriviallyEmpty() ? Twine(src->getName(), "WithOSR") : const_cast<Twine&>(F1NewName); // (1) TODO use better names
+    Twine newSrcFunName = F1NewName.isTriviallyEmpty() ?
+                            Twine(src->getName(), "WithOSR") : const_cast<Twine&>(F1NewName); // (1) TODO use better names
     newSrcFun = duplicateFunction(src, newSrcFunName, srcToNewSrcVMap);
     std::vector<Value*> newValuesToPass; // I have to regenerate valuesToPass as well!
     for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
@@ -147,14 +187,14 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     OSR_B->insertInto(newSrcFun);
 
     Twine splitBlockName("splitBlockForOSRTo", OSRDestFun->getName()); // (4)
-    BasicBlock* srcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]); // TODO check this, srcDestBlocks.second was a bug?!?
+    BasicBlock* srcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]);
     BasicBlock* splittedBlock = insertOSRCond (newSrcFun, srcBlock, OSR_B, newCond, splitBlockName);
 
-    tmpMod->getFunctionList().push_back(newSrcFun); // (5)
+    tmpMod.getFunctionList().push_back(newSrcFun); // (5)
     verifyAux(newSrcFun, &errStream, &preventOptimize);
 
     if (!preventOptimize) {
-        legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(tmpMod);
+        legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(&tmpMod);
 
         FPM->add(createCFGSimplificationPass()); // will remove the old entrypoint and fix PHI nodes
 
@@ -168,8 +208,6 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
 
     OSRDestFun->removeFromParent();
     newSrcFun->removeFromParent();
-
-    // TODO delete tmpMod?
 
     return OSRPair(newSrcFun, OSRDestFun);
 }
@@ -280,7 +318,6 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     destFunGenArgTypes[1] = i8PointerTy;
     FunctionType* destFunGeneratorTy = FunctionType::get(pointerToFunToGenerateTy, destFunGenArgTypes, false);
 
-    //LoadInst* loadInfo = new LoadInst(infoAlloca, "info_ptr", stubEntryPoint);
     Value* destFunGenArgs[2];
     destFunGenArgs[0] = infoAlloca;
     destFunGenArgs[1] = stub->arg_begin();
@@ -327,8 +364,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
         std::cerr << "Sorry, this has not been implemented yet!" << std::endl;
         exit(1);
     } else {
-        //newProfDataVal = ConstantPointerNull::get(i8PointerTy);
-        newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy);
+        newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy); // we pass 0 as NULL value
     }
     newValuesToPass.push_back(newProfDataVal);
     for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
@@ -377,50 +413,23 @@ void OSRLibrary::enableRedirection(uint64_t f, uint64_t destination) {
 /**
  * Auxiliary methods
  */
-
-FunctionType* OSRLibrary::generatePrototypeForOSRDest(Function* src, std::vector<Value*> &valuesToPass) {
-    std::vector<Type*> ArgTypes;
-    for (Value* v: valuesToPass) {
-        ArgTypes.push_back(v->getType());
-    }
-    FunctionType *NFTy = FunctionType::get(src->getReturnType(), ArgTypes, false);
-
-    return NFTy;
-}
-
 void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass) {
-    // check CloneFunctionInto() from CloneFunction.cpp for more details
-    AttributeSet FunAttrs = F->getAttributes();
-    for (const Argument &OldArg: F->args()) {
-        const Value& old_v = cast<Value>(OldArg);
-        std::vector<Value*>::iterator it = std::find(valuesToPass.begin(), valuesToPass.end(), &old_v);
-        if (it == valuesToPass.end()) continue; // argument is not live at the OSR point
-        Value* v = *it;
-        AttributeSet attrs = FunAttrs.getParamAttributes(OldArg.getArgNo() + 1); // 0 is for the function?
-        if (attrs.getNumSlots() > 0) {
-            Argument* arg = cast<Argument>(v);
-            arg->addAttr(attrs);
+    AttributeSet srcFunAttrs = F->getAttributes();
+    int index = 0;
+    for (Argument &arg: NF->args()) {
+        Value* src_v = valuesToPass[index];
+        if (Argument* src_arg = dyn_cast<Argument>(src_v)) {
+            AttributeSet attrs = srcFunAttrs.getParamAttributes(src_arg->getArgNo() + 1); // 0 is for the function
+            if (attrs.getNumSlots() > 0) {
+                arg.addAttr(attrs);
+            }
         }
+        ++index;
     }
 }
 
-std::map<const Argument*, Value*> OSRLibrary::getMapForDeadArgs(Function *orig, std::vector<Value*> &valuesToPass) {
-    std::map<const Argument*, Value*> deadArgsStorageMap;
-
-    for (const Argument &arg_ref: orig->args()) {
-        std::vector<Value*>::iterator it = std::find(valuesToPass.begin(), valuesToPass.end(), &(cast<Value>(arg_ref)));
-        if (it == valuesToPass.end()) { // argument is not live at the OSR point
-            const Argument* arg = &arg_ref;
-            Value* v = UndefValue::get(arg->getType()); // see also DeleteDeadBlock() in BasicBlockUtils.cpp
-            deadArgsStorageMap.insert(std::pair<const Argument*, Value*>(arg, v));
-        }
-    }
-
-    return deadArgsStorageMap;
-}
-
-void OSRLibrary::copyBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap) {
-    // NOTE: unfortunately I can't clone debug info metadata at the moment :-(
+void OSRLibrary::duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap) {
+    // TODO manually clone debug info metadata (LLVM's method is not visible!)
 
     /** The following block is borrowed from CloneFunctionInto() in CloneFunction.cpp **/
     Function *OldFunc = F, *NewFunc = NF;
@@ -457,10 +466,10 @@ void OSRLibrary::copyBodyIntoNewFunction(Function* F, Function *NF, ValueToValue
     }
 
     /* NOTE: do not forget to execute updateOpMappingForClonedBody() as
-     * you still have to fix all the uses of values using VMap! */
+     * you still have to fix all the uses of values through a VMap! */
 }
 
-void OSRLibrary::updateOpMappingForClonedBody(Function* NF, Function* F, ValueToValueMapTy &VMap) {
+void OSRLibrary::fixOperandReferencesFromVMap(Function* NF, Function* F, ValueToValueMapTy &VMap) {
     // Credits: CloneFunctionInto() from CloneFunction.cpp
     bool ModuleLevelChanges = false;
 
@@ -472,29 +481,6 @@ void OSRLibrary::updateOpMappingForClonedBody(Function* NF, Function* F, ValueTo
             RemapInstruction(II, VMap, ModuleLevelChanges ? RF_None : RF_NoModuleLevelChanges);
         }
     }
-}
-
-void OSRLibrary::updateDestToOSRDestVMapForArguments(Function* dest, ValueToValueMapTy &destToOSRDestVMap,
-        std::map<const Argument*, Value*> &deadArgsMap, ValueToValueMapTy &updatesForDestToOSRDestVMap) {
-    size_t num_args = dest->getArgumentList().size();
-    size_t index = 0;
-    std::map<const Argument*, Value*>::iterator deadIter;
-    for (deadIter = deadArgsMap.begin(); deadIter != deadArgsMap.end(); ++deadIter) {
-        destToOSRDestVMap[deadIter->first] = deadIter->second;
-        ++index;
-    }
-    assert(index <= num_args);
-    ValueToValueMapTy::iterator liveIter;
-    for (liveIter = updatesForDestToOSRDestVMap.begin(); liveIter != updatesForDestToOSRDestVMap.end(); ) {
-        if (isa<Argument>(liveIter->first)) {
-            destToOSRDestVMap[liveIter->first] = liveIter->second;
-            updatesForDestToOSRDestVMap.erase(liveIter++); // and also remove entry from map
-            ++index;
-        } else {
-            ++liveIter;
-        }
-    }
-    assert(index == num_args);
 }
 
 void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock, std::vector<Value*> &origValuesToSetForDestBlock, ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes) {

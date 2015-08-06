@@ -1,7 +1,7 @@
 #ifndef TINYVM_OSRLIBRARY_H
 #define TINYVM_OSRLIBRARY_H
 
-#include "OldStateMap.hpp"
+#include "StateMap.hpp"
 
 #include <map>
 
@@ -22,7 +22,7 @@ class OSRLibrary {
             BasicBlock*     b1;
             Function**      f2_pp;
             BasicBlock**    b2_pp;
-            OldStateMap**   m_pp;
+            StateMap**      m_pp;
         } OpenOSRInfo;
 
         // to simpify raw IR generation do the casts inside the destFunGenerator (written in C++)
@@ -37,25 +37,21 @@ class OSRLibrary {
         typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);
 
         static OSRPair insertFinalizedOSR(Function& F1, BasicBlock& B1, Function& F2,
-            BasicBlock& B2, OSRCond& cond, OldStateMap& M, const Twine& F1NewName="", const Twine& F2NewName="");
+            BasicBlock& B2, OSRCond& cond, StateMap& M, const Twine& F1NewName="", const Twine& F2NewName="");
         static OSRPair insertOpenOSR(OpenOSRInfo& info, OSRCond& cond, Value* profDataVal,
             DestFunGenerator destFunGenerator, const Twine& F1NewName="", std::vector<Value*> *valuesToTransfer = nullptr);
 
         static std::vector<Value*>* defaultValuesToTransferForOpenOSR(Function& F, BasicBlock &B);
-        static Function* generateOSRDestFun(Function &F1, Function &F2, OldStateMap::BBSrcDestPair &srcDestBlocks,
-                                std::vector<Value*> &valuesToPass, OldStateMap &M, const Twine& F2NewName);
+        static Function* generateOSRDestFun(Function &F1, Function &F2, StateMap::BlockPair &srcDestBlocks,
+                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName);
 
         static Function* prepareForRedirection(Function& F);
         static void enableRedirection(uint64_t f, uint64_t destination);
 
     private:
-        static FunctionType* generatePrototypeForOSRDest(Function* src, std::vector<Value*> &valuesToPass);
         static void applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass);
-        static std::map<const Argument*, Value*> getMapForDeadArgs(Function *orig, std::vector<Value*> &valuesToPass);
-        static void copyBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap);
-        static void updateOpMappingForClonedBody(Function* NF, Function* F, ValueToValueMapTy &VMap);
-        static void updateDestToOSRDestVMapForArguments(Function* dest, ValueToValueMapTy &destToOSRDestVMap,
-            std::map<const Argument*, Value*> &deadArgsMap, ValueToValueMapTy &updatesForDestToOSRDestVMap);
+        static void duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap);
+        static void fixOperandReferencesFromVMap(Function* NF, Function* F, ValueToValueMapTy &VMap);
         static void replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock, std::vector<Value*> &origValuesToSetForDestBlock,
             ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes);
         static Function* duplicateFunction(Function* F, const Twine &Name, ValueToValueMapTy &VMap);

@@ -294,7 +294,8 @@ void Parser::handleInsertOSRCommand() {
     std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
     StateMap* M = tmpMapPair.second;
     dest = tmpMapPair.first;
-    dest_bb = cast<BasicBlock>(M->getCorrespondingOneToOneValue(src_bb)); // TODO
+    dest_bb = M->getCorrespondingBlock(src_bb);
+    assert(dest_bb != nullptr);
 
     // print information about values to fetch
     StateMap::BlockPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);

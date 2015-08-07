@@ -17,6 +17,7 @@ using namespace llvm;
 class StateMap {
 public:
     typedef std::pair<BasicBlock*, BasicBlock*> BlockPair;
+    typedef std::map<BasicBlock*, BasicBlock*>  BlockMap;
     typedef SmallVectorImpl<Value*> CompCodeArgs;
     typedef SmallVectorImpl<BasicBlock*> BBSequence;
 
@@ -41,7 +42,7 @@ public:
 
     typedef struct BlockPairInfo {
         ValueInfoMap        valueInfoMap;
-        CompCode*           globalCompCode; // value will be nullptr
+        CompCode*           globalCompCode; // value field == nullptr
     } BlockPairInfo;
 
     typedef std::map<Value*, Value*> OneToOneValueMap;
@@ -60,9 +61,11 @@ public:
         F1LivenessAnalysis(LivenessAnalysis(F1)), F2LivenessAnalysis(LivenessAnalysis(F2)) {
         defaultOneToOneMap = new OneToOneValueMap();
         for (ValueToValueMapTy::const_iterator it = VMap.begin(), end = VMap.end(); it != end; ++ it) {
-            defaultOneToOneMap->insert(std::pair<Value*, Value*>(it->second, const_cast<Value*>(it->first)));
-            if (reverseMap) {
-                defaultOneToOneMap->insert(std::pair<Value*, Value*>(const_cast<Value*>(it->first), it->second));
+            Value* src_v = const_cast<Value*>(it->first);
+            Value* dest_v = it->second;
+            registerOneToOneValue(src_v, dest_v, reverseMap);
+            if (BasicBlock* src_b = dyn_cast<BasicBlock>(src_v)) {
+                registerCorrespondingBlock(src_b, cast<BasicBlock>(dest_v), reverseMap);
             }
         }
     }
@@ -70,16 +73,22 @@ public:
     /* Public methods */
     std::pair<Function*, Function*> getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> getLivenessResults();
+
+    // methods for generating OSR functions/stubs
     std::vector<Value*>& getValuesToSetForDestFunction(BlockPair &pair); // & as they are cached
-    std::vector<Value*> getValuesToFetchFromSrcFunction(BlockPair &pair); // TODO cache these too
+    std::vector<Value*> getValuesToFetchFromSrcFunction(BlockPair &pair);
     std::pair<BasicBlock*, ValueToValueMapTy*> createEntryPointForNewDestFunction(BlockPair &pair, BasicBlock* newDestBB,
         std::vector<Value*>& valuesToSetAtDest, ValueToValueMapTy& fetchedValuesToNewDestArgs, LLVMContext &Context);
 
-    // TODO: methods for registering mapping information other than defaultOneToOneMap are missing
+    // methods for registering mapping information
+    void    registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirectional = false);
+    void    registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b, bool bidirectional = true);
+    // TODO: methods for registering ValueInfo and BlockPairInfo
 
-    // TODO: add more methods for querying
-    Value*  getCorrespondingOneToOneValue(Value *v);
-
+    // methods for querying
+    Value*      getCorrespondingOneToOneValue(Value *v);
+    BasicBlock* getCorrespondingBlock(BasicBlock *B);
+    ValueInfo*  getValueInfo(Value* v, BlockPair &pair);
 
     // this method is static so that insertOpenOSR can access it
     static std::vector<Value*>* getValuesToSetForBlock(BasicBlock &B, LivenessAnalysis::LiveValues& liveInAtBlock);
@@ -91,6 +100,7 @@ public:
 private:
     Function *F1, *F2;
     OneToOneValueMap*   defaultOneToOneMap;
+    BlockMap            correspondingBlockMap;
     BlockPairStateMap   blockPairStateMap;
     LivenessAnalysis    F1LivenessAnalysis, F2LivenessAnalysis;
     std::map<BasicBlock*, std::vector<Value*>> cacheForValuesToSetForBlocks;

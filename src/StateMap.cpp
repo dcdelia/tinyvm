@@ -20,7 +20,7 @@ std::pair<LivenessAnalysis&, LivenessAnalysis&> StateMap::getLivenessResults() {
 std::pair<Function*, StateMap*> StateMap::generateIdentityMapping(Function *F) {
     ValueToValueMapTy VMap;
     Function* copy = CloneFunction(F, VMap, false);
-    StateMap* M = new StateMap(F, copy, VMap, true); // reverseMap = false --- // TODO fix this
+    StateMap* M = new StateMap(F, copy, VMap, false); // reverseMap = false
 
     return std::pair<Function*, StateMap*>(copy, M);
 }
@@ -179,5 +179,40 @@ Value* StateMap::getCorrespondingOneToOneValue(Value *v) {
         return oneToOneIt->second;
     } else {
         return nullptr;
+    }
+}
+
+BasicBlock* StateMap::getCorrespondingBlock(BasicBlock *B) {
+    BlockMap::iterator blockIt = correspondingBlockMap.find(B);
+    if (blockIt != correspondingBlockMap.end()) {
+        return blockIt->second;
+    } else {
+        return nullptr;
+    }
+}
+
+StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::BlockPair &pair) {
+    BlockPairStateMap::iterator BPSMIt = blockPairStateMap.find(pair);
+    if (BPSMIt != blockPairStateMap.end()) {
+        BlockPairInfo& bpInfo = BPSMIt->second;
+        ValueInfoMap::iterator VIMIt = bpInfo.valueInfoMap.find(v);
+        if (VIMIt != bpInfo.valueInfoMap.end()) {
+            return VIMIt->second;
+        }
+    }
+    return nullptr;
+}
+
+void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirectional) {
+    defaultOneToOneMap->insert(std::pair<Value*, Value*>(dest_v, src_v));
+    if (bidirectional) {
+        defaultOneToOneMap->insert(std::pair<Value*, Value*>(src_v, dest_v));
+    }
+}
+
+void StateMap::registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b, bool bidirectional) {
+    correspondingBlockMap.insert(std::pair<BasicBlock*, BasicBlock*>(src_b, dest_b));
+    if (bidirectional) {
+        correspondingBlockMap.insert(std::pair<BasicBlock*, BasicBlock*>(dest_b, src_b));
     }
 }

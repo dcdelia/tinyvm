@@ -87,7 +87,7 @@ void Parser::handleBeginCommand() {
     fclose(out);
 
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(std::string(fileName));
-    TheHelper->addModule(std::move(M)); // default: OptimizeModule = true
+    TheHelper->addModule(std::move(M), false);
     std::cerr << "[LOAD] The new module has been loaded." << std::endl;
 }
 
@@ -343,7 +343,7 @@ void Parser::handleLoadCommand() {
     }
     std::cerr << "[LOAD] Opening \"" << fileName << "\" as IR source file..." << std::endl;
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(*FileName);
-    TheHelper->addModule(std::move(M)); // default: OptimizeModule = false
+    TheHelper->addModule(std::move(M), false);
     delete FileName;
 }
 
@@ -457,22 +457,16 @@ void Parser::handleInsertOpenOSRCommand() {
 
     std::cerr << "OSRCond generated!" << std::endl;
 
-    Function* dest;
-    BasicBlock* dest_bb;
-    StateMap *m; // TODO
-
     OSRLibrary::OpenOSRInfo info;
     info.f1 = src;
     info.b1 = src_bb;
-    info.f2_pp = &dest;
-    info.b2_pp = &dest_bb;
-    info.m_pp = &m;
+    MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
+    extra->TheHelper = TheHelper;
+    info.extra = extra;
 
     std::cerr << "Value for info.f1 is " << info.f1 << std::endl;
     std::cerr << "Value for info.b1 is " << info.b1 << std::endl;
-    std::cerr << "Value for info.f2_pp is " << info.f2_pp << std::endl;
-    std::cerr << "Value for info.b2_pp is " << info.b2_pp << std::endl;
-    std::cerr << "Value for info.m_pp is " << info.m_pp << std::endl;
+    std::cerr << "Value for info.extra is " << info.extra << std::endl;
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 

@@ -20,18 +20,14 @@ class OSRLibrary {
         typedef struct OpenOSRInfo {
             Function*       f1;
             BasicBlock*     b1;
-            Function**      f2_pp;
-            BasicBlock**    b2_pp;
-            StateMap**      m_pp;
+            void*           extra;
         } OpenOSRInfo;
 
         // to simpify raw IR generation do the casts inside the destFunGenerator (written in C++)
         typedef struct RawOpenOSRInfo {
             void*   f1;
             void*   b1;
-            void*   f2_pp;
-            void*   b2_pp;
-            void*   m_pp;
+            void*   extra;
         } RawOpenOSRInfo;
 
         typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);

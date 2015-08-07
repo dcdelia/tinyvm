@@ -23,6 +23,13 @@ using namespace llvm;
 
 class MCJITHelper {
 public:
+    typedef struct MCJITHelperOSRInfo {
+        MCJITHelper*    TheHelper;
+        Function*       f2;
+        BasicBlock*     b2;
+        StateMap*       m;
+    } MCJITHelperOSRInfo;
+
     MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) : Context(C),
                     trackAsmCode(false), asmFdStream(nullptr), asmFileName("session.asm") {
         if (InitialModule == nullptr) {
@@ -51,6 +58,7 @@ public:
 
     // public members
     ExecutionEngine *JIT;
+    LLVMContext     &Context;
 
     // public methods
     void addModule(std::unique_ptr<Module> M, bool OptimizeModule = false);
@@ -69,7 +77,6 @@ public:
     static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);
 
 private:
-    LLVMContext                     &Context;
     IRBuilder<>                     *Builder;
     CustomMemoryManager             *MManager;
     std::vector<Module*>            Modules;

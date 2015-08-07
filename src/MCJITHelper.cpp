@@ -46,36 +46,34 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     M_ptr->setDataLayout(JIT->getDataLayout());
 
     if (OptimizeModule) {
-        legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(M_ptr);
+        FunctionPassManager FPM(M_ptr);
 
         /* OPTIMIZER PIPELINE */
 
         // Register info about how the target lays out data structures
-        FPM->add(new DataLayoutPass());
+        FPM.add(new DataLayoutPass());
 
         // Provide basic AliasAnalysis support for GVN
-        FPM->add(createBasicAliasAnalysisPass());
+        FPM.add(createBasicAliasAnalysisPass());
         // Promote allocas to registers
-        FPM->add(createPromoteMemoryToRegisterPass());
+        FPM.add(createPromoteMemoryToRegisterPass());
         // Do simple peephole & bit-twiddling optimizations
-        FPM->add(createInstructionCombiningPass());
+        FPM.add(createInstructionCombiningPass());
         // Reassociate expressions
-        FPM->add(createReassociatePass());
+        FPM.add(createReassociatePass());
         // Eliminate Common SubExpressions
-        FPM->add(createGVNPass());
+        FPM.add(createGVNPass());
         // Simplify the control flow graph (e.g. delete unreachable blocks)
-        FPM->add(createCFGSimplificationPass());
+        FPM.add(createCFGSimplificationPass());
 
-        FPM->doInitialization();
+        FPM.doInitialization();
 
         // apply to each function
         Module::iterator it;
         Module::iterator end = M->end();
         for (it = M->begin(); it != end; ++it) {
-            FPM->run(*it);
+            FPM.run(*it);
         }
-
-        delete FPM; // cannot be reused for different modules
     }
 
     // for showing assembly code when generated
@@ -93,8 +91,6 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     for (Module::iterator it = M_ptr->begin(), end = M_ptr->end(); it != end; ++it) {
         registerFunction(it);
     }
-
-    //trackSymbols(M_ptr);
 
     JIT->addModule(std::move(M));
 }
@@ -287,8 +283,9 @@ void MCJITHelper::showFunctions() {
 
 void MCJITHelper::showTrackedAsm() {
     if (asmFdStream == nullptr) {
-        std::cerr << "Invoking showTrackedAsm() while raw_fd_ostream has not been created yet! Exiting..." << std::endl;
-        exit(EXIT_FAILURE);
+        std::cerr << "[Warning] Cannot use showTrackedAsm() when raw_fd_ostream has not "
+                    "been created yet! Did you forget to enable tracking?" << std::endl;
+        return;
     }
 
     std::string line;
@@ -367,36 +364,54 @@ ValueToValueMapTy* MCJITHelper::generateIdentityMapping(Function* F) {
 }
 
 void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawInfo, void* profDataAddr) {
-    void* p1 = (void*)((uintptr_t)rawInfo->f1 - (uintptr_t)rawInfo->b1);
-    //void* p2 = rawInfo->f2_pp - rawInfo->b2_pp;
+
+    OSRLibrary::OpenOSRInfo* OSRInfo = (OSRLibrary::OpenOSRInfo*) rawInfo;
+    MCJITHelperOSRInfo* extraInfo = (MCJITHelperOSRInfo*)OSRInfo->extra;
+
+    Function* F1 = OSRInfo->f1;
+    BasicBlock* B1 = OSRInfo->b1;
+
+    // debug info
     std::cerr << "Value for rawInfo is " << rawInfo << std::endl;
     std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
+    std::cerr << "Value for f1 is " << F1 << std::endl;
+    std::cerr << "Value for b1 is " << B1 << std::endl;
+    std::cerr << "Value for extra is " << extraInfo << std::endl;
 
-    std::cerr << "Value for rawInfo->f1 is " << rawInfo->f1 << std::endl;
-    std::cerr << "Value for rawInfo->b1 is " << rawInfo->b1 << std::endl;
-    std::cerr << "Value for rawInfo->f2_pp is " << rawInfo->f2_pp << std::endl;
-    std::cerr << "Value for rawInfo->b2_pp is " << rawInfo->b2_pp << std::endl;
-    std::cerr << "Value for rawInfo->m_pp is " << rawInfo->m_pp << std::endl;
+    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(OSRInfo->f1);
 
-    return p1;
+    Function* F2 = identityPair.first;
+    extraInfo->f2 = identityPair.first;
 
-/*
+    StateMap* M = identityPair.second;
+    extraInfo->m = identityPair.second;
 
-    std::cerr << "Value for rawInfo->f1 is " << rawInfo->f1 << std::endl;
-    std::cerr << "Value for rawInfo->b1 is " << rawInfo->b1 << std::endl;
-    std::cerr << "Value for rawInfo->f2_pp is " << rawInfo->f2_pp << std::endl;
-    std::cerr << "Value for rawInfo->b2_pp is " << rawInfo->b2_pp << std::endl;
-    std::cerr << "Value for rawInfo->m_pp is " << rawInfo->m_pp << std::endl;
+    BasicBlock* B2 = M->getCorrespondingBlock(B1);
 
+    LivenessAnalysis l(OSRInfo->f1);
+    std::vector<Value*>* valuesToPass = StateMap::getValuesToSetForBlock(*B1, l.getLiveInValues(B1));
+    StateMap::BlockPair blockPair(B1, B2);
+    std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");
+    Function* OSRDestFun = OSRLibrary::generateOSRDestFun(*F1, *F2, blockPair, *valuesToPass, *M, OSRDestFunName);
+    delete valuesToPass;
 
-    Function* f1 = (Function*)rawInfo->f1;
-    BasicBlock* b1 = (BasicBlock*)rawInfo->b1;
+    // compile the generated code
+    MCJITHelper *TheHelper = extraInfo->TheHelper;
 
-    Function** f2_pp = (Function**)rawInfo->f2_pp;
-    BasicBlock** b2_pp = (BasicBlock**)rawInfo->b2_pp;
-    StateMap** m_pp = (StateMap**)rawInfo->m_pp;
-*/
-    // TODO: returning nullptr will make everything crash!
+    std::string modForJITName = "openOSRModuleFor";
+    modForJITName.append(OSRDestFunName);
+    std::unique_ptr<Module> modForJIT = llvm::make_unique<Module>(modForJITName, TheHelper->Context);
+    Module* modForJIT_ptr = modForJIT.get();
+    modForJIT_ptr->getFunctionList().push_back(OSRDestFun);
 
-    //return nullptr;
+    verifyFunction(*OSRDestFun, &outs()); // use llvm::outs for now
+
+    FunctionPassManager FPM(modForJIT_ptr);
+    FPM.add(createCFGSimplificationPass());
+    FPM.doInitialization();
+    FPM.run(*OSRDestFun);
+
+    TheHelper->addModule(std::move(modForJIT), false);
+
+    return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
 }

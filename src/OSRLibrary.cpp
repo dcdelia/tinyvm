@@ -193,18 +193,11 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     tmpMod.getFunctionList().push_back(newSrcFun); // (5)
     verifyAux(newSrcFun, &errStream, &preventOptimize);
 
-    if (!preventOptimize) {
-        legacy::FunctionPassManager *FPM = new legacy::FunctionPassManager(&tmpMod);
-
-        FPM->add(createCFGSimplificationPass()); // will remove the old entrypoint and fix PHI nodes
-
-        FPM->run(*OSRDestFun);
-        verifyAux(OSRDestFun, &errStream);
-
-        FPM->run(*newSrcFun);
-        verifyAux(newSrcFun, &errStream);
-    }
-
+    FunctionPassManager FPM(&tmpMod);
+    FPM.add(createCFGSimplificationPass());
+    FPM.doInitialization();
+    FPM.run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
+    FPM.run(*newSrcFun);
 
     OSRDestFun->removeFromParent();
     newSrcFun->removeFromParent();
@@ -269,9 +262,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     std::vector<Type*> rawOpenOSRInfoTypes;
     rawOpenOSRInfoTypes.push_back(i8PointerTy); // f1
     rawOpenOSRInfoTypes.push_back(i8PointerTy); // b1
-    rawOpenOSRInfoTypes.push_back(i8PointerTy); // f2_pp
-    rawOpenOSRInfoTypes.push_back(i8PointerTy); // b2_pp
-    rawOpenOSRInfoTypes.push_back(i8PointerTy); // m
+    rawOpenOSRInfoTypes.push_back(i8PointerTy); // extra
     StructType* rawOSRInfoTy = StructType::get(Context, rawOpenOSRInfoTypes);
 
     // step (4)
@@ -294,12 +285,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
         return GEP;
     };
 
-    IntegerType* int64Ty = Type::getInt64Ty(Context);
+    IntegerType* int64Ty = Type::getInt64Ty(Context); // TODO macro for x86
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 0, "f1_ptr", info.f1, int64Ty, i8PointerTy);
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 1, "b1_ptr", info.b1, int64Ty, i8PointerTy);
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 2, "f2_pp_ptr", info.f2_pp, int64Ty, i8PointerTy);
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 3, "b2_pp_ptr", info.b2_pp, int64Ty, i8PointerTy);
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 4, "m_pp_ptr", info.m_pp, int64Ty, i8PointerTy);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 2, "extra_ptr", info.extra, int64Ty, i8PointerTy);
+
 
     // step (6)
     std::vector<Type*> argTypesForFunToGenerate;
@@ -390,6 +380,13 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
 
     tmpMod.getFunctionList().push_back(newSrcFun);
     verifyAux(newSrcFun, &errStream, &preventOptimize);
+
+    // TODO check which passes are really needed for openOSR
+    FunctionPassManager FPM(&tmpMod);
+    FPM.add(createCFGSimplificationPass());
+    FPM.doInitialization();
+    //FPM.run(*stub);
+    FPM.run(*newSrcFun);
 
     stub->removeFromParent();
     newSrcFun->removeFromParent();

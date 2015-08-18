@@ -1,4 +1,4 @@
-# A poorly written Makefile
+# A poorly written Makefile :-)
 CC		= clang
 CXX		= clang++
 BUILD		= build
@@ -8,7 +8,7 @@ CFLAGS		= -O0 -g -Wall -I$(INCLUDE)
 CXX_FLAGS	= -O0 -g -Wall -I$(INCLUDE)
 LLVM_CFLAGS	= # we do not use LLVM C API
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
-LLVM_LDFLAGS	= $(shell llvm-config  --ldflags --system-libs --libs core irreader mcjit native)
+LLVM_LDFLAGS	= $(shell llvm-config --ldflags --system-libs --libs core irreader mcjit native)
 
 all: TinyVM
 

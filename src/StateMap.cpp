@@ -1,3 +1,9 @@
+/* ===============================================================
+ * State mapping component for the OSR library.
+ *
+ * Author:      (C) 2015 Daniele Cono D'Elia
+ * License:     See the end of this file for license information
+ * =============================================================== */
 #include "StateMap.hpp"
 
 #include "llvm/IR/BasicBlock.h"
@@ -216,3 +222,21 @@ void StateMap::registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b,
         correspondingBlockMap.insert(std::pair<BasicBlock*, BasicBlock*>(dest_b, src_b));
     }
 }
+
+/*
+ * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This library is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this library; if not, write to the Free Software Foundation, Inc.,
+ * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+*/

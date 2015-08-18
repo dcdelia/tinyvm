@@ -149,10 +149,9 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::B
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M,
+                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M, bool updateF1,
                         const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
     // common stuff for the generation of F1' and F2'
-    Function *newSrcFun, *OSRDestFun;
     raw_os_ostream errStream(std::cerr);
     bool preventOptimize = false; // set by verifyAux in case of error
     StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
@@ -163,7 +162,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     Module tmpMod("OSRtmpMod", getGlobalContext());
 
     /* Prepare F2' aka OSRDestFun */
-    OSRDestFun = generateOSRDestFun(F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
+    Function* OSRDestFun = generateOSRDestFun(F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
 
     /* Check generated OSRDestFun for well-formedness */
     tmpMod.getFunctionList().push_back(OSRDestFun);
@@ -175,38 +174,72 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
      * (3) Generate OSRBlock to invoke OSRDestFun and return its result
      * (4) Insert code to compute OSR condition and jump to OSRBlock
      * (5) Check generated function for well-formedness
+     *
+     * Steps (1) and (2) are not performed when updateF1 == true
      */
-    Function* src = &F1;
-    ValueToValueMapTy srcToNewSrcVMap;
+    Function*   src = &F1;
 
-    Twine newSrcFunName = F1NewName.isTriviallyEmpty() ?
-                            Twine(src->getName(), "WithOSR") : const_cast<Twine&>(F1NewName); // (1) TODO use better names
-    newSrcFun = duplicateFunction(src, newSrcFunName, srcToNewSrcVMap);
-    std::vector<Value*> newValuesToPass; // I have to regenerate valuesToPass as well!
-    for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
-        newValuesToPass.push_back(srcToNewSrcVMap[*it]);
+    Function*   newSrcFun;
+    std::vector<Value*>* ptrToValuesToPass;
+    OSRCond*    ptrToOSRCond;
+    BasicBlock* ptrToSrcBlock;
+    Module*     parentForSrc;
+
+
+    if (!updateF1) {
+        ValueToValueMapTy srcToNewSrcVMap;
+
+        Twine newSrcFunName = F1NewName.isTriviallyEmpty() ?
+                                Twine(src->getName(), "WithOSR") : const_cast<Twine&>(F1NewName); // (1) TODO use better names
+        newSrcFun = duplicateFunction(src, newSrcFunName, srcToNewSrcVMap);
+        std::vector<Value*> newValuesToPass; // I have to regenerate valuesToPass as well!
+        for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
+            newValuesToPass.push_back(srcToNewSrcVMap[*it]);
+        }
+
+        OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
+
+        ptrToValuesToPass = &newValuesToPass;
+        ptrToOSRCond = &newCond;
+        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]);
+        parentForSrc = nullptr;
+    } else {
+        newSrcFun = src;
+        ptrToValuesToPass = &valuesToPass;
+        ptrToOSRCond = &cond;
+        ptrToSrcBlock = srcDestBlocks.first;
+        parentForSrc = src->getParent();
     }
 
-    OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
-
-    BasicBlock* OSR_B = generateTriggerOSRBlock(OSRDestFun, newValuesToPass); // (3)
+    BasicBlock* OSR_B = generateTriggerOSRBlock(OSRDestFun, *ptrToValuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
     Twine splitBlockName("splitBlockForOSRTo", OSRDestFun->getName()); // (4)
-    BasicBlock* srcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]);
-    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, srcBlock, OSR_B, newCond, splitBlockName);
 
-    tmpMod.getFunctionList().push_back(newSrcFun); // (5)
-    verifyAux(newSrcFun, &errStream, &preventOptimize);
+    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond, splitBlockName);
+
+    if (parentForSrc == nullptr) { // (!updateF1) term in || is redundant
+        tmpMod.getFunctionList().push_back(newSrcFun); // (5)
+        verifyAux(newSrcFun, &errStream, &preventOptimize);
+    } else {
+        verifyAux(src, &errStream, &preventOptimize);
+        FunctionPassManager FPM(parentForSrc);
+        FPM.add(createCFGSimplificationPass());
+        FPM.doInitialization();
+        FPM.run(*src);
+    }
 
     FunctionPassManager FPM(&tmpMod);
     FPM.add(createCFGSimplificationPass());
     FPM.doInitialization();
     FPM.run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
-    FPM.run(*newSrcFun);
+
+    if (parentForSrc == nullptr) { // (!updateF1) term in || is redundant
+        FPM.run(*newSrcFun);
+        newSrcFun->removeFromParent();
+    }
 
     OSRDestFun->removeFromParent();
-    newSrcFun->removeFromParent();
 
     return OSRPair(newSrcFun, OSRDestFun);
 }

@@ -38,8 +38,17 @@ class OSRLibrary {
 
         typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);
 
-        static OSRPair insertFinalizedOSR(Function& F1, BasicBlock& B1, Function& F2,
-            BasicBlock& B2, OSRCond& cond, StateMap& M, const Twine& F1NewName="", const Twine& F2NewName="");
+        static OSRPair insertFinalizedOSR(
+                                    Function& F1,
+                                    BasicBlock& B1,
+                                    Function& F2,
+                                    BasicBlock& B2,
+                                    OSRCond& cond,
+                                    StateMap& M,
+                                    bool updateF1 = false,
+                                    const Twine& F1NewName="",
+                                    const Twine& F2NewName="");
+
         static OSRPair insertOpenOSR(OpenOSRInfo& info, OSRCond& cond, Value* profDataVal,
             DestFunGenerator destFunGenerator, const Twine& F1NewName="", std::vector<Value*> *valuesToTransfer = nullptr);
 

@@ -319,7 +319,7 @@ void Parser::handleInsertOSRCommand() {
 
     std::cerr << "OSRCond generated!" << std::endl;
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(*src, *src_bb, *dest, *dest_bb, cond, *M, F1_OSR, F2_OSR);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(*src, *src_bb, *dest, *dest_bb, cond, *M, false, F1_OSR, F2_OSR);
 
     std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 

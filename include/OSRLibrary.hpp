@@ -49,8 +49,14 @@ class OSRLibrary {
                                     const Twine& F1NewName="",
                                     const Twine& F2NewName="");
 
-        static OSRPair insertOpenOSR(OpenOSRInfo& info, OSRCond& cond, Value* profDataVal,
-            DestFunGenerator destFunGenerator, const Twine& F1NewName="", std::vector<Value*> *valuesToTransfer = nullptr);
+        static OSRPair insertOpenOSR(
+                                OpenOSRInfo& info,
+                                OSRCond& cond,
+                                Value* profDataVal,
+                                DestFunGenerator destFunGenerator,
+                                bool updateF1 = false,
+                                const Twine& F1NewName="",
+                                std::vector<Value*> *valuesToTransfer = nullptr);
 
         static std::vector<Value*>* defaultValuesToTransferForOpenOSR(Function& F, BasicBlock &B);
         static Function* generateOSRDestFun(Function &F1, Function &F2, StateMap::BlockPair &srcDestBlocks,

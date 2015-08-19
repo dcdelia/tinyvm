@@ -476,7 +476,7 @@ void Parser::handleInsertOpenOSRCommand() {
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(info, cond, nullptr, generator, F1_OSR);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(info, cond, nullptr, generator, false, F1_OSR);
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *stub = pair.second;

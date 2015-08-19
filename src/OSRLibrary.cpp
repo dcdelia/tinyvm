@@ -185,7 +185,6 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     BasicBlock* ptrToSrcBlock;
     Module*     parentForSrc;
 
-
     if (!updateF1) {
         ValueToValueMapTy srcToNewSrcVMap;
 
@@ -245,14 +244,14 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSRLibrary::OSRCond& cond,
-        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator, const Twine& F1NewName,
-        std::vector<Value*>* valuesToTransfer) {
+        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator, bool updateF1,
+        const Twine& F1NewName, std::vector<Value*>* valuesToTransfer) {
 
     LLVMContext& Context = getGlobalContext();
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
 
     Module tmpMod("OSRtmpMod", Context);
-    Function *stub, *newSrcFun;
+    Function *stub;
     Function *src = info.f1;
     BasicBlock* srcBlock = info.b1;
     Type* retTy = src->getReturnType();
@@ -373,19 +372,39 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
      * (2) Generate newValuesToPass (including the address of profDataVal)
      * (3) Generate OSRBlock to invoke stub and return its result
      * (4) Insert code to compute OSR condition and jump to OSRBlock
+     *
+     * Step (1) is not performed when updateF1 == true
      */
 
-    ValueToValueMapTy srcToNewSrcVMap;
+    std::vector<Value*> newValuesToPass;
+    ValueToValueMapTy srcToNewSrcVMap; // used only when updateF1 = false
 
-    // step (1)
-    newSrcFun = duplicateFunction(src, newFunName, srcToNewSrcVMap);
-    OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
+    Function* newSrcFun;
+    std::vector<Value*> *ptrToValuesToPass;
+    OSRCond* ptrToOSRCond;
+    BasicBlock* ptrToSrcBlock;
+    Module* parentForSrc;
+
+    if (!updateF1) {
+        // step (1)
+        newSrcFun = duplicateFunction(src, newFunName, srcToNewSrcVMap);
+        OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
+
+        ptrToOSRCond = &newCond;
+        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcBlock]);
+        parentForSrc = nullptr;
+    } else {
+        newSrcFun = src;
+        ptrToValuesToPass = &valuesToPass;
+        ptrToOSRCond = &cond;
+        ptrToSrcBlock = srcBlock;
+        parentForSrc = src->getParent();
+    }
 
     // step (2)
-    std::vector<Value*> newValuesToPass;
     Value* newProfDataVal;
     if (profDataVal != nullptr) {
-        Value* v = srcToNewSrcVMap[profDataVal];
+        Value* v = (!updateF1) ? cast<Value>(srcToNewSrcVMap[profDataVal]) : profDataVal; // TODO check cast
 
         // TODO
         newProfDataVal = nullptr; // what if I have to insert new instructions in the code? should I do it inside the new OSR block?
@@ -397,7 +416,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     }
     newValuesToPass.push_back(newProfDataVal);
     for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
-        newValuesToPass.push_back(srcToNewSrcVMap[*it]);
+        if (!updateF1) {
+            newValuesToPass.push_back(srcToNewSrcVMap[*it]);
+        } else {
+            newValuesToPass.push_back(*it);
+        }
     }
 
     // step (3)
@@ -406,9 +429,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
 
     // step (4)
     Twine splitBlockName("splitBlockForOSRTo", stub->getName());
-    BasicBlock* newSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcBlock]);
-    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, newSrcBlock, OSR_B, newCond, splitBlockName);
-
+    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond, splitBlockName);
 
     /* Now we verify both generated functions */
     raw_os_ostream errStream(std::cerr);
@@ -417,18 +438,26 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     tmpMod.getFunctionList().push_back(stub);
     verifyAux(stub, &errStream, &preventOptimize);
 
-    tmpMod.getFunctionList().push_back(newSrcFun);
-    verifyAux(newSrcFun, &errStream, &preventOptimize);
+    if (parentForSrc == nullptr) {
+        tmpMod.getFunctionList().push_back(newSrcFun);
+        verifyAux(newSrcFun, &errStream, &preventOptimize);
 
-    // TODO check which passes are really needed for openOSR
-    FunctionPassManager FPM(&tmpMod);
-    FPM.add(createCFGSimplificationPass());
-    FPM.doInitialization();
-    //FPM.run(*stub);
-    FPM.run(*newSrcFun);
+        FunctionPassManager FPM(&tmpMod);
+        FPM.add(createCFGSimplificationPass());
+        FPM.doInitialization();
+        FPM.run(*newSrcFun);
+
+        newSrcFun->removeFromParent();
+    } else {
+        verifyAux(src, &errStream, &preventOptimize);
+
+        FunctionPassManager FPM(parentForSrc);
+        FPM.add(createCFGSimplificationPass());
+        FPM.doInitialization();
+        FPM.run(*src);
+    }
 
     stub->removeFromParent();
-    newSrcFun->removeFromParent();
 
     if (valuesToTransfer == nullptr) {
         delete valuesToPasstmp;

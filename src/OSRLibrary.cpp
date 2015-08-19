@@ -30,14 +30,13 @@ using namespace llvm;
 
 /**
  * Global TODO list
- * - check hasName() before setName()
  * - use better aliases for types
  * - use const references more
  * - fix names in OSRDestFun
  * - live values vs OSRCond
  * - Context parameter
  * - verbose mode
- * - what would happen to reassigned Argument??
+ * - what would happen to a reassigned Argument??
  * - general attributes of the Function? (http://llvm.org/docs/HowToUseAttributes.html)
  */
 
@@ -90,7 +89,11 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::B
     Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
     for (Value* src_v: valuesToPass) {
         fetchedValuesToOSRDestArgs[src_v] = OSRDestArgIt;
-        (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr"));
+        if (src_v->hasName()) {
+            (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr"));
+        } else {
+            ++OSRDestArgIt;
+        }
     }
     assert(OSRDestArgIt == OSRDestFun->arg_end());
 
@@ -291,7 +294,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     Function::arg_iterator stubArgIt = stub->arg_begin();
     (stubArgIt++)->setName("profDataAddr");
     for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
-        (stubArgIt++)->setName(Twine((*it)->getName(), "_osr"));
+        if ((*it)->hasName()) {
+            (stubArgIt++)->setName(Twine((*it)->getName(), "_osr"));
+        } else {
+            ++stubArgIt;
+        }
     }
 
     applyAttributesToArguments(stub, src, valuesToPass);
@@ -349,7 +356,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     Value* destFunGenArgs[2];
     destFunGenArgs[0] = infoAlloca;
     destFunGenArgs[1] = stub->arg_begin();
-    std::cerr << "Arguments for the first call: " << destFunGenArgs[0]->getName().str() << " " << destFunGenArgs[1]->getName().str() << std::endl;
+    //std::cerr << "Arguments for the first call: " << destFunGenArgs[0]->getName().str() << " " << destFunGenArgs[1]->getName().str() << std::endl;
     Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)destFunGenerator),
                                                         PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
     CallInst* destFunGeneratorCall = CallInst::Create(destFunGenVal, destFunGenArgs, "destFunGenCall", stubEntryPoint); // direct call to absolute address
@@ -575,7 +582,11 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
         Value* origValue = const_cast<Value*>(*it);
         if (isa<Argument>(origValue)) continue; // case 1
 
-        std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
+        if (origValue->hasName()) {
+            std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
+        } else {
+            std::cerr << "Processing anonymous value: " << std::endl;
+        }
 
         Value* oldValue = VMap[origValue];
         Instruction* oldInst = cast<Instruction>(oldValue); // TODO what about constants?
@@ -596,7 +607,11 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
         }
 
         std::cerr << "--> I will use SSAUpdater to fix the CFG where required!" << std::endl;
-        updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_join").str())); // TODO cleaner code for name
+        if (oldValue->hasName()) {
+            updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_fixSSA").str()));
+        } else {
+            updateSSA.Initialize(oldValue->getType(), StringRef("anonymousVal_fixSSA"));
+        }
         updateSSA.AddAvailableValue(oldBlock, oldValue);
         updateSSA.AddAvailableValue(newBlock, newValue);
 

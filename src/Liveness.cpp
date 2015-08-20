@@ -31,6 +31,7 @@ using namespace llvm;
  * LIVE_OUT[s]  = union{LIVE_IN[t]: t is a successor of s}
  *
  * **/
+using namespace llvm;
 
 // adapted from live_vars.cpp from the McOSR library
 void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const LivenessAnalysis::LiveValues &outValues, LivenessAnalysis::LiveValues &inValues, LivenessAnalysis::LiveValuesMap &map) {

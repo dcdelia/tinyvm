@@ -15,6 +15,8 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
+using namespace llvm;
+
 std::pair<Function*, Function*> StateMap::getFunctions() {
     return std::pair<Function*, Function*>(F1, F2);
 }

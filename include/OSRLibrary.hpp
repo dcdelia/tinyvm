@@ -16,16 +16,14 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
-using namespace llvm;
-
 class OSRLibrary {
     public:
-        typedef std::vector<Instruction*> OSRCond;
-        typedef std::pair<Function*, Function*> OSRPair;
+        typedef std::vector<llvm::Instruction*> OSRCond;
+        typedef std::pair<llvm::Function*, llvm::Function*> OSRPair;
 
         typedef struct OpenOSRInfo {
-            Function*       f1;
-            BasicBlock*     b1;
+            llvm::Function*       f1;
+            llvm::BasicBlock*     b1;
             void*           extra;
         } OpenOSRInfo;
 
@@ -39,42 +37,50 @@ class OSRLibrary {
         typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);
 
         static OSRPair insertFinalizedOSR(
-                                    Function& F1,
-                                    BasicBlock& B1,
-                                    Function& F2,
-                                    BasicBlock& B2,
+                                    llvm::Function& F1,
+                                    llvm::BasicBlock& B1,
+                                    llvm::Function& F2,
+                                    llvm::BasicBlock& B2,
                                     OSRCond& cond,
                                     StateMap& M,
                                     bool updateF1 = false,
-                                    const Twine& F1NewName="",
-                                    const Twine& F2NewName="");
+                                    const llvm::Twine& F1NewName="",
+                                    const llvm::Twine& F2NewName="");
 
         static OSRPair insertOpenOSR(
                                 OpenOSRInfo& info,
                                 OSRCond& cond,
-                                Value* profDataVal,
+                                llvm::Value* profDataVal,
                                 DestFunGenerator destFunGenerator,
                                 bool updateF1 = false,
-                                const Twine& F1NewName="",
-                                std::vector<Value*> *valuesToTransfer = nullptr);
+                                const llvm::Twine& F1NewName="",
+                                std::vector<llvm::Value*> *valuesToTransfer = nullptr);
 
-        static std::vector<Value*>* defaultValuesToTransferForOpenOSR(Function& F, BasicBlock &B);
-        static Function* generateOSRDestFun(Function &F1, Function &F2, StateMap::BlockPair &srcDestBlocks,
-                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName);
+        static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(llvm::Function& F, llvm::BasicBlock &B);
 
-        static Function* prepareForRedirection(Function& F);
+        static llvm::Function* generateOSRDestFun(
+                                    llvm::Function &F1,
+                                    llvm::Function &F2,
+                                    StateMap::BlockPair &srcDestBlocks,
+                                    std::vector<llvm::Value*> &valuesToPass,
+                                    StateMap &M,
+                                    const llvm::Twine& F2NewName);
+
+        static llvm::Function* prepareForRedirection(llvm::Function& F);
         static void enableRedirection(uint64_t f, uint64_t destination);
 
     private:
-        static void applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass);
-        static void duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap);
-        static void fixOperandReferencesFromVMap(Function* NF, Function* F, ValueToValueMapTy &VMap);
-        static void replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock, std::vector<Value*> &origValuesToSetForDestBlock,
-            ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes);
-        static Function* duplicateFunction(Function* F, const Twine &Name, ValueToValueMapTy &VMap);
-        static OSRCond regenerateOSRCond(OSRCond &cond, ValueToValueMapTy &VMap);
-        static BasicBlock* generateTriggerOSRBlock(Function* OSRDest, std::vector<Value*> &valuesToPass);
-        static BasicBlock* insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OSR_B, OSRCond& cond, const Twine& BBName);
+        static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F, std::vector<llvm::Value*> &valuesToPass);
+        static void duplicateBodyIntoNewFunction(llvm::Function* F, llvm::Function *NF, llvm::ValueToValueMapTy& VMap);
+        static void fixOperandReferencesFromVMap(llvm::Function* NF, llvm::Function* F, llvm::ValueToValueMapTy &VMap);
+        static void replaceUsesWithNewValuesAndUpdatePHINodes(llvm::Function* NF, llvm::BasicBlock* origDestBlock,
+            std::vector<llvm::Value*> &origValuesToSetForDestBlock, llvm::ValueToValueMapTy &VMap,
+            llvm::ValueToValueMapTy &updatesForVMap, llvm::SmallVectorImpl<llvm::PHINode*> *insertedPHINodes);
+        static llvm::Function* duplicateFunction(llvm::Function* F, const llvm::Twine &Name, llvm::ValueToValueMapTy &VMap);
+        static OSRCond regenerateOSRCond(OSRCond &cond, llvm::ValueToValueMapTy &VMap);
+        static llvm::BasicBlock* generateTriggerOSRBlock(llvm::Function* OSRDest, std::vector<llvm::Value*> &valuesToPass);
+        static llvm::BasicBlock* insertOSRCond(llvm::Function* F, llvm::BasicBlock* B, llvm::BasicBlock* OSR_B, OSRCond& cond,
+            const llvm::Twine& BBName);
 };
 
 #endif

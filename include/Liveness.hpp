@@ -17,30 +17,28 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Value.h"
 
-using namespace llvm;
-
 class LivenessAnalysis {
     public:
-        typedef std::set<const Value*> LiveValues;
-        LivenessAnalysis(Function *fun): F(fun) {
+        typedef std::set<const llvm::Value*> LiveValues;
+        LivenessAnalysis(llvm::Function *fun): F(fun) {
             performLivenessAnalysis();
         }
-        LiveValues& getLiveInValues(BasicBlock* B);
-        LiveValues& getLiveOutValues(BasicBlock* B);
-        void printResultsToScreen(BasicBlock* B);
+        LiveValues& getLiveInValues(llvm::BasicBlock* B);
+        LiveValues& getLiveOutValues(llvm::BasicBlock* B);
+        void printResultsToScreen(llvm::BasicBlock* B);
         friend std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis);
         friend std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values);
 
 
     private:
         typedef std::pair<LiveValues, LiveValues> LiveInAndOutValues;
-        typedef std::map<const BasicBlock*, LiveInAndOutValues> LiveValuesMap;
+        typedef std::map<const llvm::BasicBlock*, LiveInAndOutValues> LiveValuesMap;
 
-        Function*       F;
+        llvm::Function*       F;
         LiveValuesMap   map;
 
         void performLivenessAnalysis();
-        void analyzeBBwithPHINodes(const BasicBlock *B, const LiveValues &outValues, LiveValues &inValues, LiveValuesMap &map);
+        void analyzeBBwithPHINodes(const llvm::BasicBlock *B, const LiveValues &outValues, LiveValues &inValues, LiveValuesMap &map);
 };
 
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis);

@@ -116,7 +116,7 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::B
     ValueToValueMapTy *updatesForDestToOSRDestVMap = entryPointPair.second;
 
     // step (6): replace dead arguments with a default null value and match live arguments
-    int dead_args = 0, live_args = 0;
+    size_t dead_args = 0, live_args = 0;
     for (const Argument &destArg: dest->args()) {
         ValueToValueMapTy::iterator it = updatesForDestToOSRDestVMap->find(&destArg);
         if (it == updatesForDestToOSRDestVMap->end()) { // argument is dead
@@ -188,18 +188,21 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     BasicBlock* ptrToSrcBlock;
     Module*     parentForSrc;
 
-    if (!updateF1) {
-        ValueToValueMapTy srcToNewSrcVMap;
+    // TODO rewrite this part
+    std::vector<Value*> newValuesToPass;
+    OSRCond newCond;
+    ValueToValueMapTy srcToNewSrcVMap;
 
+    if (!updateF1) {
         Twine newSrcFunName = F1NewName.isTriviallyEmpty() ?
                                 Twine(src->getName(), "WithOSR") : const_cast<Twine&>(F1NewName); // (1) TODO use better names
         newSrcFun = duplicateFunction(src, newSrcFunName, srcToNewSrcVMap);
-        std::vector<Value*> newValuesToPass; // I have to regenerate valuesToPass as well!
+         // I have to regenerate valuesToPass as well!
         for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
             newValuesToPass.push_back(srcToNewSrcVMap[*it]);
         }
 
-        OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
+        newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
 
         ptrToValuesToPass = &newValuesToPass;
         ptrToOSRCond = &newCond;
@@ -387,22 +390,23 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     ValueToValueMapTy srcToNewSrcVMap; // used only when updateF1 = false
 
     Function* newSrcFun;
-    std::vector<Value*> *ptrToValuesToPass;
     OSRCond* ptrToOSRCond;
     BasicBlock* ptrToSrcBlock;
     Module* parentForSrc;
 
+    // TODO rewrite this part
+    OSRCond newCond;
+
     if (!updateF1) {
         // step (1)
         newSrcFun = duplicateFunction(src, newFunName, srcToNewSrcVMap);
-        OSRCond newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
+        newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
 
         ptrToOSRCond = &newCond;
         ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcBlock]);
         parentForSrc = nullptr;
     } else {
         newSrcFun = src;
-        ptrToValuesToPass = &valuesToPass;
         ptrToOSRCond = &cond;
         ptrToSrcBlock = srcBlock;
         parentForSrc = src->getParent();
@@ -572,8 +576,8 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
      * The third case can be handled using SSAUpdater to account for the
      * the new available value coming from the OSR entrypoint and to fix
      * the CFG to keep the SSA form consistent. */
-    int updatedNodes = 0;
-    int replacedUses = 0;
+    size_t updatedNodes = 0;
+    size_t replacedUses = 0;
 
     SSAUpdater updateSSA(insertedPHINodes);
 

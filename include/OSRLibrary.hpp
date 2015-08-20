@@ -56,7 +56,7 @@ class OSRLibrary {
                                 const llvm::Twine& F1NewName="",
                                 std::vector<llvm::Value*> *valuesToTransfer = nullptr);
 
-        static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(llvm::Function& F, llvm::BasicBlock &B);
+        static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B);
 
         static llvm::Function* generateOSRDestFun(
                                     llvm::Function &F1,
@@ -70,7 +70,8 @@ class OSRLibrary {
         static void enableRedirection(uint64_t f, uint64_t destination);
 
     private:
-        static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F, std::vector<llvm::Value*> &valuesToPass);
+        static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F,
+            std::vector<llvm::Value*> &valuesToPass, bool skipFirst = false);
         static void duplicateBodyIntoNewFunction(llvm::Function* F, llvm::Function *NF, llvm::ValueToValueMapTy& VMap);
         static void fixOperandReferencesFromVMap(llvm::Function* NF, llvm::Function* F, llvm::ValueToValueMapTy &VMap);
         static void replaceUsesWithNewValuesAndUpdatePHINodes(llvm::Function* NF, llvm::BasicBlock* origDestBlock,

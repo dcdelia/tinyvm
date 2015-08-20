@@ -275,13 +275,12 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
      */
 
     // step (1)
-    std::vector<Value*>* valuesToPasstmp = valuesToTransfer;
+    std::vector<Value*>* valuesToPassTmp = valuesToTransfer;
     if (valuesToTransfer == nullptr) {
         LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(src);
-        LivenessAnalysis::LiveValues& liveInAtSrcBlock = livenessAnalysisForSrcFunction.getLiveInValues(srcBlock);
-        valuesToPasstmp = StateMap::getValuesToSetForBlock(*srcBlock, liveInAtSrcBlock);
+        valuesToPassTmp = defaultValuesToTransferForOpenOSR(livenessAnalysisForSrcFunction, *srcBlock);
     }
-    std::vector<Value*> &valuesToPass = *valuesToPasstmp;
+    std::vector<Value*> &valuesToPass = *valuesToPassTmp;
 
     std::vector<Type*> stubArgTypes;
     stubArgTypes.push_back(i8PointerTy); // profDataAddr is an i8*
@@ -291,8 +290,13 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     FunctionType *stubFTy = FunctionType::get(retTy, stubArgTypes, false);
 
     // step (2)
-    Twine stubName = Twine(newFunName, "_stub"); // TODO provide stubName as argument to insertOpenOSR
-    stub = Function::Create(stubFTy, src->getLinkage(), stubName);
+
+    /* TODO: check why using a local Twine variable leads to a segfault in McVM
+     *       while creating it when passed as argument works fine :-/
+     * Twine stubName(newFunName, "_stub");
+     * //std::string stubName = newFunName + "_stub";
+    */
+    stub = Function::Create(stubFTy, src->getLinkage(), Twine(newFunName, "_stub")); // TODO provide name as argument
 
     Function::arg_iterator stubArgIt = stub->arg_begin();
     (stubArgIt++)->setName("profDataAddr");
@@ -304,7 +308,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
         }
     }
 
-    applyAttributesToArguments(stub, src, valuesToPass);
+    applyAttributesToArguments(stub, src, valuesToPass, true); // skip first argument!
 
     // step (3)
     std::vector<Type*> rawOpenOSRInfoTypes;
@@ -471,7 +475,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     stub->removeFromParent();
 
     if (valuesToTransfer == nullptr) {
-        delete valuesToPasstmp;
+        delete valuesToPassTmp;
     }
 
     return OSRPair(newSrcFun, stub);
@@ -489,19 +493,20 @@ void OSRLibrary::enableRedirection(uint64_t f, uint64_t destination) {
 /**
  * Auxiliary methods
  */
-void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass) {
+void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass, bool skipFirst) {
     AttributeSet srcFunAttrs = F->getAttributes();
-    int index = 0;
-    for (Argument &arg: NF->args()) {
-        Value* src_v = valuesToPass[index];
+    Function::arg_iterator argIt = NF->arg_begin(), argEnd = NF->arg_end();
+    if (skipFirst) argIt++;
+    for (Value* src_v: valuesToPass) {
+        Argument *arg = argIt++;
         if (Argument* src_arg = dyn_cast<Argument>(src_v)) {
             AttributeSet attrs = srcFunAttrs.getParamAttributes(src_arg->getArgNo() + 1); // 0 is for the function
             if (attrs.getNumSlots() > 0) {
-                arg.addAttr(attrs);
+                arg->addAttr(attrs);
             }
         }
-        ++index;
     }
+    assert(argIt == argEnd);
 }
 
 void OSRLibrary::duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap) {
@@ -726,6 +731,11 @@ BasicBlock* OSRLibrary::insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OS
     B->getInstList().push_back(br);
 
     return NB;
+}
+
+std::vector<llvm::Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B) {
+    LivenessAnalysis::LiveValues& liveInAtSrcBlock = L.getLiveInValues(&B);
+    return StateMap::getValuesToSetForBlock(B, liveInAtSrcBlock);
 }
 
 /*

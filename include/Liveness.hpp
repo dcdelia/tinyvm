@@ -34,7 +34,7 @@ class LivenessAnalysis {
         typedef std::pair<LiveValues, LiveValues> LiveInAndOutValues;
         typedef std::map<const llvm::BasicBlock*, LiveInAndOutValues> LiveValuesMap;
 
-        llvm::Function*       F;
+        llvm::Function* F;
         LiveValuesMap   map;
 
         void performLivenessAnalysis();

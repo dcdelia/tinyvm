@@ -14,6 +14,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 class OSRLibrary {
@@ -37,6 +38,7 @@ class OSRLibrary {
         typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);
 
         static OSRPair insertFinalizedOSR(
+                                    llvm::LLVMContext &Context,
                                     llvm::Function& F1,
                                     llvm::BasicBlock& B1,
                                     llvm::Function& F2,
@@ -48,6 +50,7 @@ class OSRLibrary {
                                     const llvm::Twine& F2NewName="");
 
         static OSRPair insertOpenOSR(
+                                llvm::LLVMContext &Context,
                                 OpenOSRInfo& info,
                                 OSRCond& cond,
                                 llvm::Value* profDataVal,
@@ -59,6 +62,7 @@ class OSRLibrary {
         static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B);
 
         static llvm::Function* generateOSRDestFun(
+                                    llvm::LLVMContext &Context,
                                     llvm::Function &F1,
                                     llvm::Function &F2,
                                     StateMap::BlockPair &srcDestBlocks,
@@ -79,7 +83,8 @@ class OSRLibrary {
             llvm::ValueToValueMapTy &updatesForVMap, llvm::SmallVectorImpl<llvm::PHINode*> *insertedPHINodes);
         static llvm::Function* duplicateFunction(llvm::Function* F, const llvm::Twine &Name, llvm::ValueToValueMapTy &VMap);
         static OSRCond regenerateOSRCond(OSRCond &cond, llvm::ValueToValueMapTy &VMap);
-        static llvm::BasicBlock* generateTriggerOSRBlock(llvm::Function* OSRDest, std::vector<llvm::Value*> &valuesToPass);
+        static llvm::BasicBlock* generateTriggerOSRBlock(llvm::LLVMContext &Context, llvm::Function* OSRDest,
+                std::vector<llvm::Value*> &valuesToPass);
         static llvm::BasicBlock* insertOSRCond(llvm::Function* F, llvm::BasicBlock* B, llvm::BasicBlock* OSR_B, OSRCond& cond,
             const llvm::Twine& BBName);
 };

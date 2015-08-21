@@ -34,7 +34,6 @@ using namespace llvm;
  * - use const references more
  * - fix names in OSRDestFun
  * - live values vs OSRCond
- * - Context parameter
  * - verbose mode
  * - what would happen to a reassigned Argument??
  * - general attributes of the Function? (http://llvm.org/docs/HowToUseAttributes.html)
@@ -53,8 +52,8 @@ static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = n
     return ret;
 }
 
-Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::BlockPair &srcDestBlocks,
-                                std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName) {
+Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Function &F2,
+        StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName) {
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -110,7 +109,7 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::B
 
     std::vector<Value*>& valuesToSetAtDest = M.getValuesToSetForDestFunction(srcDestBlocks);
     std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.createEntryPointForNewDestFunction(srcDestBlocks,
-            newDestBlock, valuesToSetAtDest, fetchedValuesToOSRDestArgs, getGlobalContext());
+            newDestBlock, valuesToSetAtDest, fetchedValuesToOSRDestArgs, Context);
 
     BasicBlock* newEntryPoint = entryPointPair.first;
     ValueToValueMapTy *updatesForDestToOSRDestVMap = entryPointPair.second;
@@ -151,9 +150,9 @@ Function* OSRLibrary::generateOSRDestFun(Function &F1, Function &F2, StateMap::B
 
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M, bool updateF1,
-                        const Twine& F1NewName, const Twine& F2NewName) { // default value for the last two parameters is ""
+OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Function &F1, BasicBlock &B1, Function &F2,
+                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M, bool updateF1, const Twine& F1NewName,
+                        const Twine& F2NewName) { // default value for the last two parameters is ""
     // common stuff for the generation of F1' and F2'
     raw_os_ostream errStream(std::cerr);
     bool preventOptimize = false; // set by verifyAux in case of error
@@ -162,10 +161,10 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     assert(F1.getReturnType() == F2.getReturnType());
 
     // verifyFunction() needs a Module
-    Module tmpMod("OSRtmpMod", getGlobalContext());
+    Module tmpMod("OSRtmpMod", Context);
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = generateOSRDestFun(F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
+    Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
 
     /* Check generated OSRDestFun for well-formedness */
     tmpMod.getFunctionList().push_back(OSRDestFun);
@@ -216,7 +215,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
         parentForSrc = src->getParent();
     }
 
-    BasicBlock* OSR_B = generateTriggerOSRBlock(OSRDestFun, *ptrToValuesToPass); // (3)
+    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFun, *ptrToValuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
     Twine splitBlockName("splitBlockForOSRTo", OSRDestFun->getName()); // (4)
@@ -249,11 +248,10 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(Function &F1, BasicBlock &B1,
     return OSRPair(newSrcFun, OSRDestFun);
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSRLibrary::OSRCond& cond,
-        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator, bool updateF1,
-        const Twine& F1NewName, std::vector<Value*>* valuesToTransfer) {
+OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::OpenOSRInfo& info,
+        OSRLibrary::OSRCond& cond, Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator,
+        bool updateF1, const Twine& F1NewName, std::vector<Value*>* valuesToTransfer) {
 
-    LLVMContext& Context = getGlobalContext();
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
 
     Module tmpMod("OSRtmpMod", Context);
@@ -439,7 +437,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(OSRLibrary::OpenOSRInfo& info, OSR
     }
 
     // step (3)
-    BasicBlock* OSR_B = generateTriggerOSRBlock(stub, newValuesToPass);
+    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, stub, newValuesToPass);
     OSR_B->insertInto(newSrcFun);
 
     // step (4)
@@ -683,13 +681,14 @@ OSRLibrary::OSRCond OSRLibrary::regenerateOSRCond(OSRLibrary::OSRCond &cond, Val
     return newCond;
 }
 
-BasicBlock* OSRLibrary::generateTriggerOSRBlock(Function* OSRDest, std::vector<Value*> &valuesToPass) {
+BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Function* OSRDest,
+        std::vector<Value*> &valuesToPass) {
     StringRef OSRFunName = OSRDest->getName();
     Type* retTy = OSRDest->getReturnType();
 
     // generate basic block to trigger the OSR transition
     Twine OSRBlockName("OSRBlockTo", OSRFunName);
-    BasicBlock* OSR_B = BasicBlock::Create(getGlobalContext(), OSRBlockName);
+    BasicBlock* OSR_B = BasicBlock::Create(Context, OSRBlockName);
 
     // generate call instruction for the finalized OSR transition
     Twine OSRCallName("OSRCallTo", OSRFunName);
@@ -699,9 +698,9 @@ BasicBlock* OSRLibrary::generateTriggerOSRBlock(Function* OSRDest, std::vector<V
     // if OSRDest is non-void we should return the value it computes
     ReturnInst* retInst;
     if (retTy->isVoidTy()) {
-        retInst = ReturnInst::Create(getGlobalContext());
+        retInst = ReturnInst::Create(Context);
     } else {
-        retInst = ReturnInst::Create(getGlobalContext(), callInst);
+        retInst = ReturnInst::Create(Context, callInst);
     }
     OSR_B->getInstList().push_back(retInst);
 

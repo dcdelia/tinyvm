@@ -394,16 +394,17 @@ void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawIn
 
     BasicBlock* B2 = M->getCorrespondingBlock(B1);
 
+    MCJITHelper *TheHelper = extraInfo->TheHelper;
+
     LivenessAnalysis l(OSRInfo->f1);
     std::vector<Value*>* valuesToPass = StateMap::getValuesToSetForBlock(*B1, l.getLiveInValues(B1));
     StateMap::BlockPair blockPair(B1, B2);
     std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");
-    Function* OSRDestFun = OSRLibrary::generateOSRDestFun(*F1, *F2, blockPair, *valuesToPass, *M, OSRDestFunName);
+    Function* OSRDestFun = OSRLibrary::generateOSRDestFun(TheHelper->Context ,*F1, *F2, blockPair,
+                                *valuesToPass, *M, OSRDestFunName);
     delete valuesToPass;
 
     // compile the generated code
-    MCJITHelper *TheHelper = extraInfo->TheHelper;
-
     std::string modForJITName = "openOSRModuleFor";
     modForJITName.append(OSRDestFunName);
     std::unique_ptr<Module> modForJIT = llvm::make_unique<Module>(modForJITName, TheHelper->Context);

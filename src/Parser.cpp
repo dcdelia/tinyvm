@@ -319,7 +319,8 @@ void Parser::handleInsertOSRCommand() {
 
     std::cerr << "OSRCond generated!" << std::endl;
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(*src, *src_bb, *dest, *dest_bb, cond, *M, false, F1_OSR, F2_OSR);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
+            *dest, *dest_bb, cond, *M, false, F1_OSR, F2_OSR);
 
     std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 
@@ -328,7 +329,7 @@ void Parser::handleInsertOSRCommand() {
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
-    std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", getGlobalContext()); // TODO unique names, get Context from Helper
+    std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", TheHelper->Context); // TODO unique names, get Context from Helper
     Module* OSRModule_p = OSRModule.get();
 
     OSRModule_p->getFunctionList().push_back(src_new);
@@ -476,7 +477,7 @@ void Parser::handleInsertOpenOSRCommand() {
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(info, cond, nullptr, generator, false, F1_OSR);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info, cond, nullptr, generator, false, F1_OSR);
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *stub = pair.second;
@@ -484,7 +485,7 @@ void Parser::handleInsertOpenOSRCommand() {
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
 
-    std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", getGlobalContext()); // TODO unique names, get Context from Helper
+    std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", TheHelper->Context); // TODO unique names
     Module* OSRModule_p = OSRModule.get();
 
     OSRModule_p->getFunctionList().push_back(src_new);

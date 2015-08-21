@@ -426,13 +426,13 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     // step (2)
     Value* newProfDataVal;
     if (profDataVal != nullptr) {
-        Value* v = (!updateF1) ? cast<Value>(srcToNewSrcVMap[profDataVal]) : profDataVal; // TODO check cast
+        newProfDataVal = (!updateF1) ? cast<Value>(srcToNewSrcVMap[profDataVal]) : profDataVal; // TODO check cast
 
-        // TODO
-        newProfDataVal = nullptr; // what if I have to insert new instructions in the code? should I do it inside the new OSR block?
-
-        std::cerr << "Sorry, this has not been implemented yet!" << std::endl;
-        exit(1);
+        if (!newProfDataVal->getType()->isPointerTy()) {
+            // TODO
+            std::cerr << "Sorry, I don't know yet how to pass non-pointer profiling values!" << std::endl;
+            exit(1);
+        }
     } else {
         newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy); // we pass 0 as NULL value
     }

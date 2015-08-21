@@ -33,7 +33,6 @@ using namespace llvm;
  * - use better aliases for types
  * - use const references more
  * - fix names in OSRDestFun
- * - live values vs OSRCond
  * - verbose mode
  * - what would happen to a reassigned Argument??
  * - general attributes of the Function? (http://llvm.org/docs/HowToUseAttributes.html)
@@ -160,15 +159,8 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     assert(F1.getReturnType() == F2.getReturnType());
 
-    // verifyFunction() needs a Module
-    Module tmpMod("OSRtmpMod", Context);
-
     /* Prepare F2' aka OSRDestFun */
     Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
-
-    /* Check generated OSRDestFun for well-formedness */
-    tmpMod.getFunctionList().push_back(OSRDestFun);
-    verifyAux(OSRDestFun, &errStream, &preventOptimize);
 
     /* [Prepare F1' aka newSrc] Workflow:
      * (1) Duplicate F1 into newSrc
@@ -223,27 +215,39 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     BasicBlock* splittedBlock = insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond, splitBlockName);
 
     if (parentForSrc == nullptr) { // (!updateF1) term in || is redundant
+        Module tmpMod("OSRtmpMod", Context);
+
+        /* Check OSRDestFun for well-formedness */
+        tmpMod.getFunctionList().push_back(OSRDestFun);
+        verifyAux(OSRDestFun, &errStream, &preventOptimize);
+
         tmpMod.getFunctionList().push_back(newSrcFun); // (5)
         verifyAux(newSrcFun, &errStream, &preventOptimize);
+
+        FunctionPassManager FPM(&tmpMod);
+
+        FPM.add(createCFGSimplificationPass());
+        FPM.doInitialization();
+        FPM.run(*OSRDestFun);
+
+        FPM.run(*OSRDestFun);
+        FPM.run(*newSrcFun);
+
+        OSRDestFun->removeFromParent(); // will remove the old entrypoint and fix PHI nodes
+        newSrcFun->removeFromParent();
     } else {
-        verifyAux(src, &errStream, &preventOptimize);
+        /* Add OSRDestFun to same module and check for well-formedness */
+        verifyAux(OSRDestFun, &errStream, &preventOptimize);
+
+        verifyAux(src, &errStream, &preventOptimize); // (5)
+
         FunctionPassManager FPM(parentForSrc);
         FPM.add(createCFGSimplificationPass());
         FPM.doInitialization();
+
+        FPM.run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
         FPM.run(*src);
     }
-
-    FunctionPassManager FPM(&tmpMod);
-    FPM.add(createCFGSimplificationPass());
-    FPM.doInitialization();
-    FPM.run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
-
-    if (parentForSrc == nullptr) { // (!updateF1) term in || is redundant
-        FPM.run(*newSrcFun);
-        newSrcFun->removeFromParent();
-    }
-
-    OSRDestFun->removeFromParent();
 
     return OSRPair(newSrcFun, OSRDestFun);
 }
@@ -254,7 +258,6 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
 
-    Module tmpMod("OSRtmpMod", Context);
     Function *stub;
     Function *src = info.f1;
     BasicBlock* srcBlock = info.b1;
@@ -367,7 +370,13 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     CallInst* destFunGeneratorCall = CallInst::Create(destFunGenVal, destFunGenArgs, "destFunGenCall", stubEntryPoint); // direct call to absolute address
 
     // make an indirect call to the generated function
-    CallInst* generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate, "generatedFunCall");
+    CallInst* generatedFunCall;
+    if (retTy->isVoidTy()) {
+        generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate);
+    } else {
+        generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate, "generatedFunCall");
+    }
+
     stubEntryPoint->getInstList().push_back(generatedFunCall);
 
     // step (7)
@@ -448,10 +457,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     raw_os_ostream errStream(std::cerr);
     bool preventOptimize = false;
 
-    tmpMod.getFunctionList().push_back(stub);
-    verifyAux(stub, &errStream, &preventOptimize);
-
     if (parentForSrc == nullptr) {
+        Module tmpMod("OSRtmpMod", Context);
+        tmpMod.getFunctionList().push_back(stub);
+        verifyAux(stub, &errStream, &preventOptimize);
+
         tmpMod.getFunctionList().push_back(newSrcFun);
         verifyAux(newSrcFun, &errStream, &preventOptimize);
 
@@ -461,7 +471,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
         FPM.run(*newSrcFun);
 
         newSrcFun->removeFromParent();
+        stub->removeFromParent();
     } else {
+        parentForSrc->getFunctionList().push_back(stub);
+        verifyAux(stub, &errStream, &preventOptimize);
+
         verifyAux(src, &errStream, &preventOptimize);
 
         FunctionPassManager FPM(parentForSrc);
@@ -469,8 +483,6 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
         FPM.doInitialization();
         FPM.run(*src);
     }
-
-    stub->removeFromParent();
 
     if (valuesToTransfer == nullptr) {
         delete valuesToPassTmp;
@@ -691,8 +703,14 @@ BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Func
     BasicBlock* OSR_B = BasicBlock::Create(Context, OSRBlockName);
 
     // generate call instruction for the finalized OSR transition
-    Twine OSRCallName("OSRCallTo", OSRFunName);
-    CallInst* callInst = CallInst::Create(OSRDest, valuesToPass, OSRCallName);
+    CallInst* callInst;
+    if (OSRDest->getReturnType()->isVoidTy()) {
+        callInst = CallInst::Create(OSRDest, valuesToPass);
+    } else {
+        Twine OSRCallName("OSRCallTo", OSRFunName);
+        callInst = CallInst::Create(OSRDest, valuesToPass, OSRCallName);
+    }
+
     OSR_B->getInstList().push_back(callInst);
 
     // if OSRDest is non-void we should return the value it computes

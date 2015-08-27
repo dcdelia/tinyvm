@@ -115,9 +115,8 @@ std::vector<Value*> StateMap::getValuesToFetchFromSrcFunction(StateMap::BlockPai
             }
         }
 
-        char errorMsg[256];
-        sprintf(errorMsg, "Could not find mapping information for Value %s", valueToSet->getName().str().c_str());
-        llvm::report_fatal_error(std::string(errorMsg));
+        valueToSet->dump();
+        llvm::report_fatal_error("[getValuesToFetchFromSrcFunction] could not find mapping information for the Value above");
     }
 
     /* The number of duplicates is very likely to be small! So I won't construct a std::set
@@ -163,15 +162,15 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::createEntryPointForNewDestF
                     (*updatedValuesToUse)[dest_v] = fetchedValuesToNewDestArgs[src_v];
                     continue;
                 } else {
-                    llvm::report_fatal_error("Sorry, local compensation code hasn't been implemented yet!"); // TODO
+                    lastCreatedBB = addLocalCompensationCode(lastCreatedBB, dest_v, VI,
+                        updatedValuesToUse, fetchedValuesToNewDestArgs);
                 }
                 continue;
             }
         }
 
-        char errorMsg[256];
-        sprintf(errorMsg, "Could not find mapping information for Value %s", dest_v->getName().str().c_str());
-        llvm::report_fatal_error(std::string(errorMsg));
+        dest_v->dump();
+        llvm::report_fatal_error("[createEntryPointForNewDestFunction] could not find mapping information for the Value above");
     }
 
     // add branch instruction
@@ -179,6 +178,44 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::createEntryPointForNewDestF
     lastCreatedBB->getInstList().push_back(brToDest);
 
     return std::pair<BasicBlock*, ValueToValueMapTy*>(lastCreatedBB, updatedValuesToUse);
+}
+
+BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest_v, StateMap::ValueInfo* valInfo,
+        ValueToValueMapTy* updatedValuesToUse, ValueToValueMapTy& fetchedValuesToNewDestArgs) {
+    CompCode* compCode = valInfo->compCode;
+    if (compCode->args != nullptr) {
+        // we should replace each value in args with the corresponding argument for the function
+        for (CompCodeArgs::iterator argIt = compCode->args->begin(),
+                argEnd = compCode->args->end(); argIt != argEnd; ++argIt) {
+            Value* srcVal = *argIt;
+            Value* newVal = fetchedValuesToNewDestArgs[srcVal];
+            for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
+                // perform replacement of operands when required
+                if (Instruction* ins = dyn_cast<Instruction>(*it)) {
+                    for (User::op_iterator opIt = ins->op_begin(), opEnd = ins->op_end(); opIt != opEnd; ++opIt) {
+                        if (*opIt == srcVal) {
+                            *opIt = newVal;
+                            // don't break here! operand can be repeated
+                        }
+                    }
+                }
+            }
+        }
+        // TODO after the transformation code can't be reused anymore!
+    }
+
+    for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
+        Value* curVal = *it;
+        if (isa<BasicBlock>(curVal)) {
+            llvm::report_fatal_error("Sorry, local compensation code with multiple BBs hasn't been implemented yet!"); // TODO
+        }
+        Instruction* curInst = cast<Instruction>(curVal);
+        curBlock->getInstList().push_back(curInst);
+    }
+
+    (*updatedValuesToUse)[dest_v] = compCode->value;
+
+    return curBlock;
 }
 
 Value* StateMap::getCorrespondingOneToOneValue(Value *v) {
@@ -223,6 +260,14 @@ void StateMap::registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b,
     if (bidirectional) {
         correspondingBlockMap.insert(std::pair<BasicBlock*, BasicBlock*>(dest_b, src_b));
     }
+}
+
+StateMap::BlockPairInfo& StateMap::getOrCreateMapBlockPairInfo(StateMap::BlockPair &pair) {
+    if (blockPairStateMap.count(pair) == 0) {
+        blockPairStateMap.insert(std::pair<BlockPair, BlockPairInfo>(pair, BlockPairInfo()));
+    }
+
+    return blockPairStateMap[pair];
 }
 
 /*

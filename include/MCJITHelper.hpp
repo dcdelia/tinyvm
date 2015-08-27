@@ -79,6 +79,7 @@ public:
     void showTrackedAsm();
     void showModules();
     void showFunctions();
+    bool loadDynamicLibrary(const std::string &FileName);
     CmpInst* generateAlwaysTrueCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
     static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);

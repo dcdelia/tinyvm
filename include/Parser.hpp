@@ -26,7 +26,8 @@ private:
     void handleFunctionInvocation(int iterations);
     void handleHelpCommand();
     void handleInsertOSRCommand();
-    void handleLoadCommand();
+    void handleLoadIRCommand();
+    void handleLoadLibCommand();
     void handleRepeatCommand();
     void handleShowCFGCommand(bool showInstructions);
     void handleTrackAsmCommand();

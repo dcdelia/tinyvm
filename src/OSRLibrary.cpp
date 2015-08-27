@@ -30,29 +30,30 @@ using namespace llvm;
 
 /**
  * Global TODO list
- * - use better aliases for types
- * - use const references more
+ * - use better aliases for types?
+ * - use const references more?
  * - fix names in OSRDestFun
- * - verbose mode
  * - what would happen to a reassigned Argument??
+ * - helper method to generate prototypes of called functions and update references when a new Module is used
  * - general attributes of the Function? (http://llvm.org/docs/HowToUseAttributes.html)
  */
 
 /**
- * Public methods
+ * Helper methods
  */
-
-static bool verifyAux(Function* F, raw_os_ostream* OS, bool* preventOptimize = nullptr) {
-    bool ret = verifyFunction(*F, OS); // returns false if there are no errors
-    if (ret) {
+static inline void verifyAux(Function* F) {
+    if (llvm::verifyFunction(*F, &llvm::outs())) {
         F->dump();
-        if (preventOptimize != nullptr) *preventOptimize = true;
+        llvm::report_fatal_error("ill-formed function!");
     }
-    return ret;
 }
 
+/**
+ * Public methods
+ */
 Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Function &F2,
-        StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M, const Twine& F2NewName) {
+        StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M,
+        const std::string* F2NewName, bool verbose) {
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -81,9 +82,11 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
     FunctionType *OSRDestFTy = FunctionType::get(dest->getReturnType(), ArgTypes, false);
 
     // step (2): generate OSRDest function and set argument names
-    Twine OSRDestFunName = F2NewName.isTriviallyEmpty() ?
-                            Twine(dest->getName(), "DestOSR") : const_cast<Twine&>(F2NewName); // TODO index or f1@l1TOf2@l2
-    OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), OSRDestFunName); // (2)
+    if (F2NewName == nullptr) {
+        OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), Twine("OSRDest", dest->getName()));
+    } else {
+        OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), Twine(*F2NewName));
+    }
     Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
     for (Value* src_v: valuesToPass) {
         fetchedValuesToOSRDestArgs[src_v] = OSRDestArgIt;
@@ -140,8 +143,10 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
     replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
-            destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes);
-    std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
+            destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose);
+    if (verbose) {
+        std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
+    }
 
     delete updatesForDestToOSRDestVMap;
 
@@ -150,17 +155,31 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M, bool updateF1, const Twine& F1NewName,
-                        const Twine& F2NewName) { // default value for the last two parameters is ""
+                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
-    raw_os_ostream errStream(std::cerr);
-    bool preventOptimize = false; // set by verifyAux in case of error
     StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
     std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass, M, F2NewName);
+    Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass,
+                                M, config.nameForNewF2, config.verbose);
+
+    Function* OSRDestFunProt;
+    if (config.modForNewF2 != config.modForNewF1) {
+        if (config.modForNewF1 == nullptr) {
+            llvm::report_fatal_error("Cannot generate F2' and F1' for different modules if no module is provided for F1'");
+        }
+        if (config.verbose) {
+            std::cerr << "Generating prototype for calling F2' from F1' as they might be in different modules" << std::endl;
+        }
+        OSRDestFunProt = llvm::Function::Create(OSRDestFun->getFunctionType(),
+                                                llvm::Function::ExternalLinkage,
+                                                OSRDestFun->getName().str(),
+                                                config.modForNewF1);
+    } else {
+        OSRDestFunProt = OSRDestFun;
+    }
 
     /* [Prepare F1' aka newSrc] Workflow:
      * (1) Duplicate F1 into newSrc
@@ -172,22 +191,25 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
      * Steps (1) and (2) are not performed when updateF1 == true
      */
     Function*   src = &F1;
+    Module*     parentForSrc = src->getParent();
 
     Function*   newSrcFun;
     std::vector<Value*>* ptrToValuesToPass;
     OSRCond*    ptrToOSRCond;
     BasicBlock* ptrToSrcBlock;
-    Module*     parentForSrc;
 
     // TODO rewrite this part
     std::vector<Value*> newValuesToPass;
     OSRCond newCond;
     ValueToValueMapTy srcToNewSrcVMap;
 
-    if (!updateF1) {
-        Twine newSrcFunName = F1NewName.isTriviallyEmpty() ?
-                                Twine(src->getName(), "WithOSR") : const_cast<Twine&>(F1NewName); // (1) TODO use better names
-        newSrcFun = duplicateFunction(src, newSrcFunName, srcToNewSrcVMap);
+    if (!config.updateF1) {
+        if (config.nameForNewF1 == nullptr) {
+            newSrcFun = duplicateFunction(src, Twine(src->getName(), "WithOSR"), srcToNewSrcVMap); // (1)
+        } else {
+            newSrcFun = duplicateFunction(src, Twine(*config.nameForNewF1), srcToNewSrcVMap); // (1)
+        }
+
          // I have to regenerate valuesToPass as well!
         for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
             newValuesToPass.push_back(srcToNewSrcVMap[*it]);
@@ -198,55 +220,67 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
         ptrToValuesToPass = &newValuesToPass;
         ptrToOSRCond = &newCond;
         ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]);
-        parentForSrc = nullptr;
     } else {
         newSrcFun = src;
         ptrToValuesToPass = &valuesToPass;
         ptrToOSRCond = &cond;
         ptrToSrcBlock = srcDestBlocks.first;
-        parentForSrc = src->getParent();
     }
 
-    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFun, *ptrToValuesToPass); // (3)
+    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, *ptrToValuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
-    Twine splitBlockName("splitBlockForOSRTo", OSRDestFun->getName()); // (4)
+    insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
+            Twine("splitBlockForOSRTo", OSRDestFunProt->getName())); /* BasicBlock* splittedBlock = ... */
 
-    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond, splitBlockName);
-
-    if (parentForSrc == nullptr) { // (!updateF1) term in || is redundant
+    /* verify OSRDestFun and add it to the proper module */
+    if (config.modForNewF2 == nullptr) {
+        if (config.verbose) {
+            std::cerr << "WARNING: No LLVM Module supplied for F2'!" << std::endl;
+        }
         Module tmpMod("OSRtmpMod", Context);
-
-        /* Check OSRDestFun for well-formedness */
         tmpMod.getFunctionList().push_back(OSRDestFun);
-        verifyAux(OSRDestFun, &errStream, &preventOptimize);
-
-        tmpMod.getFunctionList().push_back(newSrcFun); // (5)
-        verifyAux(newSrcFun, &errStream, &preventOptimize);
-
-        FunctionPassManager FPM(&tmpMod);
-
-        FPM.add(createCFGSimplificationPass());
-        FPM.doInitialization();
-        FPM.run(*OSRDestFun);
-
-        FPM.run(*OSRDestFun);
-        FPM.run(*newSrcFun);
-
-        OSRDestFun->removeFromParent(); // will remove the old entrypoint and fix PHI nodes
-        newSrcFun->removeFromParent();
+        verifyAux(OSRDestFun);
+        OSRDestFun->removeFromParent();
     } else {
-        /* Add OSRDestFun to same module and check for well-formedness */
-        verifyAux(OSRDestFun, &errStream, &preventOptimize);
+        if (config.verbose) {
+            std::cerr << "WARNING: replacement of references to functions and "
+                    << "globals for F2' has not been implemented yet!" << std::endl;
+        }
+        config.modForNewF1->getFunctionList().push_back(OSRDestFun);
+        verifyAux(OSRDestFun);
+    }
 
-        verifyAux(src, &errStream, &preventOptimize); // (5)
-
-        FunctionPassManager FPM(parentForSrc);
-        FPM.add(createCFGSimplificationPass());
-        FPM.doInitialization();
-
-        FPM.run(*OSRDestFun); // will remove the old entrypoint and fix PHI nodes
-        FPM.run(*src);
+    /* verify newSrcFun and add it to the proper module */
+    if (config.updateF1) {
+        if (parentForSrc == nullptr) {
+            if (config.verbose) {
+                std::cerr << "WARNING: supplied F1 does not belong to any LLVM Module!" << std::endl;
+            }
+            Module tmpMod("OSRtmpMod", Context);
+            tmpMod.getFunctionList().push_back(src);
+            verifyAux(src);
+            src->removeFromParent();
+        } else {
+            verifyAux(src);
+        }
+    } else {
+        if (config.modForNewF1 == nullptr) {
+            if (config.verbose) {
+                std::cerr << "WARNING: no LLVM Module supplied for F1'!" << std::endl;
+            }
+            Module tmpMod("OSRtmpMod", Context);
+            tmpMod.getFunctionList().push_back(newSrcFun);
+            verifyAux(newSrcFun);
+            newSrcFun->removeFromParent();
+        } else {
+            if (config.verbose) {
+                std::cerr << "WARNING: replacement of references to functions and "
+                        << "globals for F1' has not been implemented yet!" << std::endl;
+            }
+            config.modForNewF1->getFunctionList().push_back(newSrcFun);
+            verifyAux(newSrcFun);
+        }
     }
 
     return OSRPair(newSrcFun, OSRDestFun);
@@ -254,7 +288,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
 
 OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::OpenOSRInfo& info,
         OSRLibrary::OSRCond& cond, Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator,
-        bool updateF1, const Twine& F1NewName, std::vector<Value*>* valuesToTransfer) {
+        std::vector<Value*> *valuesToTransfer, OSRLibrary::OSRPointConfig &config) {
 
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
 
@@ -262,7 +296,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     Function *src = info.f1;
     BasicBlock* srcBlock = info.b1;
     Type* retTy = src->getReturnType();
-    std::string newFunName = F1NewName.isTriviallyEmpty() ? src->getName().str() + "WithOSR" : F1NewName.str();
+    std::string newFunName = (config.updateF1) ?
+                                src->getName().str() :
+                                (config.nameForNewF1 == nullptr) ?
+                                    src->getName().str() + "WithOSR" :
+                                    *config.nameForNewF1;
 
     /* [Prepare F1'_stub aka stub] Workflow
      * (1) Generate prototype for stub
@@ -292,12 +330,12 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     // step (2)
 
-    /* TODO: check why using a local Twine variable leads to a segfault in McVM
-     *       while creating it when passed as argument works fine :-/
-     * Twine stubName(newFunName, "_stub");
-     * //std::string stubName = newFunName + "_stub";
-    */
-    stub = Function::Create(stubFTy, src->getLinkage(), Twine(newFunName, "_stub")); // TODO provide name as argument
+    // TODO: check why allocating a local Twine variable leads to a segfault in McVM
+    if (config.nameForNewF2 == nullptr) {
+        stub = Function::Create(stubFTy, src->getLinkage(), Twine(newFunName, "_stub")); // TODO provide name as argument
+    } else {
+        stub = Function::Create(stubFTy, src->getLinkage(), Twine(*config.nameForNewF2));
+    }
 
     Function::arg_iterator stubArgIt = stub->arg_begin();
     (stubArgIt++)->setName("profDataAddr");
@@ -342,7 +380,6 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 0, "f1_ptr", info.f1, int64Ty, i8PointerTy);
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 1, "b1_ptr", info.b1, int64Ty, i8PointerTy);
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 2, "extra_ptr", info.extra, int64Ty, i8PointerTy);
-
 
     // step (6)
     std::vector<Type*> argTypesForFunToGenerate;
@@ -397,48 +434,45 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
      * Step (1) is not performed when updateF1 == true
      */
 
+    Module* parentForSrc = src->getParent();
+
     std::vector<Value*> newValuesToPass;
     ValueToValueMapTy srcToNewSrcVMap; // used only when updateF1 = false
 
     Function* newSrcFun;
     OSRCond* ptrToOSRCond;
     BasicBlock* ptrToSrcBlock;
-    Module* parentForSrc;
 
     // TODO rewrite this part
     OSRCond newCond;
 
-    if (!updateF1) {
+    if (!config.updateF1) {
         // step (1)
         newSrcFun = duplicateFunction(src, newFunName, srcToNewSrcVMap);
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
 
         ptrToOSRCond = &newCond;
         ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcBlock]);
-        parentForSrc = nullptr;
     } else {
         newSrcFun = src;
         ptrToOSRCond = &cond;
         ptrToSrcBlock = srcBlock;
-        parentForSrc = src->getParent();
     }
 
     // step (2)
     Value* newProfDataVal;
     if (profDataVal != nullptr) {
-        newProfDataVal = (!updateF1) ? cast<Value>(srcToNewSrcVMap[profDataVal]) : profDataVal; // TODO check cast
-
+        newProfDataVal = (!config.updateF1) ? cast<Value>(srcToNewSrcVMap[profDataVal]) : profDataVal; // TODO check cast
         if (!newProfDataVal->getType()->isPointerTy()) {
             // TODO
-            std::cerr << "Sorry, I don't know yet how to pass non-pointer profiling values!" << std::endl;
-            exit(1);
+            llvm::report_fatal_error("Sorry, I don't know yet how to pass non-pointer profiling values!");
         }
     } else {
         newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy); // we pass 0 as NULL value
     }
     newValuesToPass.push_back(newProfDataVal);
     for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
-        if (!updateF1) {
+        if (!config.updateF1) {
             newValuesToPass.push_back(srcToNewSrcVMap[*it]);
         } else {
             newValuesToPass.push_back(*it);
@@ -450,40 +484,53 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     OSR_B->insertInto(newSrcFun);
 
     // step (4)
-    Twine splitBlockName("splitBlockForOSRTo", stub->getName());
-    BasicBlock* splittedBlock = insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond, splitBlockName);
+    insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
+            Twine("splitBlockForOSRTo", stub->getName())); /* BasicBlock* splittedBlock = ... */
 
-    /* Now we verify both generated functions */
-    raw_os_ostream errStream(std::cerr);
-    bool preventOptimize = false;
-
-    if (parentForSrc == nullptr) {
-        Module tmpMod("OSRtmpMod", Context);
-        tmpMod.getFunctionList().push_back(stub);
-        verifyAux(stub, &errStream, &preventOptimize);
-
-        tmpMod.getFunctionList().push_back(newSrcFun);
-        verifyAux(newSrcFun, &errStream, &preventOptimize);
-
-        FunctionPassManager FPM(&tmpMod);
-        FPM.add(createCFGSimplificationPass());
-        FPM.doInitialization();
-        FPM.run(*newSrcFun);
-
-        newSrcFun->removeFromParent();
-        stub->removeFromParent();
+    /* verify newSrcFun and stub add them to the proper module */
+    if (config.updateF1) {
+        // newSrcFun == src here
+        if (parentForSrc == nullptr) {
+            if (config.verbose) {
+                std::cerr << "WARNING: Supplied F1 does not belong to any LLVM Module!" << std::endl;
+            }
+            Module tmpMod("OSRtmpMod", Context);
+            tmpMod.getFunctionList().push_back(stub);
+            verifyAux(stub);
+            tmpMod.getFunctionList().push_back(src);
+            verifyAux(src);
+            stub->removeFromParent();
+            src->removeFromParent();
+        } else {
+            parentForSrc->getFunctionList().push_back(stub);
+            verifyAux(stub);
+            verifyAux(src);
+        }
     } else {
-        parentForSrc->getFunctionList().push_back(stub);
-        verifyAux(stub, &errStream, &preventOptimize);
-
-        verifyAux(src, &errStream, &preventOptimize);
-
-        FunctionPassManager FPM(parentForSrc);
-        FPM.add(createCFGSimplificationPass());
-        FPM.doInitialization();
-        FPM.run(*src);
+        if (config.modForNewF1 == nullptr) {
+            if (config.verbose) {
+                std::cerr << "WARNING: No LLVM Module supplied for F1'!" << std::endl;
+            }
+            Module tmpMod("OSRtmpMod", Context);
+            tmpMod.getFunctionList().push_back(stub);
+            verifyAux(stub);
+            tmpMod.getFunctionList().push_back(src);
+            verifyAux(src);
+            stub->removeFromParent();
+            src->removeFromParent();
+        } else {
+            if (config.verbose) {
+                std::cerr << "WARNING : Replacement of references to functions and"
+                        << "globals for F1' has not been implemented yet!" << std::endl;;
+            }
+            config.modForNewF1->getFunctionList().push_back(stub);
+            verifyAux(stub);
+            config.modForNewF1->getFunctionList().push_back(newSrcFun);
+            verifyAux(newSrcFun);
+        }
     }
 
+    // cleanup
     if (valuesToTransfer == nullptr) {
         delete valuesToPassTmp;
     }
@@ -574,7 +621,9 @@ void OSRLibrary::fixOperandReferencesFromVMap(Function* NF, Function* F, ValueTo
     }
 }
 
-void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock, std::vector<Value*> &origValuesToSetForDestBlock, ValueToValueMapTy &VMap, ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes) {
+void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock,
+        std::vector<Value*> &origValuesToSetForDestBlock, ValueToValueMapTy &VMap,
+        ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes, bool verbose) {
     BasicBlock* entryPoint = &NF->getEntryBlock();
     BasicBlock* OSRdestBlock = cast<BasicBlock>(VMap[origDestBlock]);
 
@@ -601,10 +650,12 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
         Value* origValue = const_cast<Value*>(*it);
         if (isa<Argument>(origValue)) continue; // case 1
 
-        if (origValue->hasName()) {
-            std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
-        } else {
-            std::cerr << "Processing anonymous value: " << std::endl;
+        if (verbose) {
+            if (origValue->hasName()) {
+                std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
+            } else {
+                std::cerr << "Processing anonymous value: " << std::endl;
+            }
         }
 
         Value* oldValue = VMap[origValue];
@@ -616,7 +667,9 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
 
         if (oldBlock == OSRdestBlock) { // case 2
             if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
-                std::cerr << "--> value is a PHI node defined in the target block" << std::endl;
+                if (verbose) {
+                    std::cerr << "--> value is a PHI node defined in the target block" << std::endl;
+                }
 
                 node->addIncoming(newValue, newBlock);
 
@@ -625,7 +678,10 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             }
         }
 
-        std::cerr << "--> I will use SSAUpdater to fix the CFG where required!" << std::endl;
+        if (verbose) {
+            std::cerr << "--> I will use SSAUpdater to fix the CFG where required!" << std::endl;
+        }
+
         if (oldValue->hasName()) {
             updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_fixSSA").str()));
         } else {
@@ -650,7 +706,9 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                 BasicBlock *UserBB = UserInst->getParent();
                 // use in the same block as the definition of oldValue
                 if (UserBB == oldBlock) {
-                    std::cerr << "----> manually handling a use in the same block of the original value" << std::endl;
+                    if (verbose) {
+                        std::cerr << "----> manually handling a use in the same block of the original value" << std::endl;
+                    }
                     U = oldValue;
                     //updateSSA.RewriteUseAfterInsertions(U); // wrong!
                     continue;
@@ -660,7 +718,9 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             }
 
             // Anything else can be handled by SSAUpdater.
-            std::cerr << "----> use being rewritten using SSAUpdater::RewriteUse()" << std::endl;
+            if (verbose) {
+                std::cerr << "----> use being rewritten using SSAUpdater::RewriteUse()" << std::endl;
+            }
             updateSSA.RewriteUse(U);
         }
         ++replacedUses;
@@ -699,16 +759,14 @@ BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Func
     Type* retTy = OSRDest->getReturnType();
 
     // generate basic block to trigger the OSR transition
-    Twine OSRBlockName("OSRBlockTo", OSRFunName);
-    BasicBlock* OSR_B = BasicBlock::Create(Context, OSRBlockName);
+    BasicBlock* OSR_B = BasicBlock::Create(Context, Twine("OSRBlockTo", OSRFunName));
 
     // generate call instruction for the finalized OSR transition
     CallInst* callInst;
     if (OSRDest->getReturnType()->isVoidTy()) {
         callInst = CallInst::Create(OSRDest, valuesToPass);
     } else {
-        Twine OSRCallName("OSRCallTo", OSRFunName);
-        callInst = CallInst::Create(OSRDest, valuesToPass, OSRCallName);
+        callInst = CallInst::Create(OSRDest, valuesToPass, Twine("OSRCallTo", OSRFunName));
     }
 
     OSR_B->getInstList().push_back(callInst);

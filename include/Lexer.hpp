@@ -23,7 +23,7 @@ enum Token {
     // special commands for the interpreter
     tok_help        = -10,
     tok_quit        = -11,
-    tok_load        = -12,
+    tok_load_IR     = -12,
     tok_begin       = -13,
     tok_insert_osr  = -14,
     tok_in          = -15,
@@ -38,7 +38,8 @@ enum Token {
     tok_repeat      = -24,
     tok_show_mods   = -25,
     tok_insert_open_osr    = -26,
-    tok_show_funs   = -27
+    tok_show_funs   = -27,
+    tok_load_lib    = -28
 };
 
 class Lexer {

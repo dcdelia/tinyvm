@@ -22,6 +22,24 @@ class OSRLibrary {
         typedef std::vector<llvm::Instruction*> OSRCond;
         typedef std::pair<llvm::Function*, llvm::Function*> OSRPair;
 
+        typedef struct OSRPointConfig {
+            bool verbose;
+            bool updateF1;
+
+            const std::string* nameForNewF1;
+            llvm::Module* modForNewF1;
+
+            // finalized OSR only
+            const std::string* nameForNewF2;
+            llvm::Module* modForNewF2;
+
+            OSRPointConfig(bool verbose = false, bool updateF1 = true,
+                    const std::string* nameForNewF1 = nullptr, llvm::Module* modForNewF1 = nullptr,
+                    const std::string* nameForNewF2 = nullptr, llvm::Module* modForNewF2 = nullptr) :
+                    verbose(verbose), updateF1(updateF1), nameForNewF1(nameForNewF1), modForNewF1(modForNewF1),
+                    nameForNewF2(nameForNewF2), modForNewF2(modForNewF2) {};
+        } OSRPointConfig;
+
         typedef struct OpenOSRInfo {
             llvm::Function*       f1;
             llvm::BasicBlock*     b1;
@@ -45,9 +63,7 @@ class OSRLibrary {
                                     llvm::BasicBlock& B2,
                                     OSRCond& cond,
                                     StateMap& M,
-                                    bool updateF1 = false,
-                                    const llvm::Twine& F1NewName="",
-                                    const llvm::Twine& F2NewName="");
+                                    OSRPointConfig &config);
 
         static OSRPair insertOpenOSR(
                                 llvm::LLVMContext &Context,
@@ -55,9 +71,8 @@ class OSRLibrary {
                                 OSRCond& cond,
                                 llvm::Value* profDataVal,
                                 DestFunGenerator destFunGenerator,
-                                bool updateF1 = false,
-                                const llvm::Twine& F1NewName="",
-                                std::vector<llvm::Value*> *valuesToTransfer = nullptr);
+                                std::vector<llvm::Value*> *valuesToTransfer,
+                                OSRPointConfig &config);
 
         static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B);
 
@@ -68,7 +83,8 @@ class OSRLibrary {
                                     StateMap::BlockPair &srcDestBlocks,
                                     std::vector<llvm::Value*> &valuesToPass,
                                     StateMap &M,
-                                    const llvm::Twine& F2NewName);
+                                    const std::string* F2NewName,
+                                    bool verbose = false);
 
         static llvm::Function* prepareForRedirection(llvm::Function& F);
         static void enableRedirection(uint64_t f, uint64_t destination);
@@ -80,7 +96,7 @@ class OSRLibrary {
         static void fixOperandReferencesFromVMap(llvm::Function* NF, llvm::Function* F, llvm::ValueToValueMapTy &VMap);
         static void replaceUsesWithNewValuesAndUpdatePHINodes(llvm::Function* NF, llvm::BasicBlock* origDestBlock,
             std::vector<llvm::Value*> &origValuesToSetForDestBlock, llvm::ValueToValueMapTy &VMap,
-            llvm::ValueToValueMapTy &updatesForVMap, llvm::SmallVectorImpl<llvm::PHINode*> *insertedPHINodes);
+            llvm::ValueToValueMapTy &updatesForVMap, llvm::SmallVectorImpl<llvm::PHINode*> *insertedPHINodes, bool verbose);
         static llvm::Function* duplicateFunction(llvm::Function* F, const llvm::Twine &Name, llvm::ValueToValueMapTy &VMap);
         static OSRCond regenerateOSRCond(OSRCond &cond, llvm::ValueToValueMapTy &VMap);
         static llvm::BasicBlock* generateTriggerOSRBlock(llvm::LLVMContext &Context, llvm::Function* OSRDest,

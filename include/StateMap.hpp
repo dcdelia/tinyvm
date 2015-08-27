@@ -24,11 +24,11 @@ public:
     typedef std::pair<llvm::BasicBlock*, llvm::BasicBlock*> BlockPair;
     typedef std::map<llvm::BasicBlock*, llvm::BasicBlock*>  BlockMap;
     typedef llvm::SmallVectorImpl<llvm::Value*> CompCodeArgs;
-    typedef llvm::SmallVectorImpl<llvm::BasicBlock*> BBSequence;
+    typedef llvm::SmallVectorImpl<llvm::Value*> CodeSequence;
 
     typedef struct CompCode {
         CompCodeArgs*   args;
-        BBSequence*     blocks;
+        CodeSequence*   code;
         llvm::Value*    value;
     } CompCode;
 
@@ -92,7 +92,9 @@ public:
     // methods for registering mapping information
     void    registerOneToOneValue(llvm::Value* src_v, llvm::Value* dest_v, bool bidirectional = false);
     void    registerCorrespondingBlock(llvm::BasicBlock* src_b, llvm::BasicBlock* dest_b, bool bidirectional = true);
+
     // TODO: methods for registering ValueInfo and BlockPairInfo
+    BlockPairInfo& getOrCreateMapBlockPairInfo(BlockPair &pair);
 
     // methods for querying
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
@@ -111,6 +113,10 @@ private:
     BlockPairStateMap   blockPairStateMap;
     LivenessAnalysis    F1LivenessAnalysis, F2LivenessAnalysis;
     std::map<llvm::BasicBlock*, std::vector<llvm::Value*>> cacheForValuesToSetForBlocks;
+
+    // helper methods
+    llvm::BasicBlock* addLocalCompensationCode(llvm::BasicBlock* curBlock, llvm::Value* dest_v, ValueInfo* valInfo,
+        llvm::ValueToValueMapTy* updatedValuesToUse, llvm::ValueToValueMapTy &fetchedValuesToNewDestArgs);
 
 };
 

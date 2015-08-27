@@ -28,7 +28,7 @@ void Parser::start() {
             case tok_newline:       fprintf(stderr, "\r"); break; // dirty trick :-)
             case tok_help:          handleHelpCommand(); break;
             case tok_begin:         handleBeginCommand(); break;
-            case tok_load:          handleLoadCommand(); break;
+            case tok_load_IR:       handleLoadIRCommand(); break;
             case tok_insert_osr:    handleInsertOSRCommand(); break;
             case tok_cfg:           handleShowCFGCommand(false); break;
             case tok_cfg_full:      handleShowCFGCommand(true); break;
@@ -39,6 +39,7 @@ void Parser::start() {
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_insert_open_osr:   handleInsertOpenOSRCommand(); break;
+            case tok_load_lib:      handleLoadLibCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return;
             case tok_identifier:    handleFunctionInvocation(1); break;
             case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return;
@@ -176,7 +177,8 @@ void Parser::handleHelpCommand() {
     // simple commands
     std::cerr << "List of available commands:" << std::endl;
     std::cerr << "--> BEGIN <module_name>" << std::endl << "\tType an IR module from stdin. Press CTRL-D when finished." << std::endl;
-    std::cerr << "--> LOAD <file_name>" << std::endl << "\tLoads an IR module from a given file." << std::endl;
+    std::cerr << "--> LOAD_IR <file_name>" << std::endl << "\tLoads an IR module from a given file." << std::endl;
+    std::cerr << "--> LOAD_LIB <file_name>" << std::endl << "\tLoads the dynamic library at the given path." << std::endl;
     std::cerr << "--> CFG <function_name>" << std::endl << "\tShows a compact view of the CFG of a given function." << std::endl;
     std::cerr << "--> CFG_FULL <function_name>" << std::endl << "\tShows the full CFG (with instructions) of a given function." << std::endl;
     std::cerr << "--> DUMP <function_name>" << std::endl << "\tShows the IR code of a given function." << std::endl;
@@ -319,8 +321,11 @@ void Parser::handleInsertOSRCommand() {
 
     std::cerr << "OSRCond generated!" << std::endl;
 
+    // (verbose, updateF1, nameForNewF1, modForNewF1, nameForNewF2, nameForNewF2)
+    OSRLibrary::OSRPointConfig config(false, false, &F1_OSR, src->getParent(), &F2_OSR, src->getParent());
+
     OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
-            *dest, *dest_bb, cond, *M, false, F1_OSR, F2_OSR);
+            *dest, *dest_bb, cond, *M, config);
 
     std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 
@@ -329,6 +334,7 @@ void Parser::handleInsertOSRCommand() {
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
+    /*
     std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", TheHelper->Context); // TODO unique names, get Context from Helper
     Module* OSRModule_p = OSRModule.get();
 
@@ -338,10 +344,11 @@ void Parser::handleInsertOSRCommand() {
     std::cerr << "Module " << OSRModule_p->getModuleIdentifier() << " generated!" << std::endl;
 
     TheHelper->addModule(std::move(OSRModule), false);
+    */
 }
 
 
-void Parser::handleLoadCommand() {
+void Parser::handleLoadIRCommand() {
     std::string *FileName = TheLexer->getLine();
     const char* fileName = FileName->c_str();
     if (access(fileName, F_OK) == -1 ) {
@@ -351,6 +358,18 @@ void Parser::handleLoadCommand() {
     std::cerr << "[LOAD] Opening \"" << fileName << "\" as IR source file..." << std::endl;
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(*FileName);
     TheHelper->addModule(std::move(M), false);
+    delete FileName;
+}
+
+void Parser::handleLoadLibCommand() {
+    std::string *FileName = TheLexer->getLine();
+    const char* fileName = FileName->c_str();
+    if (access(fileName, F_OK) == -1 ) {
+        std::cerr << "[ERROR] Cannot locate \"" << fileName << "\" dynamic library!" << std::endl;
+        return;
+    }
+    std::cerr << "[LOAD] Loading dynamic library \"" << fileName << std::endl;
+    TheHelper->loadDynamicLibrary(fileName);
     delete FileName;
 }
 
@@ -477,14 +496,18 @@ void Parser::handleInsertOpenOSRCommand() {
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info, cond, nullptr, generator, false, F1_OSR);
+    // (verbose, updateF1, nameForNewF1, modForNewF1, nameForNewF2, nameForNewF2)
+    OSRLibrary::OSRPointConfig config(false, false, &F1_OSR, src->getParent(), nullptr, nullptr);
+
+    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
+        cond, nullptr, generator, nullptr, config);
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *stub = pair.second;
 
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
-
+/*
     std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", TheHelper->Context); // TODO unique names
     Module* OSRModule_p = OSRModule.get();
 
@@ -494,6 +517,7 @@ void Parser::handleInsertOpenOSRCommand() {
     std::cerr << "Module " << OSRModule_p->getModuleIdentifier() << " generated!" << std::endl;
 
     TheHelper->addModule(std::move(OSRModule), false);
+ */
 }
 
 /*

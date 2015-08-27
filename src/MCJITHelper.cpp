@@ -17,6 +17,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/PassManager.h"
+#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/FormattedStream.h"
@@ -115,6 +116,17 @@ std::unique_ptr<Module> MCJITHelper::createModuleFromFile(const std::string &Fil
     M->setModuleIdentifier(ModID);
 
     return M;
+}
+
+bool MCJITHelper::loadDynamicLibrary(const std::string &FileName) {
+    std::string errMsg;
+    bool ret = sys::DynamicLibrary::LoadLibraryPermanently(FileName.c_str(), &errMsg);
+    if (ret) { // returns false on success - https://llvm.org/bugs/show_bug.cgi?id=3069
+        std::cerr << "[MCJITHelper] ERROR - could not load library " << FileName << ":" << std::endl;
+        std::cerr << "--> " << errMsg << std::endl;
+
+    }
+    return ret;
 }
 
 void* MCJITHelper::getPointerToNamedFunction(const std::string &Name) {
@@ -401,7 +413,7 @@ void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawIn
     StateMap::BlockPair blockPair(B1, B2);
     std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");
     Function* OSRDestFun = OSRLibrary::generateOSRDestFun(TheHelper->Context ,*F1, *F2, blockPair,
-                                *valuesToPass, *M, OSRDestFunName);
+                                *valuesToPass, *M, &OSRDestFunName);
     delete valuesToPass;
 
     // compile the generated code

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <strings.h> // strcasecmp()
 #include <unistd.h> // access()
 
 using namespace llvm;
@@ -38,7 +39,6 @@ void Parser::start() {
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
-            case tok_insert_open_osr:   handleInsertOpenOSRCommand(); break;
             case tok_load_lib:      handleLoadLibCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return;
             case tok_identifier:    handleFunctionInvocation(1); break;
@@ -194,108 +194,77 @@ void Parser::handleHelpCommand() {
               << "For the time being, only functions with integer arguments and return values are supported." << std::endl;
 
     // demo insert_osr (finalized)
-    std::cerr << std::endl << "Demo OSR points can be inserted with the following command:" << std::endl
-              << "--> INSERT_OSR IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>" << std::endl
-              << "where F1 and F2 are existing functions, and B1 and B2 are basic block labels." << std::endl;
-    std::cerr << std::endl << "The command generates a function F1' cloned from F1 such that when basic block B1 "
-              << "is reached during the execution of F1', an OSR transition to F2' is fired." << std::endl;
-    std::cerr << std::endl << "Function F2' is generated from F2 in order to resume the execution from the "
-              << "beginning of basic block B2, and values for live variables in F1' at B1 "
-              << "are transferred as arguments for the call." << std::endl;
-
-    // demo insert_open_osr
-    std::cerr << std::endl << "Demo *open* OSR points can be inserted with the following command:" << std::endl
-              << "--> INSERT_OPEN_OSR IN <F1> AT <B1> AS <F1'>" << std::endl
-              << "where F1 is an existing function and B1 the label of a basic block inside F1." << std::endl;
-    std::cerr << std::endl << "The command generates a function F1' cloned from F1 such that when basic block B1 "
-              << "is reached during the execution of F1', an open OSR transition is fired." << std::endl;
-    std::cerr << std::endl << "A function callled F1'_stub is generated to store the live state and trigger the "
-              << "generation and compilation of the code to continue the execution with, and values "
-              << "for live variables in F1' at B1 are transferred as arguments for the call." << std::endl;
+    std::cerr << std::endl << "Demo OSR points can be inserted with one of the following commands:" << std::endl
+              << "INSERT_OSR <COND> OPEN UPDATE IN <F1> AT <B1>" << std::endl
+              << "INSERT_OSR <COND> OPEN COPY IN <F1> AT <B1> AS <F1'>" << std::endl
+              << "INSERT_OSR <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> at <B2> as <F2'>" << std::endl
+              << "INSERT_OSR <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> at <B2> as <F2'>" << std::endl
+              << std::endl << "where:" << std::endl << "\tCOND is either ALWAYS or NEVER" << std::endl
+              << "\tF1 and F2 are existing functions" << std::endl
+              << "\tB1 and B2 are basic block labels in F1 and F2" << std::endl;
+    std::cerr << std::endl << "The command either updates F1 or generates a function F1' cloned from F1 "
+              << "such that when basic block B1 is reached during the execution, an OSR transition is fired. "
+              << "For OPEN transitions, the continuation function will be generated at run-time. "
+              << "For FINAL transitions, function F2' is generated from F2 in order to resume the execution from the "
+              << "beginning of basic block B2." << std::endl;
 }
 
-void Parser::handleInsertOSRCommand() {
-    #define INVALID(left) do { std::cerr << "Invalid syntax for an INSERT_OSR command!" << std::endl \
-            << "Expected command of the form: INSERT_OSR IN F1 AT B1 AS F1' TO F2 AT B2 AS F2'" << std::endl \
-            << "Error occurred at token " << 12-left << " after INSERT_OSR command" << std::endl; \
-            int tokens_left = left; \
-            while (tokens_left--) TheLexer->getNextToken(); \
-            return; } while (0);
+void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+        std::string* F1NewName, OSRLibrary::OSRCond &cond) {
+    OSRLibrary::OpenOSRInfo info;
+    info.f1 = src;
+    info.b1 = src_bb;
+    MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
+    extra->TheHelper = TheHelper;
+    info.extra = extra;
 
-    if (TheLexer->getNextToken() != tok_in) INVALID(11);
+    std::cerr << "Value for info.f1 is " << info.f1 << std::endl;
+    std::cerr << "Value for info.b1 is " << info.b1 << std::endl;
+    std::cerr << "Value for info.extra is " << info.extra << std::endl;
 
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(10);
-    const std::string F1 = TheLexer->getIdentifier();
+    OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
-    if (TheLexer->getNextToken() != tok_at) INVALID(9);
+    // (verbose, updateF1, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
+    StateMap* F1NewToF1Map;
+    OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map, nullptr, nullptr, nullptr);
 
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(8);
-    const std::string B1 = TheLexer->getIdentifier();
+    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
+        cond, nullptr, generator, nullptr, config);
+    std::cerr << "insertOpenOSR succeded!" << std::endl;
 
-    if (TheLexer->getNextToken() != tok_as) INVALID(7);
+    Function *src_new = pair.first, *stub = pair.second;
 
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(6);
-    const std::string F1_OSR = TheLexer->getIdentifier();
+    std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
+    std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
 
-    if (TheLexer->getNextToken() != tok_to) INVALID(5);
+}
 
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(4);
-    const std::string F2 = TheLexer->getIdentifier();
+void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+            std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
+            std::string* F2NewName, OSRLibrary::OSRCond &cond) {
 
-    if (TheLexer->getNextToken() != tok_at) INVALID(3);
+    Function* dest;
+    BasicBlock* dest_bb = nullptr;
 
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(2);
-    const std::string B2 = TheLexer->getIdentifier();
-
-    if (TheLexer->getNextToken() != tok_as) INVALID(1);
-
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(0);
-    const std::string F2_OSR = TheLexer->getIdentifier();
-    #undef INVALID
-
-    std::cerr << "Attempting to insert an OSR point in function '" << F1 << "' at basic block '" << B1 << "' to "
-                "function '" << F2 << "' at basic block '" << B2 << "' and thus produce functions '" << F1_OSR <<
-                "' and '" << F2_OSR << "'... Please be patient :-" << std::endl;
-
-    Function *src, *dest;
-    BasicBlock *src_bb = nullptr, *dest_bb = nullptr;
-
-    src = TheHelper->getFunction(F1);
-    if (src == nullptr) {
-        std::cerr << "Unable to find function named " << F1 << "!" << std::endl;
-        return;
-    } else {
-        for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
-            if (it->getName().equals(B1)) {
-                src_bb = it;
-                break;
-            }
-        }
-        if (src_bb == nullptr) {
-            std::cerr << "Unable to find basic block " << B1 << " in function " << F1 << "!" << std::endl;
-            return;
-        }
-    }
-
-    dest = TheHelper->getFunction(F2);
+    dest = TheHelper->getFunction(*F2Name);
     if (dest == nullptr) {
-        std::cerr << "Unable to find function named " << F2 << "!" << std::endl;
+        std::cerr << "Unable to find function named " << *F2Name << "!" << std::endl;
         return;
     } else {
         for (Function::iterator it = dest->begin(), end = dest->end(); it != end; ++it) {
-            if (it->getName().equals(B2)) {
+            if (it->getName().equals(*B2Name)) {
                 dest_bb = it;
                 break;
             }
         }
         if (dest_bb == nullptr) {
-            std::cerr << "Unable to find basic block " << B2 << " in function " << F2 << "!" << std::endl;
+            std::cerr << "Unable to find basic block " << *B2Name << " in function " << *F2Name << "!" << std::endl;
             return;
         }
     }
 
     if (src != dest) {
-        std::cerr << "Sorry, I don't support OSR transitions to a F2 != F1 function yet!" << std::endl;
+        std::cerr << "Sorry, I don't support OSR transitions for F2 != F1 yet!" << std::endl;
         return;
     }
 
@@ -315,14 +284,11 @@ void Parser::handleInsertOSRCommand() {
     }
     std::cerr << std::endl;
 
-    // we generate a condition that is always true as OSRCond
-    OSRLibrary::OSRCond cond;
-    cond.push_back(TheHelper->generateAlwaysTrueCond());
-
-    std::cerr << "OSRCond generated!" << std::endl;
-
-    // (verbose, updateF1, nameForNewF1, modForNewF1, nameForNewF2, nameForNewF2)
-    OSRLibrary::OSRPointConfig config(false, false, &F1_OSR, src->getParent(), &F2_OSR, src->getParent());
+    // (verbose, updateF1, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
+    StateMap* F1NewToF1Map;
+    StateMap* F2NewToF2Map;
+    OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map,
+            F2NewName, src->getParent(), &F2NewToF2Map);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
             *dest, *dest_bb, cond, *M, config);
@@ -334,17 +300,116 @@ void Parser::handleInsertOSRCommand() {
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
-    /*
-    std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", TheHelper->Context); // TODO unique names, get Context from Helper
-    Module* OSRModule_p = OSRModule.get();
+}
 
-    OSRModule_p->getFunctionList().push_back(src_new);
-    OSRModule_p->getFunctionList().push_back(dest_new);
+void Parser::handleInsertOSRCommand() {
+    #define INVALID() do { std::cerr << "Invalid syntax for an INSERT_OSR command!" << std::endl\
+            << "Error at argument " << numToken << ". Enter HELP to display the right syntax." << std::endl;\
+            return; } while (0);
 
-    std::cerr << "Module " << OSRModule_p->getModuleIdentifier() << " generated!" << std::endl;
+    char* cmdLine = strdup(TheLexer->getLine()->c_str());
 
-    TheHelper->addModule(std::move(OSRModule), false);
-    */
+    int numToken = 1;
+    char* token = strtok(cmdLine, " ");
+    if (token == NULL) INVALID();
+    #define getToken() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+
+    OSRLibrary::OSRCond cond;
+    if (!strcasecmp(token, "ALWAYS")) {
+        cond.push_back(TheHelper->generateAlwaysTrueCond());
+    } else if (!strcasecmp(token, "NEVER")) {
+        cond.push_back(TheHelper->generateAlwaysFalseCond());
+    } else {
+        INVALID();
+    }
+
+    bool open = false;
+    getToken();
+    if (!strcasecmp(token, "OPEN")) {
+        open = true;
+    } else if (strcasecmp(token, "FINAL")) {
+        INVALID();
+    }
+
+    bool update = false;
+    getToken();
+    if (!strcasecmp(token, "UPDATE")) {
+        open = true;
+    } else if (strcasecmp(token, "COPY")) {
+        INVALID();
+    }
+
+    getToken();
+    if (strcasecmp(token, "IN")) INVALID();
+
+    getToken();
+    const std::string F1Name(token);
+
+    getToken();
+    if (strcasecmp(token, "AT")) INVALID();
+
+    getToken();
+    const std::string B1Name(token);
+
+    // look for F1 and B1
+    Function *src;
+    BasicBlock *src_bb = nullptr;
+
+    src = TheHelper->getFunction(F1Name);
+    if (src == nullptr) {
+        std::cerr << "Unable to find function named " << F1Name << "!" << std::endl;
+        return;
+    } else {
+        for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
+            if (it->getName().equals(B1Name)) {
+                src_bb = it;
+                break;
+            }
+        }
+        if (src_bb == nullptr) {
+            std::cerr << "Unable to find basic block " << B1Name << " in function " << F1Name << "!" << std::endl;
+            return;
+        }
+    }
+
+    std::string F1NewName;
+    if (!update) {
+        getToken();
+        if (strcasecmp(token, "AS")) INVALID();
+
+        getToken();
+        F1NewName = std::string(token);
+    }
+
+    std::string* tmpForF1NewName = (update) ? nullptr : &F1NewName;
+
+    if (open) {
+        openOSRHelper(src, src_bb, update, tmpForF1NewName, cond);
+        return;
+    }
+
+    getToken();
+    if (strcasecmp(token, "TO")) INVALID();
+
+    getToken();
+    const std::string F2Name(token);
+
+    getToken();
+    if (strcasecmp(token, "AT")) INVALID();
+
+    getToken();
+    const std::string B2Name(token);
+
+    getToken();
+    if (strcasecmp(token, "AS")) INVALID();
+
+    getToken();
+    const std::string F2NewName(token);
+
+    finalizedOSRHelper(src, src_bb, update, tmpForF1NewName, &F2Name,
+            &B2Name, const_cast<std::string*>(&F2NewName), cond);
+    #undef getToken
+    #undef INVALID
 }
 
 
@@ -415,109 +480,6 @@ void Parser::handleTrackAsmCommand() {
         std::cerr << "Current status: tracking is disabled. Now enabling it!" << std::endl;
     }
     std::cerr << "Notice that only modules loaded from now on will be affected by this change." << std::endl;
-}
-
-void Parser::handleInsertOpenOSRCommand() {
-    #define INVALID(left) do { std::cerr << "Invalid syntax for an INSERT_OPEN_OSR command!" << std::endl \
-            << "Expected command of the form: INSERT_OSR IN F1 AT B1 AS F1''" << std::endl \
-            << "Error occurred at token " << 6-left << " after INSERT_OSR command" << std::endl; \
-            int tokens_left = left; \
-            while (tokens_left--) TheLexer->getNextToken(); \
-            return; } while (0);
-
-    if (TheLexer->getNextToken() != tok_in) INVALID(5);
-
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(4);
-    const std::string F1 = TheLexer->getIdentifier();
-
-    if (TheLexer->getNextToken() != tok_at) INVALID(3);
-
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(2);
-    const std::string B1 = TheLexer->getIdentifier();
-
-    if (TheLexer->getNextToken() != tok_as) INVALID(1);
-
-    if (TheLexer->getNextToken() != tok_identifier) INVALID(0);
-    const std::string F1_OSR = TheLexer->getIdentifier();
-    #undef INVALID
-
-    std::cerr << "Attempting to insert an *open* OSR point in function '" << F1<< "' at basic block '"
-                << B1 << "' and thus produce functions '" << F1_OSR << "' and '" << F1_OSR <<
-                "_stub'... Please be patient :-)" << std::endl;
-
-    Function *src;
-    BasicBlock *src_bb = nullptr;
-
-    src = TheHelper->getFunction(F1);
-    if (src == nullptr) {
-        std::cerr << "Unable to find function named " << F1 << "!" << std::endl;
-        return;
-    } else {
-        for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
-            if (it->getName().equals(B1)) {
-                src_bb = it;
-                break;
-            }
-        }
-        if (src_bb == nullptr) {
-            std::cerr << "Unable to find basic block " << B1 << " in function " << F1 << "!" << std::endl;
-            return;
-        }
-    }
-
-    /*
-    // print information about values to fetch
-    StateMap::BBSrcDestPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
-    M.getLivenessResultsForSrcFunction().printResultsToScreen(src_bb);
-    std::vector<Value*> &valuesToFetch = M.getValuesToFetchFromSrcFunction(tmpSrcDestPair);
-    fprintf(stderr, "Values to fetch: %lu\n", valuesToFetch.size());
-    for (int i = 0, e = valuesToFetch.size(); i < e; ++i) {
-        fprintf(stderr, "%s ", valuesToFetch[i]->getName().str().c_str());
-    }
-    fprintf(stderr, "\n");
-    */
-
-    // we generate a condition that is always true as OSRCond
-    OSRLibrary::OSRCond cond;
-    cond.push_back(TheHelper->generateAlwaysTrueCond());
-
-    std::cerr << "OSRCond generated!" << std::endl;
-
-    OSRLibrary::OpenOSRInfo info;
-    info.f1 = src;
-    info.b1 = src_bb;
-    MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
-    extra->TheHelper = TheHelper;
-    info.extra = extra;
-
-    std::cerr << "Value for info.f1 is " << info.f1 << std::endl;
-    std::cerr << "Value for info.b1 is " << info.b1 << std::endl;
-    std::cerr << "Value for info.extra is " << info.extra << std::endl;
-
-    OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
-
-    // (verbose, updateF1, nameForNewF1, modForNewF1, nameForNewF2, nameForNewF2)
-    OSRLibrary::OSRPointConfig config(false, false, &F1_OSR, src->getParent(), nullptr, nullptr);
-
-    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
-        cond, nullptr, generator, nullptr, config);
-    std::cerr << "insertOpenOSR succeded!" << std::endl;
-
-    Function *src_new = pair.first, *stub = pair.second;
-
-    std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
-    std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
-/*
-    std::unique_ptr<Module> OSRModule = llvm::make_unique<Module>("OSR_module", TheHelper->Context); // TODO unique names
-    Module* OSRModule_p = OSRModule.get();
-
-    OSRModule_p->getFunctionList().push_back(src_new);
-    OSRModule_p->getFunctionList().push_back(stub);
-
-    std::cerr << "Module " << OSRModule_p->getModuleIdentifier() << " generated!" << std::endl;
-
-    TheHelper->addModule(std::move(OSRModule), false);
- */
 }
 
 /*

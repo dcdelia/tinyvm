@@ -26,10 +26,7 @@ enum Token {
     tok_load_IR     = -12,
     tok_begin       = -13,
     tok_insert_osr  = -14,
-    tok_in          = -15,
-    tok_at          = -16,
-    tok_as          = -17,
-    tok_to          = -18,
+    /* -18 to -15 now free! */
     tok_cfg         = -19,
     tok_cfg_full    = -20,
     tok_dump        = -21,
@@ -37,7 +34,7 @@ enum Token {
     tok_show_asm    = -23,
     tok_repeat      = -24,
     tok_show_mods   = -25,
-    tok_insert_open_osr    = -26,
+    /* -26 is now free! */
     tok_show_funs   = -27,
     tok_load_lib    = -28
 };

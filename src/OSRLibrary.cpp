@@ -53,7 +53,7 @@ static inline void verifyAux(Function* F) {
  */
 Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Function &F2,
         StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M,
-        const std::string* F2NewName, bool verbose) {
+        const std::string* F2NewName, bool verbose, StateMap** ptrForF2NewToF2Map) {
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -140,10 +140,25 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
     newEntryPoint->insertInto(OSRDestFun, oldEntryPoint);
     assert(&OSRDestFun->getEntryBlock() == newEntryPoint);
 
+    // compute (part of) unidirectional state mapping from OSRDestFun to dest
+    if (ptrForF2NewToF2Map != nullptr) {
+        *ptrForF2NewToF2Map = new StateMap(OSRDestFun, dest);
+        for (ValueToValueMapTy::iterator it = destToOSRDestVMap.begin(),
+                end = destToOSRDestVMap.end(); it != end; ++it) {
+            Value* OSRDest_v = it->second;
+            Value* dest_v = const_cast<Value*>(it->first);
+            if (BasicBlock* OSRDest_Block = cast<BasicBlock>(OSRDest_v)) {
+                (*ptrForF2NewToF2Map)->registerCorrespondingBlock(OSRDest_Block, cast<BasicBlock>(dest_v), false);
+            } else {
+                (*ptrForF2NewToF2Map)->registerOneToOneValue(OSRDest_v, dest_v, false);
+            }
+        }
+    }
+
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
     replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
-            destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose);
+            destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
     if (verbose) {
         std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
     }
@@ -163,7 +178,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
 
     /* Prepare F2' aka OSRDestFun */
     Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass,
-                                M, config.nameForNewF2, config.verbose);
+                                M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
 
     Function* OSRDestFunProt;
     if (config.modForNewF2 != config.modForNewF1) {
@@ -210,7 +225,12 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
             newSrcFun = duplicateFunction(src, Twine(*config.nameForNewF1), srcToNewSrcVMap); // (1)
         }
 
-         // I have to regenerate valuesToPass as well!
+        // generate state mapping between src and newSrcFun
+        if (config.ptrForF1NewToF1Map != nullptr) {
+            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, srcToNewSrcVMap, true); // bidirectional mapping
+        }
+
+        // I have to regenerate valuesToPass as well!
         for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
             newValuesToPass.push_back(srcToNewSrcVMap[*it]);
         }
@@ -449,6 +469,12 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     if (!config.updateF1) {
         // step (1)
         newSrcFun = duplicateFunction(src, newFunName, srcToNewSrcVMap);
+
+        // generate state mapping between src and newSrcFun
+        if (config.ptrForF1NewToF1Map != nullptr) {
+            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, srcToNewSrcVMap, true); // bidirectional mapping
+        }
+
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
 
         ptrToOSRCond = &newCond;
@@ -623,7 +649,8 @@ void OSRLibrary::fixOperandReferencesFromVMap(Function* NF, Function* F, ValueTo
 
 void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock,
         std::vector<Value*> &origValuesToSetForDestBlock, ValueToValueMapTy &VMap,
-        ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes, bool verbose) {
+        ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes,
+        bool verbose, StateMap** ptrForF2NewToF2Map) {
     BasicBlock* entryPoint = &NF->getEntryBlock();
     BasicBlock* OSRdestBlock = cast<BasicBlock>(VMap[origDestBlock]);
 
@@ -644,6 +671,8 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
     size_t replacedUses = 0;
 
     SSAUpdater updateSSA(insertedPHINodes);
+
+    PHINode* lastInserted = nullptr;
 
     for (std::vector<Value*>::const_iterator it = origValuesToSetForDestBlock.begin(), end = origValuesToSetForDestBlock.end();
          it != end; ++it) {
@@ -672,6 +701,10 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                 }
 
                 node->addIncoming(newValue, newBlock);
+
+                if (ptrForF2NewToF2Map != nullptr) { // update state mapping
+                    (*ptrForF2NewToF2Map)->registerOneToOneValue(oldValue, origValue);
+                }
 
                 ++updatedNodes;
                 continue;
@@ -711,6 +744,11 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                     }
                     U = oldValue;
                     //updateSSA.RewriteUseAfterInsertions(U); // wrong!
+
+                    if (ptrForF2NewToF2Map != nullptr) { // update state mapping
+                        (*ptrForF2NewToF2Map)->registerOneToOneValue(oldValue, origValue);
+                    }
+
                     continue;
                 }
 
@@ -724,6 +762,15 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             updateSSA.RewriteUse(U);
         }
         ++replacedUses;
+
+        // update state mapping
+        if (ptrForF2NewToF2Map != nullptr && !insertedPHINodes->empty()) {
+            PHINode* tmp = insertedPHINodes->back();
+            if (tmp != lastInserted) {
+                lastInserted = tmp; // TODO check if at most one PHI node can be inserted
+                (*ptrForF2NewToF2Map)->registerOneToOneValue(lastInserted, origValue, false);
+            }
+        }
     }
     assert(replacedUses + updatedNodes == updatesForVMap.size());
 }

@@ -32,6 +32,12 @@ private:
     void handleShowCFGCommand(bool showInstructions);
     void handleTrackAsmCommand();
     void handleInsertOpenOSRCommand();
+
+    void openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+            std::string* F1NewName, OSRLibrary::OSRCond &cond);
+    void finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+            std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
+            std::string* F2NewName, OSRLibrary::OSRCond &cond);
 };
 
 #endif

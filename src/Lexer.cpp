@@ -41,10 +41,6 @@ int Lexer::getNextToken() {
         if (command == "LOAD_IR")       return tok_load_IR;
         if (command == "BEGIN")         return tok_begin;
         if (command == "INSERT_OSR")    return tok_insert_osr;
-        if (command == "IN")            return tok_in;
-        if (command == "AT")            return tok_at;
-        if (command == "AS")            return tok_as;
-        if (command == "TO")            return tok_to;
         if (command == "CFG")           return tok_cfg;
         if (command == "CFG_FULL")      return tok_cfg_full;
         if (command == "DUMP")          return tok_dump;
@@ -52,7 +48,6 @@ int Lexer::getNextToken() {
         if (command == "SHOW_ASM")      return tok_show_asm;
         if (command == "REPEAT")        return tok_repeat;
         if (command == "SHOW_MODS")     return tok_show_mods;
-        if (command == "INSERT_OPEN_OSR")    return tok_insert_open_osr;
         if (command == "SHOW_FUNS")     return tok_show_funs;
         if (command == "LOAD_LIB")      return tok_load_lib;
 

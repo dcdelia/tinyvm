@@ -68,9 +68,10 @@ public:
         for (llvm::ValueToValueMapTy::const_iterator it = VMap.begin(), end = VMap.end(); it != end; ++ it) {
             llvm::Value* src_v = const_cast<llvm::Value*>(it->first);
             llvm::Value* dest_v = it->second;
-            registerOneToOneValue(src_v, dest_v, reverseMap);
             if (llvm::BasicBlock* src_b = llvm::dyn_cast<llvm::BasicBlock>(src_v)) {
                 registerCorrespondingBlock(src_b, llvm::cast<llvm::BasicBlock>(dest_v), reverseMap);
+            } else {
+                registerOneToOneValue(src_v, dest_v, reverseMap);
             }
         }
     }

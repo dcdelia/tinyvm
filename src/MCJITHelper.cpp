@@ -343,8 +343,12 @@ raw_ostream* MCJITHelper::initializeFdStream(const char* fileName) {
 CmpInst* MCJITHelper::generateAlwaysTrueCond() {
     // FCMP_TRUE will always be folded
     ConstantFP* zeroConst = ConstantFP::get(Context, APFloat(0.0));
-    //return Builder->CreateFCmp(CmpInst::FCMP_TRUE, zeroConst, zeroConst, "alwaysOSR");
     return new FCmpInst(CmpInst::FCMP_TRUE, zeroConst, zeroConst, "alwaysOSR");
+}
+
+CmpInst* MCJITHelper::generateAlwaysFalseCond() {
+    ConstantFP* zeroConst = ConstantFP::get(Context, APFloat(0.0));
+    return new FCmpInst(CmpInst::FCMP_FALSE, zeroConst, zeroConst, "neverOSR");
 }
 
 ValueToValueMapTy* MCJITHelper::generateIdentityMapping(Function* F) {

@@ -249,16 +249,16 @@ StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::BlockPair &pair)
 }
 
 void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirectional) {
-    defaultOneToOneMap->insert(std::pair<Value*, Value*>(dest_v, src_v));
+    (*defaultOneToOneMap)[dest_v] = src_v;
     if (bidirectional) {
-        defaultOneToOneMap->insert(std::pair<Value*, Value*>(src_v, dest_v));
+        (*defaultOneToOneMap)[src_v] = dest_v;
     }
 }
 
 void StateMap::registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b, bool bidirectional) {
-    correspondingBlockMap.insert(std::pair<BasicBlock*, BasicBlock*>(src_b, dest_b));
+    correspondingBlockMap[src_b] = dest_b;
     if (bidirectional) {
-        correspondingBlockMap.insert(std::pair<BasicBlock*, BasicBlock*>(dest_b, src_b));
+        correspondingBlockMap[dest_b] = src_b;
     }
 }
 

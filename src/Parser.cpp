@@ -245,9 +245,9 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     extra->TheHelper = TheHelper;
     info.extra = extra;
 
-    std::cerr << "Value for info.f1 is " << info.f1 << std::endl;
-    std::cerr << "Value for info.b1 is " << info.b1 << std::endl;
-    std::cerr << "Value for info.extra is " << info.extra << std::endl;
+    //std::cerr << "Value for info.f1 is " << info.f1 << std::endl;
+    //std::cerr << "Value for info.b1 is " << info.b1 << std::endl;
+    //std::cerr << "Value for info.extra is " << info.extra << std::endl;
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
@@ -255,8 +255,14 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     StateMap* F1NewToF1Map;
     OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map, nullptr, nullptr, nullptr);
 
+    tinyvm_timer_t timer;
+    timer_start(&timer);
+
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
         cond, nullptr, generator, nullptr, config);
+
+    timer_end(&timer);
+
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *stub = pair.second;
@@ -264,6 +270,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
 
+    timer_print_elapsed(&timer);
 }
 
 void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
@@ -317,8 +324,13 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map,
             F2NewName, src->getParent(), &F2NewToF2Map);
 
+    tinyvm_timer_t timer;
+    timer_start(&timer);
+
     OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
             *dest, *dest_bb, cond, *M, config);
+
+    timer_end(&timer);
 
     std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 
@@ -327,6 +339,7 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
+    timer_print_elapsed(&timer);
 }
 
 void Parser::handleInsertOSRCommand() {

@@ -15,6 +15,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
@@ -74,6 +75,7 @@ public:
     std::unique_ptr<Module> createModuleFromFile(const std::string &FileName);
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);
+    FunctionPassManager createFPM(Module* M, bool CFGSimplificationOnly = false);
     int (*createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
     bool toggleTrackAsm();
     void showTrackedAsm();

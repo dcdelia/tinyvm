@@ -47,19 +47,12 @@ MCJITHelper::~MCJITHelper() {
     for (JITEventListener* L: Listeners) delete(L);
 }
 
-void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
-    Module* M_ptr = M.get();
+FunctionPassManager MCJITHelper::createFPM(Module* M, bool CFGSimplificationOnly) {
+    FunctionPassManager FPM(M);
 
-    M_ptr->setDataLayout(JIT->getDataLayout());
-
-    if (OptimizeModule) {
-        FunctionPassManager FPM(M_ptr);
-
-        /* OPTIMIZER PIPELINE */
-
+    if (!CFGSimplificationOnly) {
         // Register info about how the target lays out data structures
         FPM.add(new DataLayoutPass());
-
         // Provide basic AliasAnalysis support for GVN
         FPM.add(createBasicAliasAnalysisPass());
         // Promote allocas to registers
@@ -70,10 +63,24 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
         FPM.add(createReassociatePass());
         // Eliminate Common SubExpressions
         FPM.add(createGVNPass());
-        // Simplify the control flow graph (e.g. delete unreachable blocks)
-        FPM.add(createCFGSimplificationPass());
+    }
 
-        FPM.doInitialization();
+    // Simplify the control flow graph (e.g. delete unreachable blocks)
+    FPM.add(createCFGSimplificationPass());
+
+
+    FPM.doInitialization();
+
+    return FPM;
+}
+
+void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
+    Module* M_ptr = M.get();
+
+    M_ptr->setDataLayout(JIT->getDataLayout());
+
+    if (OptimizeModule) {
+        FunctionPassManager FPM = createFPM(M_ptr);
 
         // apply to each function
         Module::iterator it;

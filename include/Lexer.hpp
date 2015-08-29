@@ -26,7 +26,9 @@ enum Token {
     tok_load_IR     = -12,
     tok_begin       = -13,
     tok_insert_osr  = -14,
-    /* -18 to -15 now free! */
+    tok_opt_cfg     = -15,
+    tok_opt_full    = -16,
+    /* -18 & -17 now free! */
     tok_cfg         = -19,
     tok_cfg_full    = -20,
     tok_dump        = -21,

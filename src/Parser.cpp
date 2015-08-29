@@ -40,6 +40,8 @@ void Parser::start() {
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_load_lib:      handleLoadLibCommand(); break;
+            case tok_opt_cfg:       handleOptCommand(true); break;
+            case tok_opt_full:      handleOptCommand(false); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return;
             case tok_identifier:    handleFunctionInvocation(1); break;
             case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return;
@@ -96,6 +98,29 @@ void Parser::handleBeginCommand() {
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(std::string(fileName));
     TheHelper->addModule(std::move(M), false);
     std::cerr << "[LOAD] The new module has been loaded." << std::endl;
+}
+
+void Parser::handleOptCommand(bool CFGSimplificationOnly) {
+    if (TheLexer->getNextToken() != tok_identifier) {
+        const std::string cmdName = (CFGSimplificationOnly) ? "OPT_FULL" : "OPT_CFG";
+        std::cerr << "Invalid syntax for a " << cmdName << "command!" << std::endl
+                << "Expected command of the form: " << cmdName<< " <function_name" << std::endl;
+        return;
+    }
+    const std::string Name = TheLexer->getIdentifier();
+
+    Function* F = TheHelper->getFunction(Name);
+    if (F == nullptr) {
+        std::cerr << "Unable to find function named " << Name << "!" << std::endl;
+        return;
+    } else {
+        Module* M = F->getParent();
+        assert(M != nullptr);
+        FunctionPassManager FPM = TheHelper->createFPM(M, CFGSimplificationOnly);
+        FPM.run(*F);
+        FPM.doFinalization();
+        std::cerr << "Function has been optimized!" << std::endl;
+    }
 }
 
 void Parser::handleDumpCommand() {
@@ -182,6 +207,8 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> CFG <function_name>" << std::endl << "\tShows a compact view of the CFG of a given function." << std::endl;
     std::cerr << "--> CFG_FULL <function_name>" << std::endl << "\tShows the full CFG (with instructions) of a given function." << std::endl;
     std::cerr << "--> DUMP <function_name>" << std::endl << "\tShows the IR code of a given function." << std::endl;
+    std::cerr << "--> OPT_CFG <function_name>" << std::endl << "\tPerforms a CFG simplification pass over a given function." << std::endl;
+    std::cerr << "--> OPT_FULL <function_name>" << std::endl << "\tPerforms several optimization passes over a given function." << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;

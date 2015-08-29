@@ -44,6 +44,8 @@ int Lexer::getNextToken() {
         if (command == "CFG")           return tok_cfg;
         if (command == "CFG_FULL")      return tok_cfg_full;
         if (command == "DUMP")          return tok_dump;
+        if (command == "OPT_CFG")       return tok_opt_cfg;
+        if (command == "OPT_FULL")      return tok_opt_full;
         if (command == "TRACK_ASM")     return tok_track_asm;
         if (command == "SHOW_ASM")      return tok_show_asm;
         if (command == "REPEAT")        return tok_repeat;

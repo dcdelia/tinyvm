@@ -86,6 +86,7 @@ public:
     CmpInst* generateAlwaysFalseCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
     static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);
+    void registerFunction(Function* F);
 
 private:
     IRBuilder<>                     *Builder;
@@ -102,7 +103,6 @@ private:
     const char      *asmFileName;
 
     raw_ostream*    initializeFdStream(const char* fileName);
-    void            registerFunction(Function* F);
     void            prototypeToString(Function& F, std::string &sym_str, std::string &type_str, raw_string_ostream &type_rso);
 };
 

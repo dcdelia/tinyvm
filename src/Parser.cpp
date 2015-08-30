@@ -19,8 +19,10 @@
 
 using namespace llvm;
 
-void Parser::start() {
-    std::cerr << "Welcome! Enter 'HELP' to show the list of available commands." << std::endl;
+void Parser::start(bool displayHelpMsg) {
+    if (displayHelpMsg) {
+        std::cerr << "Welcome! Enter 'HELP' to show the list of available commands." << std::endl;
+    }
 
     while (1) {
         fprintf(stderr, "TinyVM> ");
@@ -212,6 +214,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
+    std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
     std::cerr << "--> QUIT" << std::endl << "\tExits TinyVM." << std::endl;
 
@@ -251,6 +254,16 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
+    // print information about values to fetch
+    LivenessAnalysis livenessInfo(src);
+    livenessInfo.printResultsToScreen(src_bb);
+    std::vector<llvm::Value*>* valuesToTransfer = OSRLibrary::defaultValuesToTransferForOpenOSR(livenessInfo, *src_bb);
+    std::cerr << "Values to fetch: " << valuesToTransfer->size() << std::endl;
+    for (int i = 0, e = valuesToTransfer->size(); i < e; ++i) {
+        std::cerr << (*valuesToTransfer)[i]->getName().str() << " ";
+    }
+    std::cerr << std::endl;
+
     // (verbose, updateF1, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map, nullptr, nullptr, nullptr);
@@ -259,7 +272,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     timer_start(&timer);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
-        cond, nullptr, generator, nullptr, config);
+        cond, nullptr, generator, valuesToTransfer, config);
 
     timer_end(&timer);
 
@@ -269,6 +282,11 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
+
+    if (!update) {
+        TheHelper->registerFunction(src_new);
+    }
+    TheHelper->registerFunction(stub);
 
     timer_print_elapsed(&timer);
 }
@@ -338,6 +356,11 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
+
+    if (!update) {
+        TheHelper->registerFunction(src_new);
+    }
+    TheHelper->registerFunction(dest_new);
 
     timer_print_elapsed(&timer);
 }

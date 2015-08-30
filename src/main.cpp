@@ -6,7 +6,6 @@
  * =============================================================== */
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/MCJIT.h"
-
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/TargetSelect.h"
@@ -14,21 +13,28 @@
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
 #include "Parser.hpp"
-#include "history.h"
 
 #include <cstdio>
-
-using namespace llvm;
 
 #define USE_CMD_HISTORY 1
 
 #if USE_CMD_HISTORY
+
+#include "history.h"
+#include <signal.h>
+
 history_t cmd_history;
 
 int getCharFromHistory() {
     return get_input_char(&cmd_history);
 }
+
+void intHandler(int signum) {
+    restore_term(&cmd_history);
+}
 #endif
+
+using namespace llvm;
 
 int main(int argc, char* argv[]) {
     InitializeNativeTarget();
@@ -52,13 +58,19 @@ int main(int argc, char* argv[]) {
             TheLexer = new Lexer(inputFile);
 
             Parser parser(TheLexer, TheHelper);
-            parser.start();
+            parser.start(false); // do not display help message
 
             delete TheLexer;
         }
     }
 
     #if USE_CMD_HISTORY
+    // terminal would be broken after a CTRL-C if we do not restore it
+    struct sigaction act;
+    memset(&act, 0, sizeof(act));
+    act.sa_handler = &intHandler;
+    sigaction(SIGINT, &act, NULL);
+
     init_history(&cmd_history, "TinyVM> ");
     TheLexer = new Lexer(getCharFromHistory);
     #else

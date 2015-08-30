@@ -80,7 +80,14 @@ void timer_print_avg(tinyvm_timer_t* timer, int iterations) {
     nanoseconds += (seconds % iterations) * (1000000000 / iterations);
     seconds = seconds / iterations;
 
-    fprintf(stderr, "Avg elapsed time per iteration: %ld s %ld nsec\n", seconds, nanoseconds);
+    long m = seconds / 60;
+    long s = seconds % 60;
+    long ms = nanoseconds / 1000000;
+    long us = (nanoseconds / 1000) % 1000;
+    long ns = nanoseconds % 1000;
+
+    //fprintf(stderr, "Avg elapsed time per iteration: %ld s %ld nsec\n", seconds, nanoseconds);
+    fprintf(stderr, "Avg elapsed time per iteration: %ld m %ld s %ld ms %ld us %ld ns\n", m, s, ms, us, ns);
     #endif
 }
 

@@ -13,6 +13,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
@@ -250,8 +251,9 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, *ptrToValuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
-    insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
-            Twine("splitBlockForOSRTo", OSRDestFunProt->getName())); /* BasicBlock* splittedBlock = ... */
+    insertOSRCond(Context, newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
+            Twine("splitBlockForOSRTo", OSRDestFunProt->getName()),
+            config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
 
     /* verify OSRDestFun and add it to the proper module */
     if (config.modForNewF2 == nullptr) {
@@ -510,8 +512,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     OSR_B->insertInto(newSrcFun);
 
     // step (4)
-    insertOSRCond (newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
-            Twine("splitBlockForOSRTo", stub->getName())); /* BasicBlock* splittedBlock = ... */
+    insertOSRCond(Context, newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
+            Twine("splitBlockForOSRTo", stub->getName()),
+            config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
 
     /* verify newSrcFun and stub add them to the proper module */
     if (config.updateF1) {
@@ -830,7 +833,8 @@ BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Func
     return OSR_B;
 }
 
-BasicBlock* OSRLibrary::insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OSR_B, OSRLibrary::OSRCond& cond, const Twine& BBName) {
+BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBlock* B, BasicBlock* OSR_B,
+        OSRLibrary::OSRCond& cond, const Twine& BBName, int branchTakenProb) {
     // split the block after the first non-PHI insruction
     BasicBlock::iterator firstNonPHIInstr = B->getFirstNonPHI();
     BasicBlock* NB = B->splitBasicBlock(firstNonPHIInstr, BBName);
@@ -850,6 +854,13 @@ BasicBlock* OSRLibrary::insertOSRCond(Function* F, BasicBlock* B, BasicBlock* OS
 
     // insert a conditional branch on the value computed by the last inserted instruction
     BranchInst* br = BranchInst::Create(OSR_B, NB, cond.back());
+
+    if (branchTakenProb != -1) {
+        MDBuilder builder(Context);
+        MDNode* weightsNode = builder.createBranchWeights(branchTakenProb, 100 - branchTakenProb);
+        br->setMetadata(LLVMContext::MD_prof, weightsNode);
+    }
+
     B->getInstList().push_back(br);
 
     return NB;

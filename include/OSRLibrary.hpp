@@ -25,6 +25,7 @@ class OSRLibrary {
         typedef struct OSRPointConfig {
             bool verbose;
             bool updateF1;
+            int branchTakenProb;
 
             const std::string* nameForNewF1;
             llvm::Module* modForNewF1;
@@ -36,6 +37,7 @@ class OSRLibrary {
             StateMap** ptrForF2NewToF2Map;
 
             OSRPointConfig(bool verbose = false, bool updateF1 = true,
+                    int branchTakenProb = -1,
                     const std::string* nameForNewF1 = nullptr,
                     llvm::Module* modForNewF1 = nullptr,
                     StateMap** ptrForF1NewToF1Map = nullptr,
@@ -43,10 +45,15 @@ class OSRLibrary {
                     llvm::Module* modForNewF2 = nullptr,
                     StateMap** ptrForF2NewToF2Map = nullptr) :
                     verbose(verbose), updateF1(updateF1),
+                    branchTakenProb(branchTakenProb),
                     nameForNewF1(nameForNewF1), modForNewF1(modForNewF1),
                     ptrForF1NewToF1Map(ptrForF1NewToF1Map),
                     nameForNewF2(nameForNewF2), modForNewF2(modForNewF2),
-                    ptrForF2NewToF2Map(ptrForF2NewToF2Map) {};
+                    ptrForF2NewToF2Map(ptrForF2NewToF2Map) {
+                if (branchTakenProb != -1 && (branchTakenProb > 100 || branchTakenProb < 0)) {
+                    llvm::report_fatal_error("OSR probability should be either -1 or an integer number between 0 and 100");
+                }
+            };
         } OSRPointConfig;
 
         typedef struct OpenOSRInfo {
@@ -112,8 +119,8 @@ class OSRLibrary {
         static OSRCond regenerateOSRCond(OSRCond &cond, llvm::ValueToValueMapTy &VMap);
         static llvm::BasicBlock* generateTriggerOSRBlock(llvm::LLVMContext &Context, llvm::Function* OSRDest,
                 std::vector<llvm::Value*> &valuesToPass);
-        static llvm::BasicBlock* insertOSRCond(llvm::Function* F, llvm::BasicBlock* B, llvm::BasicBlock* OSR_B, OSRCond& cond,
-            const llvm::Twine& BBName);
+        static llvm::BasicBlock* insertOSRCond(llvm::LLVMContext &Context, llvm::Function* F, llvm::BasicBlock* B,
+            llvm::BasicBlock* OSR_B, OSRCond& cond, const llvm::Twine& BBName, int branchTakenProb);
 };
 
 #endif

@@ -225,11 +225,13 @@ void Parser::handleHelpCommand() {
 
     // demo insert_osr (finalized)
     std::cerr << std::endl << "Demo OSR points can be inserted with one of the following commands:" << std::endl
-              << "INSERT_OSR <COND> OPEN UPDATE IN <F1> AT <B1>" << std::endl
-              << "INSERT_OSR <COND> OPEN COPY IN <F1> AT <B1> AS <F1'>" << std::endl
-              << "INSERT_OSR <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> at <B2> as <F2'>" << std::endl
-              << "INSERT_OSR <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> at <B2> as <F2'>" << std::endl
-              << std::endl << "where:" << std::endl << "\tCOND is either ALWAYS or NEVER" << std::endl
+              << "INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <B1>" << std::endl
+              << "INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <B1> AS <F1'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> at <B2> as <F2'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> at <B2> as <F2'>" << std::endl
+              << std::endl << "where:" << std::endl
+              << "\tPROB is either -1 (no branch weight) or an integer in {0, ..., 100}" << std::endl
+              << "\tCOND is either ALWAYS or NEVER" << std::endl
               << "\tF1 and F2 are existing functions" << std::endl
               << "\tB1 and B2 are basic block labels in F1 and F2" << std::endl;
     std::cerr << std::endl << "The command either updates F1 or generates a function F1' cloned from F1 "
@@ -240,7 +242,7 @@ void Parser::handleHelpCommand() {
 }
 
 void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
-        std::string* F1NewName, OSRLibrary::OSRCond &cond) {
+        std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
     OSRLibrary::OpenOSRInfo info;
     info.f1 = src;
     info.b1 = src_bb;
@@ -264,9 +266,10 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     }
     std::cerr << std::endl;
 
-    // (verbose, updateF1, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
+    // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
-    OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map, nullptr, nullptr, nullptr);
+    OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName,
+            src->getParent(), &F1NewToF1Map, nullptr, nullptr, nullptr);
 
     tinyvm_timer_t timer;
     timer_start(&timer);
@@ -293,7 +296,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
 void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
             std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
-            std::string* F2NewName, OSRLibrary::OSRCond &cond) {
+            std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
 
     Function* dest;
     BasicBlock* dest_bb = nullptr;
@@ -336,11 +339,11 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     }
     std::cerr << std::endl;
 
-    // (verbose, updateF1, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
+    // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
-    OSRLibrary::OSRPointConfig config(false, update, F1NewName, src->getParent(), &F1NewToF1Map,
-            F2NewName, src->getParent(), &F2NewToF2Map);
+    OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName, src->getParent(),
+            &F1NewToF1Map, F2NewName, src->getParent(), &F2NewToF2Map);
 
     tinyvm_timer_t timer;
     timer_start(&timer);
@@ -376,6 +379,11 @@ void Parser::handleInsertOSRCommand() {
     char* token = strtok(cmdLine, " ");
     if (token == NULL) INVALID();
     #define getToken() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+
+    getToken();
+    int branchTakenProb = (int)strtol(token, NULL, 10);
+    if (branchTakenProb != -1 && (branchTakenProb < 0 || branchTakenProb > 100)) INVALID();
+
 
     OSRLibrary::OSRCond cond;
     if (!strcasecmp(token, "ALWAYS")) {
@@ -447,7 +455,7 @@ void Parser::handleInsertOSRCommand() {
     std::string* tmpForF1NewName = (update) ? nullptr : &F1NewName;
 
     if (open) {
-        openOSRHelper(src, src_bb, update, tmpForF1NewName, cond);
+        openOSRHelper(src, src_bb, update, tmpForF1NewName, cond, branchTakenProb);
         return;
     }
 
@@ -470,7 +478,7 @@ void Parser::handleInsertOSRCommand() {
     const std::string F2NewName(token);
 
     finalizedOSRHelper(src, src_bb, update, tmpForF1NewName, &F2Name,
-            &B2Name, const_cast<std::string*>(&F2NewName), cond);
+            &B2Name, const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
     #undef getToken
     #undef INVALID
 }

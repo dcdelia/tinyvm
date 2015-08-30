@@ -31,6 +31,7 @@ int getCharFromHistory() {
 
 void intHandler(int signum) {
     restore_term(&cmd_history);
+    exit(1);
 }
 #endif
 

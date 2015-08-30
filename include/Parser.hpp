@@ -35,10 +35,10 @@ private:
     void handleOptCommand(bool CFGSimplificationOnly);
 
     void openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
-            std::string* F1NewName, OSRLibrary::OSRCond &cond);
+            std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
     void finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
             std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
-            std::string* F2NewName, OSRLibrary::OSRCond &cond);
+            std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
 };
 
 #endif

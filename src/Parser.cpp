@@ -405,7 +405,7 @@ void Parser::handleInsertOSRCommand() {
     bool update = false;
     getToken();
     if (!strcasecmp(token, "UPDATE")) {
-        open = true;
+        update = true;
     } else if (strcasecmp(token, "COPY")) {
         INVALID();
     }

@@ -1,0 +1,2 @@
+LOAD_IR shootout/mandelbrot/bench.ll
+bench(16000)

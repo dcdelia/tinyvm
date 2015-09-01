@@ -1,0 +1,2 @@
+LOAD_IR shootout/reverse-complement/bench.ll
+bench()

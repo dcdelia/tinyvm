@@ -456,6 +456,7 @@ void Parser::handleInsertOSRCommand() {
 
     if (open) {
         openOSRHelper(src, src_bb, update, tmpForF1NewName, cond, branchTakenProb);
+        delete cmdLine;
         return;
     }
 
@@ -479,6 +480,8 @@ void Parser::handleInsertOSRCommand() {
 
     finalizedOSRHelper(src, src_bb, update, tmpForF1NewName, &F2Name,
             &B2Name, const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
+
+    delete cmdLine;
     #undef getToken
     #undef INVALID
 }

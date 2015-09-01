@@ -1,0 +1,2 @@
+LOAD_IR shootout/fannkuch-redux/bench.ll
+bench(12)

@@ -1,0 +1,2 @@
+LOAD_IR shootout/fasta-redux/bench.ll
+bench(25000000)

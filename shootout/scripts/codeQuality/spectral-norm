@@ -1,0 +1,5 @@
+LOAD_IR shootout/spectral-norm/codeQuality.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN eval_A_times_u AT B8
+INSERT_OSR 5 NEVER OPEN UPDATE IN eval_At_times_u AT B8
+LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
+bench(5500)

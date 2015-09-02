@@ -1,2 +1,4 @@
 LOAD_IR shootout/reverse-complement/bench.ll
 bench()
+REPEAT 10 bench()
+QUIT

@@ -1,3 +1,5 @@
 LOAD_IR shootout/binary-trees/bench.ll
 LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
 bench(22)
+REPEAT 10 bench(22)
+QUIT

@@ -1,2 +1,4 @@
 LOAD_IR shootout/mandelbrot/bench.ll
 bench(32000)
+REPEAT 10 bench(32000)
+QUIT

@@ -1,2 +1,4 @@
 LOAD_IR shootout/fasta/bench.ll
 bench(50000000)
+REPEAT 10 bench(50000000)
+QUIT

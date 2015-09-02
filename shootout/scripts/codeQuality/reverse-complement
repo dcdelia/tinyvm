@@ -1,3 +1,5 @@
 LOAD_IR shootout/reverse-complement/codeQuality.ll
 INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT B80
 bench()
+REPEAT 10 bench()
+QUIT

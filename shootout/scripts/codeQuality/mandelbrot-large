@@ -1,3 +1,5 @@
 LOAD_IR shootout/mandelbrot/codeQuality.ll
 INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT B13
 bench(32000)
+REPEAT 10 bench(32000)
+QUIT

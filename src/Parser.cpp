@@ -186,15 +186,20 @@ void Parser::handleFunctionInvocation(int iterations) {
         std::cerr << "Evaluated to: " << result << std::endl;
     } else {
         int i, result;
+        tinyvm_timer_t iter_timer;
 
         timer_start(&timer);
-        for (i = 0; i < iterations; ++i) {
+        for (i = 0; i < iterations; ) {
+            timer_start(&iter_timer);
             result = fun();
+            timer_end(&iter_timer);
+            std::cerr << "[Iteration " << ++i << "] ";
+            timer_print_elapsed(&iter_timer);
         }
         timer_end(&timer);
 
         timer_print_elapsed(&timer);
-        timer_print_avg(&timer, iterations);
+        timer_print_avg(&timer, iterations); // TODO includes also iter_timer and print overhead
         std::cerr << "Number of iterations: " << iterations << std::endl;
         std::cerr << "Last call evaluated to: " << result << std::endl;
     }

@@ -1,2 +1,2 @@
 LOAD_IR shootout/fasta/bench.ll
-bench(25000000)
+bench(50000000)

@@ -52,7 +52,7 @@ void timer_print_elapsed(tinyvm_timer_t* timer) {
     long ns = nanoseconds % 1000;
 
     //fprintf(stderr, "Elapsed time: %ld s %ld nsec\n", seconds, nanoseconds);
-    fprintf(stderr, "Elapsed time: %ld m %ld s %ld ms %ld us %ld ns\n", m, s, ms, us, ns);
+    fprintf(stderr, "Elapsed CPU time: %ld m %ld s %ld ms %ld us %ld ns\n", m, s, ms, us, ns);
     #endif
 }
 
@@ -87,7 +87,7 @@ void timer_print_avg(tinyvm_timer_t* timer, int iterations) {
     long ns = nanoseconds % 1000;
 
     //fprintf(stderr, "Avg elapsed time per iteration: %ld s %ld nsec\n", seconds, nanoseconds);
-    fprintf(stderr, "Avg elapsed time per iteration: %ld m %ld s %ld ms %ld us %ld ns\n", m, s, ms, us, ns);
+    fprintf(stderr, "Avg elapsed CPU time per iteration: %ld m %ld s %ld ms %ld us %ld ns\n", m, s, ms, us, ns);
     #endif
 }
 

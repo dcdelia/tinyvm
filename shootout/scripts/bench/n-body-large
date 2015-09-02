@@ -1,0 +1,2 @@
+LOAD_IR shootout/n-body/bench.ll
+bench(500000000)

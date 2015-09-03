@@ -36,7 +36,7 @@ enum Token {
     tok_show_asm    = -23,
     tok_repeat      = -24,
     tok_show_mods   = -25,
-    /* -26 is now free! */
+    tok_show_addr   = -26,
     tok_show_funs   = -27,
     tok_load_lib    = -28
 };

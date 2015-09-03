@@ -38,6 +38,7 @@ void Parser::start(bool displayHelpMsg) {
             case tok_dump:          handleDumpCommand(); break;
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
+            case tok_show_addr:     handleShowAddrCommand(); break;
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
@@ -218,6 +219,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> OPT_FULL <function_name>" << std::endl << "\tPerforms several optimization passes over a given function." << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
+    std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address of a given function (forces compilation!)." << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
@@ -273,8 +275,9 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
+    Module* modToUse = src->getParent();
     OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName,
-            src->getParent(), &F1NewToF1Map, nullptr, nullptr, nullptr);
+            modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
 
     tinyvm_timer_t timer;
     timer_start(&timer);
@@ -295,6 +298,8 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
         TheHelper->registerFunction(src_new);
     }
     TheHelper->registerFunction(stub);
+
+    TheHelper->trackAsmCodeUtil(modToUse);
 
     timer_print_elapsed(&timer);
 }
@@ -347,8 +352,9 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
-    OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName, src->getParent(),
-            &F1NewToF1Map, F2NewName, src->getParent(), &F2NewToF2Map);
+    Module* modToUse = src->getParent();
+    OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName, modToUse,
+            &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
 
     tinyvm_timer_t timer;
     timer_start(&timer);
@@ -369,6 +375,8 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
         TheHelper->registerFunction(src_new);
     }
     TheHelper->registerFunction(dest_new);
+
+    TheHelper->trackAsmCodeUtil(modToUse);
 
     timer_print_elapsed(&timer);
 }
@@ -527,6 +535,23 @@ void Parser::handleRepeatCommand() {
     #undef INVALID
 
     handleFunctionInvocation(iterations);
+}
+
+void Parser::handleShowAddrCommand() {
+    #define INVALID() do { std::cerr << "Invalid syntax for a SHOW_ADDR command!" << std::endl \
+            << "Expected command of the form: SHOW_ADDR <function_name>" << std::endl; \
+            return; } while (0);
+
+    if (TheLexer->getNextToken() != tok_identifier) INVALID();
+    const std::string FunctionName = TheLexer->getIdentifier();
+    #undef INVALID
+
+    void* ptr = (void*)TheHelper->JIT->getFunctionAddress(FunctionName);
+    if (ptr == nullptr) {
+        std::cerr << "Cannot locate corresponding compiled function!" << std::endl;
+    } else {
+        std::cerr << "Compiled code for the function has been loaded at " << ptr << std::endl;
+    }
 }
 
 void Parser::handleShowCFGCommand(bool showInstructions) {

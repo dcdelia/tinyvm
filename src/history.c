@@ -48,6 +48,7 @@ void init_history(history_t* history, const char* prefix) {
 static void handle_arrow(history_t* h) {
     #define UNEXPECTED(c) do { \
             fprintf(stderr, "Error: can't handle ASCII code %d returned by the OS. Exiting...\n", c); \
+            restore_term(h); \
             exit(EXIT_FAILURE); \
         } while (0);
 

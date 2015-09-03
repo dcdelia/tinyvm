@@ -50,6 +50,7 @@ int Lexer::getNextToken() {
         if (command == "SHOW_ASM")      return tok_show_asm;
         if (command == "REPEAT")        return tok_repeat;
         if (command == "SHOW_MODS")     return tok_show_mods;
+        if (command == "SHOW_ADDR")     return tok_show_addr;
         if (command == "SHOW_FUNS")     return tok_show_funs;
         if (command == "LOAD_LIB")      return tok_load_lib;
 

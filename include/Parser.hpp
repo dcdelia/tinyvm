@@ -29,6 +29,7 @@ private:
     void handleLoadIRCommand();
     void handleLoadLibCommand();
     void handleRepeatCommand();
+    void handleShowAddrCommand();
     void handleShowCFGCommand(bool showInstructions);
     void handleTrackAsmCommand();
     void handleInsertOpenOSRCommand();

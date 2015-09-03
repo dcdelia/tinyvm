@@ -87,6 +87,7 @@ public:
     ValueToValueMapTy* generateIdentityMapping(Function* F);
     static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);
     void registerFunction(Function* F);
+    void trackAsmCodeUtil(Module* M);
 
 private:
     IRBuilder<>                     *Builder;

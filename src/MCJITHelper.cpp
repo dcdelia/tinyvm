@@ -74,6 +74,17 @@ FunctionPassManager MCJITHelper::createFPM(Module* M, bool CFGSimplificationOnly
     return FPM;
 }
 
+void MCJITHelper::trackAsmCodeUtil(Module* M) {
+    if (trackAsmCode) {
+        formatted_raw_ostream formAsmFdStream(*asmFdStream);
+        legacy::PassManager PM;
+        PM.add(new DataLayoutPass());
+        TargetMachine *TM = JIT->getTargetMachine();
+        TM->addPassesToEmitFile(PM, formAsmFdStream, TargetMachine::CGFT_AssemblyFile);
+        PM.run(*M);
+    }
+}
+
 void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     Module* M_ptr = M.get();
 
@@ -91,14 +102,7 @@ void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
     }
 
     // for showing assembly code when generated
-    if (trackAsmCode) {
-        formatted_raw_ostream formAsmFdStream(*asmFdStream);
-        legacy::PassManager PM;
-        PM.add(new DataLayoutPass());
-        TargetMachine *TM = JIT->getTargetMachine();
-        TM->addPassesToEmitFile(PM, formAsmFdStream, TargetMachine::CGFT_AssemblyFile);
-        PM.run(*M_ptr);
-    }
+    trackAsmCodeUtil(M_ptr);
 
     Modules.push_back(M_ptr);
 

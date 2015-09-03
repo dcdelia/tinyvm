@@ -103,7 +103,7 @@ s, int n) {
 
 /* Main -- define alphabets, make 3 fragments */
 
-struct aminoacids iub[] = {
+struct aminoacids iub_orig[] = {
     { 'a', 0.27 },
     { 'c', 0.12 },
     { 'g', 0.12 },
@@ -122,14 +122,18 @@ struct aminoacids iub[] = {
     { 'Y', 0.02 }
 };
 
+struct aminoacids iub[15];
+
 #define IUB_LEN (sizeof (iub) / sizeof (struct aminoacids))
 
-struct aminoacids homosapiens[] = {
+struct aminoacids homosapiens_orig[] = {
     { 'a', 0.3029549426680 },
     { 'c', 0.1979883004921 },
     { 'g', 0.1975473066391 },
     { 't', 0.3015094502008 },
 };
+
+struct aminoacids homosapiens[4];
 
 #define HOMOSAPIENS_LEN (sizeof (homosapiens) / sizeof (struct aminoacids))
 
@@ -150,6 +154,10 @@ int bench(int inputN) {
     char filename[64];
     sprintf(filename, "fasta-%d.txt", n);
     outStream = fopen(filename, "w+");
+
+    // to enable multiple invocations of bench()
+    memcpy(iub, iub_orig, sizeof(iub_orig));
+    memcpy(homosapiens, homosapiens_orig, sizeof(homosapiens_orig));
 
     makeCumulative (iub, IUB_LEN);
     makeCumulative (homosapiens, HOMOSAPIENS_LEN);

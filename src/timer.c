@@ -53,6 +53,7 @@ void timer_print_elapsed(tinyvm_timer_t* timer) {
 
     //fprintf(stderr, "Elapsed time: %ld s %ld nsec\n", seconds, nanoseconds);
     fprintf(stderr, "Elapsed CPU time: %ld m %ld s %ld ms %ld us %ld ns\n", m, s, ms, us, ns);
+    fprintf(stderr, "                  (that is: %ld.%09ld seconds)\n", seconds, nanoseconds);
     #endif
 }
 

@@ -1,0 +1,5 @@
+LOAD_IR shootout/fasta-redux/finalAlwaysFire.ll
+INSERT_OSR 95 ALWAYS FINAL UPDATE IN hotLoop AT entry TO hotLoop AT entry AS hotLoop_OSR
+bench(50000000)
+REPEAT 10 bench(50000000)
+QUIT

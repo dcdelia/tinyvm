@@ -1,0 +1,5 @@
+LOAD_IR shootout/fasta/finalAlwaysFire.ll
+INSERT_OSR 95 ALWAYS FINAL UPDATE IN selectRandom AT entry TO selectRandom AT entry AS selectRandom_OSR
+bench(50000000)
+REPEAT 10 bench(50000000)
+QUIT

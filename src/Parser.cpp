@@ -234,8 +234,8 @@ void Parser::handleHelpCommand() {
     std::cerr << std::endl << "Demo OSR points can be inserted with one of the following commands:" << std::endl
               << "INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <B1>" << std::endl
               << "INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <B1> AS <F1'>" << std::endl
-              << "INSERT_OSR <PROB> <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> at <B2> as <F2'>" << std::endl
-              << "INSERT_OSR <PROB> <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> at <B2> as <F2'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> AT <B2> AS <F2'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>" << std::endl
               << std::endl << "where:" << std::endl
               << "\tPROB is either -1 (no branch weight) or an integer in {0, ..., 100}" << std::endl
               << "\tCOND is either ALWAYS or NEVER" << std::endl

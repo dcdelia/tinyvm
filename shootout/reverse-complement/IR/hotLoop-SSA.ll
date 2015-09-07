@@ -117,16 +117,16 @@ define i32 @hotLoop(%struct._IO_FILE* %inputFile, i8** %p_pj, i8** %p_pq, i8** %
   br label %58
 
 ; <label>:58                                      ; preds = %73, %57
-  %.01 = phi i8** [ %p_pj, %57 ], [ %63, %73 ]
-  %59 = load i8** %.01, align 8
+  %59 = load i8** %p_pj, align 8
   %60 = load i8* %59, align 1
   %61 = icmp ne i8 %60, 0
   br i1 %61, label %62, label %74
 
 ; <label>:62                                      ; preds = %58
-  %63 = getelementptr inbounds i8** %.01, i32 1
-  %64 = load i8** %.01, align 8
-  %65 = load i8* %64, align 1
+  %63 = load i8** %p_pj, align 8
+  %64 = getelementptr inbounds i8* %63, i32 1
+  store i8* %64, i8** %p_pj, align 8
+  %65 = load i8* %63, align 1
   %66 = zext i8 %65 to i64
   %67 = getelementptr inbounds i8* %xtab, i64 %66
   %68 = load i8* %67, align 1

@@ -29,17 +29,17 @@ int hotLoop(FILE* inputFile, char **p_pj, char **p_pq, char **p_pr, char* jjj, c
         }
         if (newptr != *p_qqq) {             // new base: adj. pointers
             size_t x = newptr-*p_qqq;         // offset for pointer update
-            *p_pq+=x;
-            *p_pr+=x;
-            *p_qqq+=x;
+            (*p_pq)+=x;
+            (*p_pr)+=x;
+            (*p_qqq)+=x;
             newstop+=x;
-            *p_pqstop+=x;
+            (*p_pqstop)+=x;
         }
         *p_pr = __builtin_memmove(newstop-(*p_pqstop-*p_pr), *p_pr, *p_pqstop-*p_pr);
         *p_pqstop = newstop;                // buffer resize complete
     }
     while (**p_pj) {                      // LOOP: conv. & revert line
-        char c = xtab[(unsigned char)(**p_pj++)];
+        char c = xtab[(unsigned char)(*(*p_pj)++)];
         if (c)                           // conversion valid
             *(--(*p_pr)) = c;
     }

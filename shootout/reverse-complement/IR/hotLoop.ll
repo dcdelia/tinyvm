@@ -191,10 +191,10 @@ define i32 @hotLoop(%struct._IO_FILE* %inputFile, i8** %p_pj, i8** %p_pq, i8** %
 
 ; <label>:107                                     ; preds = %102
   %108 = load i8*** %3, align 8
-  %109 = getelementptr inbounds i8** %108, i32 1
-  store i8** %109, i8*** %3, align 8
-  %110 = load i8** %108, align 8
-  %111 = load i8* %110, align 1
+  %109 = load i8** %108, align 8
+  %110 = getelementptr inbounds i8* %109, i32 1
+  store i8* %110, i8** %108, align 8
+  %111 = load i8* %109, align 1
   %112 = zext i8 %111 to i64
   %113 = load i8** %9, align 8
   %114 = getelementptr inbounds i8* %113, i64 %112

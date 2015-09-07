@@ -64,7 +64,7 @@ B14:                                      ; preds = %B9
   %v23 = icmp ne i8* %v22, null
   br i1 %v23, label %B26, label %B24
 
-B24:                                      ; preds = %B  14
+B24:                                      ; preds = %B14
   %v25 = call i32 @errex(i8* getelementptr inbounds ([14 x i8]* @.str1, i32 0, i32 0), i32 0)
   call void @exit(i32 %v25) #5
   unreachable
@@ -118,16 +118,16 @@ B57:                                      ; preds = %B43, %B9
   br label %B58
 
 B58:                                      ; preds = %B73, %B57
-  %.01 = phi i8** [ %p_pj, %B57 ], [ %v63, %B73 ]
-  %v59 = load i8** %.01, align 8
+  %v59 = load i8** %p_pj, align 8
   %v60 = load i8* %v59, align 1
   %v61 = icmp ne i8 %v60, 0
   br i1 %v61, label %B62, label %B74
 
 B62:                                      ; preds = %B58
-  %v63 = getelementptr inbounds i8** %.01, i32 1
-  %v64 = load i8** %.01, align 8
-  %v65 = load i8* %v64, align 1
+  %v63 = load i8** %p_pj, align 8
+  %v64 = getelementptr inbounds i8* %v63, i32 1
+  store i8* %v64, i8** %p_pj, align 8
+  %v65 = load i8* %v63, align 1
   %v66 = zext i8 %v65 to i64
   %v67 = getelementptr inbounds i8* %xtab, i64 %v66
   %v68 = load i8* %v67, align 1

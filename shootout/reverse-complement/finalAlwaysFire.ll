@@ -28,107 +28,127 @@ define i32 @errex(i8* %s, i32 %n) #0 {
 declare i32 @fprintf(%struct._IO_FILE*, i8*, ...) #1
 
 ; Function Attrs: nounwind uwtable
-define i32 @hotLoop(i64* %p_hotLoopCounter, %struct._IO_FILE* %inputFile, i8* %pj, i8* %pq, i8* %pr, i8* %jjj, i8* %qqq, i8* %pqstop, i8* %xtab) #0 {
+define i32 @hotLoop(%struct._IO_FILE* %inputFile, i8** %p_pj, i8** %p_pq, i8** %p_pr, i8* %jjj, i8** %p_qqq, i8** %p_pqstop, i8* %xtab) #0 {
 entry:
-  %v1 = load i64* %p_hotLoopCounter, align 8
-  %v2 = add nsw i64 %v1, 1
-  store i64 %v2, i64* %p_hotLoopCounter, align 8
-  %v3 = call i8* @fgets(i8* %jjj, i32 82, %struct._IO_FILE* %inputFile)
-  %v4 = icmp ne i8* %v3, null
-  br i1 %v4, label %B5, label %B9
+  %v1 = call i8* @fgets(i8* %jjj, i32 82, %struct._IO_FILE* %inputFile)
+  store i8* %v1, i8** %p_pj, align 8
+  %v2 = load i8** %p_pj, align 8
+  %v3 = icmp ne i8* %v2, null
+  br i1 %v3, label %B4, label %B8
 
-B5:                                       ; preds = %0
-  %v6 = load i8* %jjj, align 1
-  %v7 = sext i8 %v6 to i32
-  %v8 = icmp eq i32 %v7, 62
-  br i1 %v8, label %B9, label %B10
+B4:                                       ; preds = %entry
+  %v5 = load i8* %jjj, align 1
+  %v6 = sext i8 %v5 to i32
+  %v7 = icmp eq i32 %v6, 62
+  br i1 %v7, label %B8, label %B9
 
-B9:                                       ; preds = %B5, %0
-  br label %B57
+B8:                                       ; preds = %B4, %entry
+  br label %B75
 
-B10:                                      ; preds = %B5
-  %v11 = getelementptr inbounds i8* %pq, i64 61
-  %v12 = icmp ule i8* %pr, %v11
-  br i1 %v12, label %B13, label %B42
+B9:                                       ; preds = %B4
+  %v10 = load i8** %p_pr, align 8
+  %v11 = load i8** %p_pq, align 8
+  %v12 = getelementptr inbounds i8* %v11, i64 61
+  %v13 = icmp ule i8* %v10, %v12
+  br i1 %v13, label %B14, label %B57
 
-B13:                                      ; preds = %B10
-  %v14 = getelementptr inbounds i8* %pqstop, i64 12777888
-  %v15 = ptrtoint i8* %v14 to i64
-  %v16 = ptrtoint i8* %qqq to i64
-  %v17 = sub i64 %v15, %v16
-  %v18 = call i8* @realloc(i8* %qqq, i64 %v17) #4
-  %v19 = icmp ne i8* %v18, null
-  br i1 %v19, label %B22, label %B20
+B14:                                      ; preds = %B9
+  %v15 = load i8** %p_pqstop, align 8
+  %v16 = getelementptr inbounds i8* %v15, i64 12777888
+  %v17 = load i8** %p_qqq, align 8
+  %v18 = load i8** %p_qqq, align 8
+  %v19 = ptrtoint i8* %v16 to i64
+  %v20 = ptrtoint i8* %v18 to i64
+  %v21 = sub i64 %v19, %v20
+  %v22 = call i8* @realloc(i8* %v17, i64 %v21) #4
+  %v23 = icmp ne i8* %v22, null
+  br i1 %v23, label %B26, label %B24
 
-B20:                                      ; preds = %B13
-  %v21 = call i32 @errex(i8* getelementptr inbounds ([14 x i8]* @.str1, i32 0, i32 0), i32 0)
-  call void @exit(i32 %v21) #5
+B24:                                      ; preds = %B  14
+  %v25 = call i32 @errex(i8* getelementptr inbounds ([14 x i8]* @.str1, i32 0, i32 0), i32 0)
+  call void @exit(i32 %v25) #5
   unreachable
 
-B22:                                      ; preds = %B13
-  %v23 = icmp ne i8* %v18, %qqq
-  br i1 %v23, label %B24, label %B33
+B26:                                      ; preds = %B14
+  %v27 = load i8** %p_qqq, align 8
+  %v28 = icmp ne i8* %v22, %v27
+  br i1 %v28, label %B29, label %B43
 
-B24:                                      ; preds = %B22
-  %v25 = ptrtoint i8* %v18 to i64
-  %v26 = ptrtoint i8* %qqq to i64
-  %v27 = sub i64 %v25, %v26
-  %v28 = getelementptr inbounds i8* %pq, i64 %v27
-  %v29 = getelementptr inbounds i8* %pr, i64 %v27
-  %v30 = getelementptr inbounds i8* %qqq, i64 %v27
-  %v31 = getelementptr inbounds i8* %v14, i64 %v27
-  %v32 = getelementptr inbounds i8* %pqstop, i64 %v27
-  br label %B33
-
-B33:                                      ; preds = %B24, %B22
-  %.03 = phi i8* [ %v29, %B24 ], [ %pr, %B22 ]
-  %.01 = phi i8* [ %v32, %B24 ], [ %pqstop, %B22 ]
-  %newstop.0 = phi i8* [ %v31, %B24 ], [ %v14, %B22 ]
-  %v34 = ptrtoint i8* %.01 to i64
-  %v35 = ptrtoint i8* %.03 to i64
-  %v36 = sub i64 %v34, %v35
-  %v37 = sub i64 0, %v36
-  %v38 = getelementptr inbounds i8* %newstop.0, i64 %v37
-  %v39 = ptrtoint i8* %.01 to i64
-  %v40 = ptrtoint i8* %.03 to i64
-  %v41 = sub i64 %v39, %v40
-  call void @llvm.memmove.p0i8.p0i8.i64(i8* %v38, i8* %.03, i64 %v41, i32 1, i1 false)
-  br label %B42
-
-B42:                                      ; preds = %B33, %B10
-  %.1 = phi i8* [ %v38, %B33 ], [ %pr, %B10 ]
+B29:                                      ; preds = %B26
+  %v30 = load i8** %p_qqq, align 8
+  %v31 = ptrtoint i8* %v22 to i64
+  %v32 = ptrtoint i8* %v30 to i64
+  %v33 = sub i64 %v31, %v32
+  %v34 = load i8** %p_pq, align 8
+  %v35 = getelementptr inbounds i8* %v34, i64 %v33
+  store i8* %v35, i8** %p_pq, align 8
+  %v36 = load i8** %p_pr, align 8
+  %v37 = getelementptr inbounds i8* %v36, i64 %v33
+  store i8* %v37, i8** %p_pr, align 8
+  %v38 = load i8** %p_qqq, align 8
+  %v39 = getelementptr inbounds i8* %v38, i64 %v33
+  store i8* %v39, i8** %p_qqq, align 8
+  %v40 = getelementptr inbounds i8* %v16, i64 %v33
+  %v41 = load i8** %p_pqstop, align 8
+  %v42 = getelementptr inbounds i8* %v41, i64 %v33
+  store i8* %v42, i8** %p_pqstop, align 8
   br label %B43
 
-B43:                                      ; preds = %B55, %B42
-  %.2 = phi i8* [ %.1, %B42 ], [ %.3, %B55 ]
-  %.02 = phi i8* [ %v3, %B42 ], [ %v47, %B55 ]
-  %v44 = load i8* %.02, align 1
-  %v45 = icmp ne i8 %v44, 0
-  br i1 %v45, label %B46, label %B56
-
-B46:                                      ; preds = %B43
-  %v47 = getelementptr inbounds i8* %.02, i32 1
-  %v48 = load i8* %.02, align 1
-  %v49 = zext i8 %v48 to i64
-  %v50 = getelementptr inbounds i8* %xtab, i64 %v49
-  %v51 = load i8* %v50, align 1
-  %v52 = icmp ne i8 %v51, 0
-  br i1 %v52, label %B53, label %B55
-
-B53:                                      ; preds = %B46
-  %v54 = getelementptr inbounds i8* %.2, i32 -1
-  store i8 %v51, i8* %v54, align 1
-  br label %B55
-
-B55:                                      ; preds = %B53, %B46
-  %.3 = phi i8* [ %v54, %B53 ], [ %.2, %B46 ]
-  br label %B43
-
-B56:                                      ; preds = %B43
+B43:                                      ; preds = %B29, %B26
+  %newstop.0 = phi i8* [ %v40, %B29 ], [ %v16, %B26 ]
+  %v44 = load i8** %p_pqstop, align 8
+  %v45 = load i8** %p_pr, align 8
+  %v46 = ptrtoint i8* %v44 to i64
+  %v47 = ptrtoint i8* %v45 to i64
+  %v48 = sub i64 %v46, %v47
+  %v49 = sub i64 0, %v48
+  %v50 = getelementptr inbounds i8* %newstop.0, i64 %v49
+  %v51 = load i8** %p_pr, align 8
+  %v52 = load i8** %p_pqstop, align 8
+  %v53 = load i8** %p_pr, align 8
+  %v54 = ptrtoint i8* %v52 to i64
+  %v55 = ptrtoint i8* %v53 to i64
+  %v56 = sub i64 %v54, %v55
+  call void @llvm.memmove.p0i8.p0i8.i64(i8* %v50, i8* %v51, i64 %v56, i32 1, i1 false)
+  store i8* %v50, i8** %p_pr, align 8
+  store i8* %newstop.0, i8** %p_pqstop, align 8
   br label %B57
 
-B57:                                      ; preds = %B56, %B9
-  %.0 = phi i32 [ 1, %B9 ], [ 0, %B56 ]
+B57:                                      ; preds = %B43, %B9
+  br label %B58
+
+B58:                                      ; preds = %B73, %B57
+  %.01 = phi i8** [ %p_pj, %B57 ], [ %v63, %B73 ]
+  %v59 = load i8** %.01, align 8
+  %v60 = load i8* %v59, align 1
+  %v61 = icmp ne i8 %v60, 0
+  br i1 %v61, label %v62, label %v74
+
+B62:                                      ; preds = %B58
+  %v63 = getelementptr inbounds i8** %.01, i32 1
+  %v64 = load i8** %.01, align 8
+  %v65 = load i8* %v64, align 1
+  %v66 = zext i8 %v65 to i64
+  %v67 = getelementptr inbounds i8* %xtab, i64 %v66
+  %v68 = load i8* %v67, align 1
+  %v69 = icmp ne i8 %v68, 0
+  br i1 %v69, label %B70, label %B73
+
+B70:                                      ; preds = %B62
+  %v71 = load i8** %p_pr, align 8
+  %v72 = getelementptr inbounds i8* %v71, i32 -1
+  store i8* %v72, i8** %p_pr, align 8
+  store i8 %v68, i8* %v72, align 1
+  br label %B73
+
+B73:                                      ; preds = %B70, %B62
+  br label %B58
+
+B74:                                      ; preds = %B58
+  br label %B75
+
+B75:                                      ; preds = %B74, %B8
+  %.0 = phi i32 [ 1, %B8 ], [ 0, %B74 ]
   ret i32 %.0
 }
 
@@ -145,133 +165,168 @@ declare void @llvm.memmove.p0i8.p0i8.i64(i8* nocapture, i8* nocapture readonly, 
 
 ; Function Attrs: nounwind uwtable
 define i32 @bench() #0 {
+  %pj = alloca i8*, align 8
+  %pq = alloca i8*, align 8
+  %pr = alloca i8*, align 8
+  %qqq = alloca i8*, align 8
+  %pqstop = alloca i8*, align 8
   %xtab = alloca [256 x i8], align 16
-  %hotLoopCounter = alloca i64, align 8
   %1 = call %struct._IO_FILE* @fopen(i8* getelementptr inbounds ([46 x i8]* @.str2, i32 0, i32 0), i8* getelementptr inbounds ([3 x i8]* @.str3, i32 0, i32 0))
   %2 = call %struct._IO_FILE* @fopen(i8* getelementptr inbounds ([19 x i8]* @.str4, i32 0, i32 0), i8* getelementptr inbounds ([3 x i8]* @.str5, i32 0, i32 0))
   %3 = call noalias i8* @malloc(i64 82) #4
   %4 = call noalias i8* @malloc(i64 5200) #4
-  %5 = getelementptr inbounds i8* %4, i64 5200
-  %6 = bitcast [256 x i8]* %xtab to i8*
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %6, i8* getelementptr inbounds ([256 x i8]* @bench.xtab, i32 0, i32 0), i64 256, i32 16, i1 false)
-  %7 = icmp ne i8* %3, null
-  br i1 %7, label %8, label %10
+  store i8* %4, i8** %qqq, align 8
+  %5 = load i8** %qqq, align 8
+  %6 = getelementptr inbounds i8* %5, i64 5200
+  store i8* %6, i8** %pqstop, align 8
+  %7 = bitcast [256 x i8]* %xtab to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %7, i8* getelementptr inbounds ([256 x i8]* @bench.xtab, i32 0, i32 0), i64 256, i32 16, i1 false)
+  %8 = icmp ne i8* %3, null
+  br i1 %8, label %9, label %12
 
-; <label>:8                                       ; preds = %0
-  %9 = icmp ne i8* %4, null
-  br i1 %9, label %19, label %10
+; <label>:9                                       ; preds = %0
+  %10 = load i8** %qqq, align 8
+  %11 = icmp ne i8* %10, null
+  br i1 %11, label %22, label %12
 
-; <label>:10                                      ; preds = %8, %0
-  %11 = icmp ne i8* %3, null
-  %12 = xor i1 %11, true
-  %13 = zext i1 %12 to i32
-  %14 = icmp ne i8* %4, null
-  %15 = xor i1 %14, true
-  %16 = zext i1 %15 to i32
-  %17 = add nsw i32 %13, %16
-  %18 = call i32 @errex(i8* getelementptr inbounds ([18 x i8]* @.str6, i32 0, i32 0), i32 %17)
+; <label>:12                                      ; preds = %9, %0
+  %13 = icmp ne i8* %3, null
+  %14 = xor i1 %13, true
+  %15 = zext i1 %14 to i32
+  %16 = load i8** %qqq, align 8
+  %17 = icmp ne i8* %16, null
+  %18 = xor i1 %17, true
+  %19 = zext i1 %18 to i32
+  %20 = add nsw i32 %15, %19
+  %21 = call i32 @errex(i8* getelementptr inbounds ([18 x i8]* @.str6, i32 0, i32 0), i32 %20)
+  br label %96
+
+; <label>:22                                      ; preds = %9
+  %23 = call i8* @fgets(i8* %3, i32 82, %struct._IO_FILE* %1)
+  store i8* %23, i8** %pj, align 8
+  %24 = load i8** %pj, align 8
+  %25 = icmp ne i8* %24, null
+  br i1 %25, label %28, label %26
+
+; <label>:26                                      ; preds = %22
+  %27 = call i32 @errex(i8* getelementptr inbounds ([14 x i8]* @.str7, i32 0, i32 0), i32 0)
+  br label %96
+
+; <label>:28                                      ; preds = %22
+  %29 = load i8* %3, align 1
+  %30 = sext i8 %29 to i32
+  %31 = icmp ne i32 %30, 62
+  br i1 %31, label %32, label %34
+
+; <label>:32                                      ; preds = %28
+  %33 = call i32 @errex(i8* getelementptr inbounds ([17 x i8]* @.str8, i32 0, i32 0), i32 0)
+  br label %96
+
+; <label>:34                                      ; preds = %28
+  br label %35
+
+; <label>:35                                      ; preds = %83, %34
+  %hotLoopCounter.0 = phi i64 [ 0, %34 ], [ %44, %83 ]
+  %36 = load i8** %pj, align 8
+  %37 = icmp ne i8* %36, null
+  br i1 %37, label %38, label %91
+
+; <label>:38                                      ; preds = %35
+  %39 = call i32 @fputs(i8* %3, %struct._IO_FILE* %2)
+  %40 = load i8** %qqq, align 8
+  %41 = getelementptr inbounds i8* %40, i64 1
+  store i8* %41, i8** %pq, align 8
+  %42 = load i8** %pqstop, align 8
+  store i8* %42, i8** %pr, align 8
+  br label %43
+
+; <label>:43                                      ; preds = %50, %38
+  %hotLoopCounter.1 = phi i64 [ %hotLoopCounter.0, %38 ], [ %44, %50 ]
+  %44 = add nsw i64 %hotLoopCounter.1, 1
+  %45 = getelementptr inbounds [256 x i8]* %xtab, i32 0, i32 0
+  %46 = call i32 @hotLoop(%struct._IO_FILE* %1, i8** %pj, i8** %pq, i8** %pr, i8* %3, i8** %qqq, i8** %pqstop, i8* %45)
+  %47 = icmp ne i32 %46, 0
+  br i1 %47, label %48, label %49
+
+; <label>:48                                      ; preds = %43
+  br label %53
+
+; <label>:49                                      ; preds = %43
+  br label %50
+
+; <label>:50                                      ; preds = %49
+  %51 = load i8** %pq, align 8
+  %52 = getelementptr inbounds i8* %51, i32 1
+  store i8* %52, i8** %pq, align 8
+  br label %43
+
+; <label>:53                                      ; preds = %48
+  %54 = load i8** %qqq, align 8
+  store i8* %54, i8** %pq, align 8
+  br label %55
+
+; <label>:55                                      ; preds = %73, %53
+  %56 = load i8** %pr, align 8
+  %57 = load i8** %pqstop, align 8
+  %58 = icmp ult i8* %56, %57
+  br i1 %58, label %59, label %83
+
+; <label>:59                                      ; preds = %55
+  %60 = load i8** %pqstop, align 8
+  %61 = load i8** %pr, align 8
+  %62 = ptrtoint i8* %60 to i64
+  %63 = ptrtoint i8* %61 to i64
+  %64 = sub i64 %62, %63
+  %65 = icmp slt i64 %64, 60
+  br i1 %65, label %66, label %72
+
+; <label>:66                                      ; preds = %59
+  %67 = load i8** %pqstop, align 8
+  %68 = load i8** %pr, align 8
+  %69 = ptrtoint i8* %67 to i64
+  %70 = ptrtoint i8* %68 to i64
+  %71 = sub i64 %69, %70
   br label %73
 
-; <label>:19                                      ; preds = %8
-  %20 = call i8* @fgets(i8* %3, i32 82, %struct._IO_FILE* %1)
-  %21 = icmp ne i8* %20, null
-  br i1 %21, label %24, label %22
-
-; <label>:22                                      ; preds = %19
-  %23 = call i32 @errex(i8* getelementptr inbounds ([14 x i8]* @.str7, i32 0, i32 0), i32 0)
+; <label>:72                                      ; preds = %59
   br label %73
 
-; <label>:24                                      ; preds = %19
-  %25 = load i8* %3, align 1
-  %26 = sext i8 %25 to i32
-  %27 = icmp ne i32 %26, 62
-  br i1 %27, label %28, label %30
+; <label>:73                                      ; preds = %72, %66
+  %74 = phi i64 [ %71, %66 ], [ 60, %72 ]
+  %75 = load i8** %pq, align 8
+  %76 = load i8** %pr, align 8
+  call void @llvm.memmove.p0i8.p0i8.i64(i8* %75, i8* %76, i64 %74, i32 1, i1 false)
+  %77 = load i8** %pr, align 8
+  %78 = getelementptr inbounds i8* %77, i64 %74
+  store i8* %78, i8** %pr, align 8
+  %79 = load i8** %pq, align 8
+  %80 = getelementptr inbounds i8* %79, i64 %74
+  store i8* %80, i8** %pq, align 8
+  %81 = load i8** %pq, align 8
+  %82 = getelementptr inbounds i8* %81, i32 1
+  store i8* %82, i8** %pq, align 8
+  store i8 10, i8* %81, align 1
+  br label %55
 
-; <label>:28                                      ; preds = %24
-  %29 = call i32 @errex(i8* getelementptr inbounds ([17 x i8]* @.str8, i32 0, i32 0), i32 0)
-  br label %73
+; <label>:83                                      ; preds = %55
+  %84 = load i8** %qqq, align 8
+  %85 = load i8** %pq, align 8
+  %86 = load i8** %qqq, align 8
+  %87 = ptrtoint i8* %85 to i64
+  %88 = ptrtoint i8* %86 to i64
+  %89 = sub i64 %87, %88
+  %90 = call i64 @fwrite(i8* %84, i64 1, i64 %89, %struct._IO_FILE* %2)
+  br label %35
 
-; <label>:30                                      ; preds = %24
-  store i64 0, i64* %hotLoopCounter, align 8
-  br label %31
+; <label>:91                                      ; preds = %35
+  %92 = load %struct._IO_FILE** @stderr, align 8
+  %93 = call i32 (%struct._IO_FILE*, i8*, ...)* @fprintf(%struct._IO_FILE* %92, i8* getelementptr inbounds ([40 x i8]* @.str9, i32 0, i32 0), i64 %hotLoopCounter.0)
+  %94 = call i32 @fclose(%struct._IO_FILE* %1)
+  %95 = call i32 @fclose(%struct._IO_FILE* %2)
+  br label %96
 
-; <label>:31                                      ; preds = %62, %30
-  %32 = icmp ne i8* %20, null
-  br i1 %32, label %33, label %67
-
-; <label>:33                                      ; preds = %31
-  %34 = call i32 @fputs(i8* %3, %struct._IO_FILE* %2)
-  %35 = getelementptr inbounds i8* %4, i64 1
-  br label %36
-
-; <label>:36                                      ; preds = %42, %33
-  %pq.0 = phi i8* [ %35, %33 ], [ %43, %42 ]
-  %37 = getelementptr inbounds [256 x i8]* %xtab, i32 0, i32 0
-  %38 = call i32 @hotLoop(i64* %hotLoopCounter, %struct._IO_FILE* %1, i8* %20, i8* %pq.0, i8* %5, i8* %3, i8* %4, i8* %5, i8* %37)
-  %39 = icmp ne i32 %38, 0
-  br i1 %39, label %40, label %41
-
-; <label>:40                                      ; preds = %36
-  br label %44
-
-; <label>:41                                      ; preds = %36
-  br label %42
-
-; <label>:42                                      ; preds = %41
-  %43 = getelementptr inbounds i8* %pq.0, i32 1
-  br label %36
-
-; <label>:44                                      ; preds = %40
-  br label %45
-
-; <label>:45                                      ; preds = %57, %44
-  %pq.1 = phi i8* [ %4, %44 ], [ %61, %57 ]
-  %pr.0 = phi i8* [ %5, %44 ], [ %59, %57 ]
-  %46 = icmp ult i8* %pr.0, %5
-  br i1 %46, label %47, label %62
-
-; <label>:47                                      ; preds = %45
-  %48 = ptrtoint i8* %5 to i64
-  %49 = ptrtoint i8* %pr.0 to i64
-  %50 = sub i64 %48, %49
-  %51 = icmp slt i64 %50, 60
-  br i1 %51, label %52, label %56
-
-; <label>:52                                      ; preds = %47
-  %53 = ptrtoint i8* %5 to i64
-  %54 = ptrtoint i8* %pr.0 to i64
-  %55 = sub i64 %53, %54
-  br label %57
-
-; <label>:56                                      ; preds = %47
-  br label %57
-
-; <label>:57                                      ; preds = %56, %52
-  %58 = phi i64 [ %55, %52 ], [ 60, %56 ]
-  call void @llvm.memmove.p0i8.p0i8.i64(i8* %pq.1, i8* %pr.0, i64 %58, i32 1, i1 false)
-  %59 = getelementptr inbounds i8* %pr.0, i64 %58
-  %60 = getelementptr inbounds i8* %pq.1, i64 %58
-  %61 = getelementptr inbounds i8* %60, i32 1
-  store i8 10, i8* %60, align 1
-  br label %45
-
-; <label>:62                                      ; preds = %45
-  %63 = ptrtoint i8* %pq.1 to i64
-  %64 = ptrtoint i8* %4 to i64
-  %65 = sub i64 %63, %64
-  %66 = call i64 @fwrite(i8* %4, i64 1, i64 %65, %struct._IO_FILE* %2)
-  br label %31
-
-; <label>:67                                      ; preds = %31
-  %68 = load %struct._IO_FILE** @stderr, align 8
-  %69 = load i64* %hotLoopCounter, align 8
-  %70 = call i32 (%struct._IO_FILE*, i8*, ...)* @fprintf(%struct._IO_FILE* %68, i8* getelementptr inbounds ([40 x i8]* @.str9, i32 0, i32 0), i64 %69)
-  %71 = call i32 @fclose(%struct._IO_FILE* %1)
-  %72 = call i32 @fclose(%struct._IO_FILE* %2)
-  br label %73
-
-; <label>:73                                      ; preds = %67, %28, %22, %10
-  %.0 = phi i32 [ %29, %28 ], [ 0, %67 ], [ %23, %22 ], [ %18, %10 ]
+; <label>:96                                      ; preds = %91, %32, %26, %12
+  %.0 = phi i32 [ %33, %32 ], [ 0, %91 ], [ %27, %26 ], [ %21, %12 ]
   ret i32 %.0
 }
 

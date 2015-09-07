@@ -18,31 +18,30 @@ int errex(char *s, int n) {      // error message+value, return 1
   return 1;
 }
 
-int hotLoop(long* p_hotLoopCounter, FILE* inputFile, char *pj, char *pq, char *pr, char* jjj, char* qqq, char* pqstop, char* xtab) {
-    (*p_hotLoopCounter)++;
-    pj = fgets(jjj, JBFSIZE, inputFile);   // get line from inputFile
-    if (!pj || (*jjj=='>')) return 1;    // EOF or new ID line
-    if (pr <= (pq+61)) {               // need to resize buffer
-        char *newstop = pqstop + 12777888;
-        char *newptr  = realloc(qqq, newstop-qqq);
+int hotLoop(FILE* inputFile, char **p_pj, char **p_pq, char **p_pr, char* jjj, char** p_qqq, char** p_pqstop, char* xtab) {
+    *p_pj = fgets(jjj, JBFSIZE, inputFile);   // get line from inputFile
+    if (!(*p_pj) || (*jjj=='>')) return 1;    // EOF or new ID line
+    if (*p_pr <= (*p_pq+61)) {               // need to resize buffer
+        char *newstop = *p_pqstop + 12777888;
+        char *newptr  = realloc(*p_qqq, newstop-*p_qqq);
         if (!newptr) {
             exit(errex("Out of memory", 0));
         }
-        if (newptr != qqq) {             // new base: adj. pointers
-            size_t x = newptr-qqq;         // offset for pointer update
-            pq+=x;
-            pr+=x;
-            qqq+=x;
+        if (newptr != *p_qqq) {             // new base: adj. pointers
+            size_t x = newptr-*p_qqq;         // offset for pointer update
+            *p_pq+=x;
+            *p_pr+=x;
+            *p_qqq+=x;
             newstop+=x;
-            pqstop+=x;
+            *p_pqstop+=x;
         }
-        pr = __builtin_memmove(newstop-(pqstop-pr), pr, pqstop-pr);
-        pqstop = newstop;                // buffer resize complete
+        *p_pr = __builtin_memmove(newstop-(*p_pqstop-*p_pr), *p_pr, *p_pqstop-*p_pr);
+        *p_pqstop = newstop;                // buffer resize complete
     }
-    while (*pj) {                      // LOOP: conv. & revert line
-        char c = xtab[(unsigned char)(*pj++)];
+    while (**p_pj) {                      // LOOP: conv. & revert line
+        char c = xtab[(unsigned char)(**p_pj++)];
         if (c)                           // conversion valid
-            *(--pr) = c;
+            *(--(*p_pr)) = c;
     }
 
     return 0;
@@ -71,7 +70,8 @@ int bench() {                    // ***** main *****
     fputs(jjj, outStream);                  // output ID line
 
     for (pq=qqq+1, pr=pqstop; ; pq++) {  // LOOP: fill output buffer
-        if (hotLoop(&hotLoopCounter, inputFile, pj, pq, pr, jjj, qqq, pqstop, xtab)) break;
+        ++hotLoopCounter;
+        if (hotLoop(inputFile, &pj, &pq, &pr, jjj, &qqq, &pqstop, xtab)) break;
     }
 
     for (pq = qqq; pr<pqstop; ) {        // LOOP: format output

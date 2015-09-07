@@ -386,18 +386,19 @@ void Parser::handleInsertOSRCommand() {
             << "Error at argument " << numToken << ". Enter HELP to display the right syntax." << std::endl;\
             return; } while (0);
 
-    char* cmdLine = strdup(TheLexer->getLine()->c_str());
+    std::string* tmp = TheLexer->getLine();
+    char* cmdLine = strdup(tmp->c_str());
+    delete tmp;
 
     int numToken = 1;
     char* token = strtok(cmdLine, " ");
     if (token == NULL) INVALID();
     #define getToken() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
 
-    getToken();
     int branchTakenProb = (int)strtol(token, NULL, 10);
     if (branchTakenProb != -1 && (branchTakenProb < 0 || branchTakenProb > 100)) INVALID();
 
-
+    getToken();
     OSRLibrary::OSRCond cond;
     if (!strcasecmp(token, "ALWAYS")) {
         cond.push_back(TheHelper->generateAlwaysTrueCond());

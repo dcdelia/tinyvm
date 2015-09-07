@@ -122,7 +122,7 @@ B58:                                      ; preds = %B73, %B57
   %v59 = load i8** %.01, align 8
   %v60 = load i8* %v59, align 1
   %v61 = icmp ne i8 %v60, 0
-  br i1 %v61, label %v62, label %v74
+  br i1 %v61, label %B62, label %B74
 
 B62:                                      ; preds = %B58
   %v63 = getelementptr inbounds i8** %.01, i32 1

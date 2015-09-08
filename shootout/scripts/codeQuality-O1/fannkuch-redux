@@ -1,0 +1,6 @@
+LOAD_IR shootout/fannkuch-redux/codeQuality-O1.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN tk AT B28
+OPT_CFG tk
+bench(12)
+REPEAT 10 bench(12)
+QUIT

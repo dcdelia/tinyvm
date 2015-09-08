@@ -1,0 +1,6 @@
+LOAD_IR shootout/fasta-redux/codeQuality-O1.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN randomize AT B14
+OPT_CFG randomize
+bench(50000000)
+REPEAT 10 bench(50000000)
+QUIT

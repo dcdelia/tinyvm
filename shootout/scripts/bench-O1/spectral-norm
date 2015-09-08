@@ -1,0 +1,5 @@
+LOAD_IR shootout/spectral-norm/bench-O1.ll
+LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
+bench(5500)
+REPEAT 10 bench(5500)
+QUIT

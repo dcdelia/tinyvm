@@ -1,0 +1,4 @@
+LOAD_IR shootout/n-body/bench-O1.ll
+bench(500000000)
+REPEAT 10 bench(500000000)
+QUIT

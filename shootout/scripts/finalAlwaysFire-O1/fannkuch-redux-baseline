@@ -1,0 +1,4 @@
+LOAD_IR shootout/fannkuch-redux/finalAlwaysFire-O1.ll
+bench(12)
+REPEAT 10 bench(12)
+QUIT

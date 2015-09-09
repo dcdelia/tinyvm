@@ -1,0 +1,4 @@
+LOAD_IR shootout/mandelbrot/finalAlwaysFire-O1.ll
+bench(16000)
+REPEAT 10 bench(16000)
+QUIT

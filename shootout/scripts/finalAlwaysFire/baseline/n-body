@@ -1,0 +1,5 @@
+LOAD_IR shootout/n-body/finalAlwaysFire.ll
+INSERT_OSR 95 NEVER FINAL UPDATE IN advance AT entry TO advance AT entry AS advance_OSR
+bench(50000000)
+REPEAT 10 bench(50000000)
+QUIT

@@ -1,0 +1,6 @@
+LOAD_IR shootout/spectral-norm/finalAlwaysFire.ll
+INSERT_OSR 95 NEVER FINAL UPDATE IN eval_A AT entry TO eval_A AT entry AS eval_A_OSR
+LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
+bench(5500)
+REPEAT 10 bench(5500)
+QUIT

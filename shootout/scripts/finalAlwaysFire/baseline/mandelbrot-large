@@ -1,4 +1,5 @@
 LOAD_IR shootout/mandelbrot/finalAlwaysFire.ll
+INSERT_OSR 95 NEVER FINAL UPDATE IN hotLoop AT entry TO hotLoop AT entry AS hotLoop_OSR
 bench(32000)
 REPEAT 10 bench(32000)
 QUIT

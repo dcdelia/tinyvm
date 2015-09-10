@@ -1,4 +1,0 @@
-LOAD_IR shootout/reverse-complement/finalAlwaysFire.ll
-bench()
-REPEAT 10 bench()
-QUIT

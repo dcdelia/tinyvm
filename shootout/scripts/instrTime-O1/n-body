@@ -1,0 +1,3 @@
+LOAD_IR shootout/n-body/codeQuality-O1.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT B8
+QUIT

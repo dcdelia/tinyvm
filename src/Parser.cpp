@@ -45,6 +45,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_load_lib:      handleLoadLibCommand(); break;
             case tok_opt_cfg:       handleOptCommand(true); break;
             case tok_opt_full:      handleOptCommand(false); break;
+            case tok_verbose:       handleVerboseCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return 0;
             case tok_identifier:    handleFunctionInvocation(1); break;
             case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return -1;
@@ -223,6 +224,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
+    std::cerr << "--> VERBOSE" << std::endl << "\tEnable/disable verbose mode." << std::endl;
     std::cerr << "--> QUIT" << std::endl << "\tExits TinyVM." << std::endl;
 
     // function invocation
@@ -276,7 +278,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     Module* modToUse = src->getParent();
-    OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName,
+    OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName,
             modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
@@ -346,7 +348,7 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
     Module* modToUse = src->getParent();
-    OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName, modToUse,
+    OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName, modToUse,
             &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
@@ -571,6 +573,15 @@ void Parser::handleTrackAsmCommand() {
         std::cerr << "Current status: tracking is disabled. Now enabling it!" << std::endl;
     }
     std::cerr << "Notice that only modules loaded from now on will be affected by this change." << std::endl;
+}
+
+void Parser::handleVerboseCommand() {
+    if (verbose) {
+        std::cerr << "Current status: verbose mode enabled. Now disabling it!" << std::endl;
+    } else {
+        std::cerr << "Current status: verbose mode disabled. Now enabling it!" << std::endl;
+    }
+    verbose = !verbose;
 }
 
 /*

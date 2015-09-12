@@ -13,12 +13,13 @@
 
 class Parser {
 public:
-    Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H) {}
+    Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H), verbose(false) {}
     int start(bool displayHelpMessage = true);
 
 private:
     Lexer       *TheLexer;
     MCJITHelper *TheHelper;
+    bool verbose;
 
     // simple auxiliary methods
     void handleBeginCommand();
@@ -34,6 +35,7 @@ private:
     void handleTrackAsmCommand();
     void handleInsertOpenOSRCommand();
     void handleOptCommand(bool CFGSimplificationOnly);
+    void handleVerboseCommand();
 
     void openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
             std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);

@@ -103,7 +103,7 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
         if (src_v->hasName()) {
             (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr"));
         } else {
-            ++OSRDestArgIt;
+            (OSRDestArgIt++)->setName(Twine("temp"));
         }
     }
     assert(OSRDestArgIt == OSRDestFun->arg_end());
@@ -831,6 +831,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                 std::cerr << "----> use being rewritten using SSAUpdater::RewriteUse()" << std::endl;
             }
             updateSSA.RewriteUse(U);
+            //updateSSA.RewriteUseAfterInsertions(U);
         }
         ++replacedUses;
 

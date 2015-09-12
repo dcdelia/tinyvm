@@ -28,7 +28,8 @@ enum Token {
     tok_insert_osr  = -14,
     tok_opt_cfg     = -15,
     tok_opt_full    = -16,
-    /* -18 & -17 now free! */
+    tok_verbose     = -17,
+    /* -17 is free! */
     tok_cfg         = -19,
     tok_cfg_full    = -20,
     tok_dump        = -21,

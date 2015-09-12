@@ -37,8 +37,10 @@ List of available commands:
 --> QUIT
 	Exits TinyVM.
 
-The TinyVM command line supports the invocation of loaded functions. Functions can be invoked as in C, except for the final semi-colon that must not be added.
-For the time being, only functions with integer arguments and return values are supported.
+The TinyVM command line supports the invocation of loaded functions. Functions
+can be invoked as in C, except for the final semi-colon that must not be added.
+For the time being, only functions with integer arguments and return values are
+supported.
 
 Demo OSR points can be inserted with one of the following commands:
 INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <B1>
@@ -52,5 +54,9 @@ where:
 	F1 and F2 are existing functions
 	B1 and B2 are basic block labels in F1 and F2
 
-The command either updates F1 or generates a function F1' cloned from F1 such that when basic block B1 is reached during the execution, an OSR transition is fired. For OPEN transitions, the continuation function will be generated at run-time. For FINAL transitions, function F2' is generated from F2 in order to resume the execution from the beginning of basic block B2.
+The command either updates F1 or generates a function F1' cloned from F1 such
+that when basic block B1 is reached during the execution, an OSR transition is
+fired. For OPEN transitions, the continuation function will be generated at
+run-time. For FINAL transitions, function F2' is generated from F2 in order to
+resume the execution from the beginning of basic block B2.
 ```

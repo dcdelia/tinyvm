@@ -31,6 +31,7 @@ extern "C" {
     void timer_end(tinyvm_timer_t* timer);
     void timer_print_elapsed(tinyvm_timer_t* timer);
     void timer_print_avg(tinyvm_timer_t* timer, int iterations);
+    double timer_get_elapsed(tinyvm_timer_t* timer);
 #ifdef __cplusplus
 }
 #endif

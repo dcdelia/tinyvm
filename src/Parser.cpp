@@ -19,7 +19,7 @@
 
 using namespace llvm;
 
-void Parser::start(bool displayHelpMsg) {
+int Parser::start(bool displayHelpMsg) {
     if (displayHelpMsg) {
         std::cerr << "Welcome! Enter 'HELP' to show the list of available commands." << std::endl;
     }
@@ -45,10 +45,10 @@ void Parser::start(bool displayHelpMsg) {
             case tok_load_lib:      handleLoadLibCommand(); break;
             case tok_opt_cfg:       handleOptCommand(true); break;
             case tok_opt_full:      handleOptCommand(false); break;
-            case tok_quit:          std::cerr << "Exiting..." << std::endl; return;
+            case tok_quit:          std::cerr << "Exiting..." << std::endl; return 0;
             case tok_identifier:    handleFunctionInvocation(1); break;
-            case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return;
-            default:                std::cerr << "Unexpected token. Exiting..." << std::endl;; return;
+            case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return -1;
+            default:                std::cerr << "Unexpected token. Exiting..." << std::endl;; return 1;
         }
     }
 }
@@ -279,13 +279,8 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName,
             modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
 
-    tinyvm_timer_t timer;
-    timer_start(&timer);
-
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
         cond, nullptr, generator, valuesToTransfer, config);
-
-    timer_end(&timer);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
@@ -300,8 +295,6 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     TheHelper->registerFunction(stub);
 
     TheHelper->trackAsmCodeUtil(modToUse);
-
-    timer_print_elapsed(&timer);
 }
 
 void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
@@ -356,13 +349,8 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     OSRLibrary::OSRPointConfig config(false, update, branchTakenProb, F1NewName, modToUse,
             &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
 
-    tinyvm_timer_t timer;
-    timer_start(&timer);
-
     OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
             *dest, *dest_bb, cond, *M, config);
-
-    timer_end(&timer);
 
     std::cerr << "insertFinalizedOSR succeded!" << std::endl;
 
@@ -377,8 +365,6 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     TheHelper->registerFunction(dest_new);
 
     TheHelper->trackAsmCodeUtil(modToUse);
-
-    timer_print_elapsed(&timer);
 }
 
 void Parser::handleInsertOSRCommand() {

@@ -92,6 +92,28 @@ void timer_print_avg(tinyvm_timer_t* timer, int iterations) {
     #endif
 }
 
+double timer_get_elapsed(tinyvm_timer_t* timer) {
+    #if USE_GETTIMEOFDAY ==  1
+    long seconds = timer->tv_end.tv_sec - timer->tv_start.tv_sec;
+    long microseconds = timer->tv_end.tv_usec - timer->tv_start.tv_usec;
+    if (microseconds < 0) {
+        --seconds;
+        microseconds = 1000000 + microseconds;
+    }
+    return seconds + microseconds * 1.0e-6;
+    #else
+    long seconds = timer->ts_end.tv_sec - timer->ts_start.tv_sec;
+    long nanoseconds = timer->ts_end.tv_nsec - timer->ts_start.tv_nsec;
+    if (nanoseconds < 0) {
+        --seconds;
+        nanoseconds = 1000000000 + nanoseconds;
+    }
+
+    return seconds + nanoseconds * 1.0e-9;
+    #endif
+
+}
+
 /*
  * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia
  *

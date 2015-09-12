@@ -14,7 +14,7 @@
 class Parser {
 public:
     Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H) {}
-    void start(bool displayHelpMessage = true);
+    int start(bool displayHelpMessage = true);
 
 private:
     Lexer       *TheLexer;

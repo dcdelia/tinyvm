@@ -27,6 +27,11 @@
 #include <iostream>
 #include <vector>
 
+#ifdef PROFILE_TIME
+#include "timer.h"
+tinyvm_timer_t   my_timer;
+#endif
+
 using namespace llvm;
 
 /**
@@ -55,6 +60,10 @@ static inline void verifyAux(Function* F) {
 Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Function &F2,
         StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M,
         const std::string* F2NewName, bool verbose, StateMap** ptrForF2NewToF2Map) {
+
+    #ifdef PROFILE_TIME
+    timer_start(&my_timer);
+    #endif
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -166,6 +175,12 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
 
     delete updatesForDestToOSRDestVMap;
 
+    #ifdef PROFILE_TIME
+    timer_end(&my_timer);
+    double elapsed = timer_get_elapsed(&my_timer);
+    fprintf(stderr, "Time spent in creating continuation function: %.9f seconds\n", elapsed);
+    #endif
+
     return OSRDestFun;
 
 }
@@ -180,6 +195,10 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     /* Prepare F2' aka OSRDestFun */
     Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass,
                                 M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
+
+    #ifdef PROFILE_TIME
+    timer_start(&my_timer);
+    #endif
 
     Function* OSRDestFunProt;
     if (config.modForNewF2 != config.modForNewF1) {
@@ -255,7 +274,19 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
             Twine("splitBlockForOSRTo", OSRDestFunProt->getName()),
             config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
 
-    /* verify OSRDestFun and add it to the proper module */
+    #ifdef PROFILE_TIME
+    timer_end(&my_timer);
+    double elapsed = timer_get_elapsed(&my_timer);
+    fprintf(stderr, "Time spent in OSR point insertion: %.9f seconds\n", elapsed);
+    #endif
+
+    /* Code verification and insertion into modules */
+
+    #ifdef PROFILE_TIME
+    timer_start(&my_timer);
+    #endif
+
+    // verify OSRDestFun and add it to the proper module
     if (config.modForNewF2 == nullptr) {
         if (config.verbose) {
             std::cerr << "WARNING: No LLVM Module supplied for F2'!" << std::endl;
@@ -273,7 +304,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
         verifyAux(OSRDestFun);
     }
 
-    /* verify newSrcFun and add it to the proper module */
+    // verify newSrcFun and add it to the proper module
     if (config.updateF1) {
         if (parentForSrc == nullptr) {
             if (config.verbose) {
@@ -305,6 +336,12 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
         }
     }
 
+    #ifdef PROFILE_TIME
+    timer_end(&my_timer);
+    elapsed = timer_get_elapsed(&my_timer);
+    fprintf(stderr, "Time spent in IR verification: %.9f seconds\n", elapsed);
+    #endif
+
     return OSRPair(newSrcFun, OSRDestFun);
 }
 
@@ -334,6 +371,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
      * (7) Create a prototype for the generated function and make an indirect call
      * (8) Return the computed value
      */
+    #ifdef PROFILE_TIME
+    timer_start(&my_timer);
+    #endif
 
     // step (1)
     std::vector<Value*>* valuesToPassTmp = valuesToTransfer;
@@ -447,6 +487,12 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     }
     stubEntryPoint->getInstList().push_back(retInst);
 
+    #ifdef PROFILE_TIME
+    timer_end(&my_timer);
+    double elapsed = timer_get_elapsed(&my_timer);
+    fprintf(stderr, "Time spent in stub generation: %.9f seconds\n", elapsed);
+    #endif
+
     /* [Prepare F1' aka newSrc] Workflow
      * (1) Duplicate F1 into newSrc and regenerate OSRCond
      * (2) Generate newValuesToPass (including the address of profDataVal)
@@ -455,6 +501,10 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
      *
      * Step (1) is not performed when updateF1 == true
      */
+
+    #ifdef PROFILE_TIME
+    timer_start(&my_timer);
+    #endif
 
     Module* parentForSrc = src->getParent();
 
@@ -516,7 +566,19 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
             Twine("splitBlockForOSRTo", stub->getName()),
             config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
 
-    /* verify newSrcFun and stub add them to the proper module */
+    #ifdef PROFILE_TIME
+    timer_end(&my_timer);
+    elapsed = timer_get_elapsed(&my_timer);
+    fprintf(stderr, "Time spent in OSR point insertion: %.9f seconds\n", elapsed);
+    #endif
+
+    /* Code verification and insertion into modules */
+
+    #ifdef PROFILE_TIME
+    timer_start(&my_timer);
+    #endif
+
+    // verify newSrcFun and stub add them to the proper module
     if (config.updateF1) {
         // newSrcFun == src here
         if (parentForSrc == nullptr) {
@@ -563,6 +625,12 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     if (valuesToTransfer == nullptr) {
         delete valuesToPassTmp;
     }
+
+    #ifdef PROFILE_TIME
+    timer_end(&my_timer);
+    elapsed = timer_get_elapsed(&my_timer);
+    fprintf(stderr, "Time spent in IR verification: %.9f seconds\n", elapsed);
+    #endif
 
     return OSRPair(newSrcFun, stub);
 }

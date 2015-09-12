@@ -31,7 +31,8 @@ int getCharFromHistory() {
 
 void intHandler(int signum) {
     restore_term(&cmd_history);
-    exit(1);
+    fprintf(stderr, "Exiting...\n");
+    exit(0);
 }
 #endif
 
@@ -47,6 +48,7 @@ int main(int argc, char* argv[]) {
     MCJITHelper* TheHelper = new MCJITHelper(Context, nullptr); // no initial module
 
     Lexer *TheLexer;
+    int code;
 
     if (argc > 1) {
         for (int i = 1; i < argc; ++i) {
@@ -59,9 +61,11 @@ int main(int argc, char* argv[]) {
             TheLexer = new Lexer(inputFile);
 
             Parser parser(TheLexer, TheHelper);
-            parser.start(false); // do not display help message
+            code = parser.start(false); // do not display help message
 
             delete TheLexer;
+
+            if (code != -1) exit(code);
         }
     }
 
@@ -79,7 +83,8 @@ int main(int argc, char* argv[]) {
     #endif
 
     Parser parser(TheLexer, TheHelper);
-    parser.start();
+    code = parser.start();
+    if (code == -1) code = 0; // -1 means CTRL-D or EOF
 
     delete TheLexer;
     delete TheHelper;
@@ -88,7 +93,7 @@ int main(int argc, char* argv[]) {
     restore_term(&cmd_history);
     #endif
 
-    exit(0);
+    exit(code);
 }
 
 /*

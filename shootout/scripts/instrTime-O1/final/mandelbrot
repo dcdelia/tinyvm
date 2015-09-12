@@ -1,0 +1,3 @@
+LOAD_IR shootout/mandelbrot/codeQuality-O1.ll
+INSERT_OSR 5 NEVER FINAL UPDATE IN bench AT B13.lr.ph TO bench AT B13.lr.ph AS bench
+QUIT

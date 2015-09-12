@@ -840,11 +840,10 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
         }
 
         // merge newBlock and OSRdestBlock back together
-        /* TODO: update phi nodes inserted by SSAUpdater! they have OSRdestBlock as predecessor...
+        newBlock->replaceAllUsesWith(OSRdestBlock);
         OSRdestBlock->getInstList().back().eraseFromParent();
         OSRdestBlock->getInstList().splice(OSRdestBlock->end(), newBlock->getInstList());
         newBlock->eraseFromParent();
-        */
     }
     assert(replacedUses + updatedNodes == updatesForVMap.size());
 }

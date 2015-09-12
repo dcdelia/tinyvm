@@ -725,7 +725,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
     BasicBlock* entryPoint = &NF->getEntryBlock();
     BasicBlock* OSRdestBlock = cast<BasicBlock>(VMap[origDestBlock]);
 
-    /* For each value to set at the target basic block, I have three cases:
+    /* For each value to set at the target basic block, we have three cases:
      * 1) value is an argument
      * 2) value is a PHI node defined in the target block
      * 3) value is defined elsewhere (univocally or through a PHI node)
@@ -745,31 +745,30 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
 
     PHINode* lastInserted = nullptr;
 
-    for (std::vector<Value*>::const_iterator it = origValuesToSetForDestBlock.begin(), end = origValuesToSetForDestBlock.end();
-         it != end; ++it) {
-        Value* origValue = const_cast<Value*>(*it);
-        if (isa<Argument>(origValue)) continue; // case 1
+    std::vector<Value*> valuesForSSAUpdater;
 
-        if (verbose) {
-            if (origValue->hasName()) {
-                std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
-            } else {
-                std::cerr << "Processing anonymous value: " << std::endl;
-            }
-        }
+    // treat case 2 first
+    for (std::vector<Value*>::iterator it = origValuesToSetForDestBlock.begin(),
+            end = origValuesToSetForDestBlock.end(); it != end; ++it) {
+        Value* origValue = *it;
 
         Value* oldValue = VMap[origValue];
-        Instruction* oldInst = cast<Instruction>(oldValue); // TODO what about constants?
+        Instruction* oldInst = cast<Instruction>(oldValue);
         BasicBlock* oldBlock = oldInst->getParent();
 
-        Value* newValue = updatesForVMap[origValue];
-        BasicBlock* newBlock = entryPoint;
-
-        if (oldBlock == OSRdestBlock) { // case 2
+        if (oldBlock == OSRdestBlock) {
             if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
                 if (verbose) {
+                    if (origValue->hasName()) {
+                        std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
+                    } else {
+                        std::cerr << "Processing anonymous value: " << std::endl;
+                    }
                     std::cerr << "--> value is a PHI node defined in the target block" << std::endl;
                 }
+
+                Value* newValue = updatesForVMap[origValue];
+                BasicBlock* newBlock = entryPoint;
 
                 node->addIncoming(newValue, newBlock);
 
@@ -778,71 +777,74 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                 }
 
                 ++updatedNodes;
+
                 continue;
             }
         }
 
-        if (verbose) {
-            std::cerr << "--> I will use SSAUpdater to fix the CFG where required!" << std::endl;
-        }
+        valuesForSSAUpdater.push_back(origValue);
+    }
 
-        if (oldValue->hasName()) {
-            updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_fixSSA").str()));
-        } else {
-            updateSSA.Initialize(oldValue->getType(), StringRef("anonymousVal_fixSSA"));
-        }
-        updateSSA.AddAvailableValue(oldBlock, oldValue);
-        updateSSA.AddAvailableValue(newBlock, newValue);
+    if (!valuesForSSAUpdater.empty()) {
+        // split OSRdest block at first non-PHI instruction
+        BasicBlock::iterator firstNonPHIInstr = OSRdestBlock->getFirstNonPHI();
+        BasicBlock* newBlock = OSRdestBlock->splitBasicBlock(firstNonPHIInstr, "tmpSSAUpdaterBlock");
 
-        for (Value::use_iterator UI = oldValue->use_begin(), UE = oldValue->use_end(); UI != UE; ) {
-            // Grab the use before incrementing the iterator.
-            Use &U = *UI;
-
-            // Increment the iterator before removing the use from the list.
-            ++UI;
-
-            Instruction *UserInst = cast<Instruction>(U.getUser());
-
-            // SSAUpdater can't handle a non-PHI use in the same block as an
-            // earlier def: we can handle those cases manually (see code in
-            // Transforms/Scalar/LoopRotation.cpp for an example). */
-            if (!isa<PHINode>(UserInst)) {
-                BasicBlock *UserBB = UserInst->getParent();
-                // use in the same block as the definition of oldValue
-                if (UserBB == oldBlock) {
-                    if (verbose) {
-                        std::cerr << "----> manually handling a use in the same block of the original value" << std::endl;
-                    }
-                    U = oldValue;
-                    //updateSSA.RewriteUseAfterInsertions(U); // wrong!
-
-                    if (ptrForF2NewToF2Map != nullptr) { // update state mapping
-                        (*ptrForF2NewToF2Map)->registerOneToOneValue(oldValue, origValue);
-                    }
-
-                    continue;
-                }
-
-                /** TODO: check this code again :) **/
-            }
-
-            // Anything else can be handled by SSAUpdater.
+        for (Value* origValue: valuesForSSAUpdater) {
             if (verbose) {
-                std::cerr << "----> use being rewritten using SSAUpdater::RewriteUse()" << std::endl;
+                if (origValue->hasName()) {
+                    std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
+                } else {
+                    std::cerr << "Processing anonymous value: " << std::endl;
+                }
             }
-            updateSSA.RewriteUse(U);
-            //updateSSA.RewriteUseAfterInsertions(U);
-        }
-        ++replacedUses;
 
-        // update state mapping
-        if (ptrForF2NewToF2Map != nullptr && !insertedPHINodes->empty()) {
-            PHINode* tmp = insertedPHINodes->back();
-            if (tmp != lastInserted) {
-                lastInserted = tmp; // TODO check if at most one PHI node can be inserted
-                (*ptrForF2NewToF2Map)->registerOneToOneValue(lastInserted, origValue, false);
+            Value* oldValue = VMap[origValue];
+            Instruction* oldInst = cast<Instruction>(oldValue);
+            BasicBlock* oldBlock = oldInst->getParent();
+
+            Value* newValue = updatesForVMap[origValue];
+
+            if (oldValue->hasName()) {
+                updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_fixSSA").str()));
+            } else {
+                updateSSA.Initialize(oldValue->getType(), StringRef("anon_fixSSA"));
+            }
+            updateSSA.AddAvailableValue(oldBlock, oldValue);
+            updateSSA.AddAvailableValue(newBlock, newValue);
+
+            if (verbose) {
+                std::cerr << "----> uses being rewritten using SSAUpdater::RewriteUse()" << std::endl;
+            }
+
+            for (Value::use_iterator UI = oldValue->use_begin(), UE = oldValue->use_end(); UI != UE; ) {
+                // Grab the use before incrementing the iterator.
+                Use &U = *UI;
+
+                // Increment the iterator before removing the use from the list.
+                ++UI;
+
+                updateSSA.RewriteUse(U);
+            }
+
+            ++replacedUses;
+
+            // update state mapping
+            if (ptrForF2NewToF2Map != nullptr && !insertedPHINodes->empty()) {
+                PHINode* tmp = insertedPHINodes->back();
+                if (tmp != lastInserted) {
+                    lastInserted = tmp; // TODO check if at most one PHI node can be inserted
+                    (*ptrForF2NewToF2Map)->registerOneToOneValue(lastInserted, origValue, false);
+                }
             }
         }
+
+        // merge newBlock and OSRdestBlock back together
+        /* TODO: update phi nodes inserted by SSAUpdater! they have OSRdestBlock as predecessor...
+        OSRdestBlock->getInstList().back().eraseFromParent();
+        OSRdestBlock->getInstList().splice(OSRdestBlock->end(), newBlock->getInstList());
+        newBlock->eraseFromParent();
+        */
     }
     assert(replacedUses + updatedNodes == updatesForVMap.size());
 }

@@ -132,6 +132,15 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
         ValueToValueMapTy::iterator it = updatesForDestToOSRDestVMap->find(&destArg);
         if (it == updatesForDestToOSRDestVMap->end()) { // argument is dead
             Value* v = UndefValue::get(destArg.getType());
+            if (verbose) {
+                if (destArg.hasName()) {
+                    std::cerr << "Argument " << destArg.getName().str() <<
+                        " has become dead: I will replace any reference to it with undef" << std::endl;
+                } else {
+                    std::cerr << "Anonymous argument has become dead: I will replace any "
+                        << "reference to it with undef" << std::endl;
+                }
+            }
             destToOSRDestVMap.insert(std::pair<const Argument*, Value*>(&destArg, v));
             dead_args++;
         } else { // argument is live
@@ -747,10 +756,11 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
 
     std::vector<Value*> valuesForSSAUpdater;
 
-    // treat case 2 first
+    // treat case 1 & 2 first
     for (std::vector<Value*>::iterator it = origValuesToSetForDestBlock.begin(),
             end = origValuesToSetForDestBlock.end(); it != end; ++it) {
         Value* origValue = *it;
+        if (isa<Argument>(origValue)) continue; // it has already been handled
 
         Value* oldValue = VMap[origValue];
         Instruction* oldInst = cast<Instruction>(oldValue);

@@ -1,0 +1,2 @@
+LOAD_IR testing/IR/simple_loop.ll
+INSERT_OSR 95 ALWAYS FINAL COPY IN simple_loop AT T AS sl1 TO simple_loop AT T AS sl2

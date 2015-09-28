@@ -8,37 +8,37 @@
 #ifndef TINYVM_LIVENESS_H
 #define TINYVM_LIVENESS_H
 
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Value.h>
+
 #include <set>
 #include <map>
 #include <ostream>
 #include <utility>
 
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Value.h"
-
 class LivenessAnalysis {
     public:
         typedef std::set<const llvm::Value*> LiveValues;
-        LivenessAnalysis(llvm::Function *fun): F(fun) {
-            performLivenessAnalysis();
+        LivenessAnalysis(llvm::Function *F): F(F) {
+            run();
         }
         LiveValues& getLiveInValues(llvm::BasicBlock* B);
         LiveValues& getLiveOutValues(llvm::BasicBlock* B);
         void printResultsToScreen(llvm::BasicBlock* B);
+        LiveValues analyzeLiveIn(const llvm::BasicBlock* B, const LiveValues &outValues);
         friend std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis);
         friend std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values);
 
-
     private:
         typedef std::pair<LiveValues, LiveValues> LiveInAndOutValues;
-        typedef std::map<const llvm::BasicBlock*, LiveInAndOutValues> LiveValuesMap;
+        typedef std::map<const llvm::BasicBlock*, LiveInAndOutValues> BlockToLiveValuesMap;
 
         llvm::Function* F;
-        LiveValuesMap   map;
+        BlockToLiveValuesMap blockMap;
 
-        void performLivenessAnalysis();
-        void analyzeBBwithPHINodes(const llvm::BasicBlock *B, const LiveValues &outValues, LiveValues &inValues, LiveValuesMap &map);
+        void run();
+        bool analyzeBBwithPHINodes(const llvm::BasicBlock *B, LiveValues &inValues, const LiveValues &outValues);
 };
 
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis);

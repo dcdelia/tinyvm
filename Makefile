@@ -24,7 +24,7 @@ $(BUILD)/main.o: $(SRC)/main.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp
 $(BUILD)/Lexer.o: $(SRC)/Lexer.cpp $(INCLUDE)/Lexer.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Lexer.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Lexer.o
 
-$(BUILD)/MCJITHelper.o: $(SRC)/MCJITHelper.cpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp
+$(BUILD)/MCJITHelper.o: $(SRC)/MCJITHelper.cpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/MCJITHelper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/MCJITHelper.o
 
 $(BUILD)/CustomMemoryManager.o: $(SRC)/CustomMemoryManager.cpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/MCJITHelper.hpp
@@ -39,10 +39,10 @@ $(BUILD)/Liveness.o: $(SRC)/Liveness.cpp $(INCLUDE)/Liveness.hpp
 $(BUILD)/StateMap.o: $(SRC)/StateMap.cpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/StateMap.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/StateMap.o
 
-$(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h
+$(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h  $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/OSRLibrary.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSRLibrary.o
 
-$(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h
+$(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Parser.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Parser.o
 
 $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h

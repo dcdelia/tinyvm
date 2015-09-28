@@ -6,12 +6,12 @@
  * =============================================================== */
 #include "Liveness.hpp"
 
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/CFG.h" // const_pred_iterator
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/User.h" // const_op_iterator
-#include "llvm/IR/Value.h"
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/CFG.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/User.h>
+#include <llvm/IR/Value.h>
 
 #include <iostream>
 
@@ -30,94 +30,110 @@ using namespace llvm;
  * LIVE_OUT[f]  = {}
  * LIVE_OUT[s]  = union{LIVE_IN[t]: t is a successor of s}
  *
- * **/
-using namespace llvm;
+ * Update rules:
+ * KILL[d: y <- f(x1, ..., xN)] = {y}
+ * GEN[d:  y <- f(x1, ..., xN)] = {x1, ..., xN}
+ *
+ **/
 
-// adapted from live_vars.cpp from the McOSR library
-void LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B, const LivenessAnalysis::LiveValues &outValues, LivenessAnalysis::LiveValues &inValues, LivenessAnalysis::LiveValuesMap &map) {
+LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveIn(const BasicBlock* B,
+        const LivenessAnalysis::LiveValues &outValues) {
+    // initially LIVE_IN[B] = LIVE_OUT[B]
+    LiveValues inValues(outValues);
+
     const BasicBlock::InstListType &instructions = B->getInstList();
 
-    /* Initialize LIVE_IN[B] as a copy of LIVE_OUT[B], which might
-     * have been updated by a call to analyzeBB on a B's successor */
-    LiveValues currInValues(outValues);
-
-    // process all the non-PHI instructions starting from the last in the block
+    // process all non-PHI instructions starting from the end of the block
     for (BasicBlock::InstListType::const_reverse_iterator revIt = instructions.rbegin(),
-         end = instructions.rend(); revIt != end; ++revIt) {
-        const Instruction *I = &*revIt;
+         revEnd = instructions.rend(); revIt != revEnd; ++revIt) {
+        const Instruction* I = &*revIt;
 
-        if (isa<PHINode>(I)) break; // PHI nodes will be processed separately
+        if (isa<PHINode>(I)) break;
 
-        /* Remove from LIVE_IN[B] elements that belong to KILL[B]
-         * Update rule: KILL[d: y <- f(x1, ..., xN)] = {y} */
-        currInValues.erase(I); // remove elements that belong to KILL[B]
+        // remove elements that belong to KILL[B]
+        inValues.erase(I);
 
+        // add elements that belong to GEN[B]
         for (User::const_op_iterator opIt = I->op_begin(), opEnd = I->op_end();
              opIt != opEnd; ++opIt) {
             const Value *V = *opIt;
-            /* Add to LIVE_IN[B] elements that belong to GEN[B]
-             * Update rule: GEN[d: y <- f(x1, ..., xN)] = {x1, ..., xN} */
-            if (isa<Instruction>(V) || isa<Argument>(V)) // we do not insert Constants
-                currInValues.insert(V);
+
+            // ignore constants, globals
+            if (isa<Instruction>(V) || isa<Argument>(V))
+                inValues.insert(V);
         }
     }
 
-    // the inValues set can only grow across invocations of this method
-    inValues.insert(currInValues.begin(), currInValues.end());
+    return inValues;
+}
 
-    // we will need these later
+bool LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B,
+    LivenessAnalysis::LiveValues &inValues,
+    const LivenessAnalysis::LiveValues &outValues) {
+
     BasicBlock::const_iterator firstNonPHIInstr = B->getFirstNonPHI();
     BasicBlock::const_iterator firstInstr = B->begin();
 
-    // remove all the phi nodes created at this block from the set
+    // compute LIVE_IN[B] (which might include PHI nodes defined in B) since
+    // LIVE_OUT[B] might have changed while analyzing a successor of B
+    LiveValues currInValues = analyzeLiveIn(B, outValues);
+
+    // remove PHI nodes created at this block from the set: we do not want to
+    // propagate them to a predecessor of B
     for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
-        inValues.erase(&*it);
+        currInValues.erase(&*it);
     }
 
-    /** Process all the values used by the PHI nodes **/
-    if (firstNonPHIInstr != firstInstr) {
-        /* At least one PHI node exits: use it to initialize the LIVE_OUT
-         * set of the predecessors; this is faster than using the
-         * const_pred_iterator provided by CFG.h */
-        const PHINode *phi = cast<PHINode>(&*firstInstr);
+    // the inValues set can only grow across invocations of this method
+    bool hasChanged = false;
+    for (const llvm::Value* v: currInValues) {
+        std::pair<LiveValues::iterator,bool> ret = inValues.insert(v);
+        hasChanged |= ret.second;
+    }
 
-        for (int i = 0, e = phi->getNumIncomingValues(); i != e ; ++i) {
-            const BasicBlock *pred = phi->getIncomingBlock(i); // we process each incoming BB
-
-            LiveValues &predOutValues = map[pred].second;
-            predOutValues.insert(inValues.begin(), inValues.end());
-        }
-
-        /* Now process the live values used by PHIs: in LLVM all the PHI
-         * instructions are grouped together at the beginning of the block.
-         *
-         * Each incoming value in a PHI node is added to the LIVE_OUT set
-         * of the predecessor from which the value is coming.
-         */
-        for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
-            const PHINode *phi = cast<PHINode>(&*it);
-
-            for (int i = 0, e = phi->getNumIncomingValues(); i != e ; ++i) {
-                const BasicBlock *pred = phi->getIncomingBlock(i);
-                const Value *V = phi->getIncomingValue(i);
-
-                // add value to the LIVE_OUT set of the predecessor
-                LiveValues &predOutValues = map[pred].second;
-                if (isa<Instruction>(V) || isa<Argument>(V)) // we do not insert Constants
-                    predOutValues.insert(V);
-            }
-        }
-    } else {
-        /* There is no PHI node: update the LIVE_OUT sets of the predecessors */
+    // if there are no PHI nodes, update the LIVE_OUT sets for predecessors
+    if (firstNonPHIInstr == firstInstr) {
         for (const_pred_iterator it = pred_begin(B), end = pred_end(B);
              it != end ; ++it) {
-            LiveValues &predOutValues = map[*it].second;
+            LiveValues &predOutValues = blockMap[*it].second;
             predOutValues.insert(inValues.begin(), inValues.end());
         }
+
+        return hasChanged;
     }
+
+    // we use a PHI node to initialize the LIVE_OUT sets for predecessors: this
+    // should be faster than using const_pred_iterator from CFG.h
+    const PHINode *phi = cast<PHINode>(&*firstInstr);
+    int numPredecessors = phi->getNumIncomingValues();
+
+    for (int i = 0; i < numPredecessors; ++i) {
+        const BasicBlock *pred = phi->getIncomingBlock(i);
+
+        LiveValues &predOutValues = blockMap[pred].second;
+        predOutValues.insert(inValues.begin(), inValues.end());
+    }
+
+    // process PHI nodes in B: each incoming value is added to the LIVE_OUT set
+    // of the predecessor from which the value is coming.
+    for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
+        const PHINode *phi = cast<PHINode>(&*it);
+
+        for (int i = 0; i < numPredecessors; ++i) {
+            const BasicBlock *pred = phi->getIncomingBlock(i);
+            const Value *V = phi->getIncomingValue(i);
+            LiveValues &predOutValues = blockMap[pred].second;
+
+            // ignore constants, globals
+            if (isa<Instruction>(V) || isa<Argument>(V))
+                predOutValues.insert(V);
+        }
+    }
+
+    return hasChanged;
 }
 
-void LivenessAnalysis::performLivenessAnalysis() {
+void LivenessAnalysis::run() {
     bool hasChanged;
     const Function::BasicBlockListType &blocks = F->getBasicBlockList();
 
@@ -127,28 +143,25 @@ void LivenessAnalysis::performLivenessAnalysis() {
         for (Function::BasicBlockListType::const_reverse_iterator rIt = blocks.rbegin(),
              end = blocks.rend(); rIt != end; ++rIt) {
             const BasicBlock *B = &*rIt;
-            LiveInAndOutValues &currPair = map[B];
-            LiveValues oldInValues = currPair.first; // create a copy to check for changes
+            LiveInAndOutValues &currPair = blockMap[B];
 
             // we recompute LIVE_IN[B] and propagate the results to its predecessors
-            analyzeBBwithPHINodes(B, currPair.second, currPair.first, map);
-
-            hasChanged |= (currPair.first != oldInValues);
+            hasChanged |= analyzeBBwithPHINodes(B, currPair.second, currPair.first);
         }
     } while (hasChanged);
 }
 
 LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveInValues(BasicBlock* B) {
-    return map[B].first;
+    return blockMap[B].first;
 }
 
 LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(BasicBlock* B) {
-    return map[B].second;
+    return blockMap[B].second;
 }
 
 void LivenessAnalysis::printResultsToScreen(BasicBlock* B) {
-    assert(map.find(B) != map.end());
-    LiveInAndOutValues &pair = map[B];
+    assert(blockMap.find(B) != blockMap.end());
+    LiveInAndOutValues &pair = blockMap[B];
 
     std::ostream &sin = std::cerr; // print on stderr
 
@@ -162,7 +175,7 @@ void LivenessAnalysis::printResultsToScreen(BasicBlock* B) {
 }
 
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis) {
-    for (auto it = analysis.map.begin(), end = analysis.map.end(); it != end; ++it) {
+    for (auto it = analysis.blockMap.begin(), end = analysis.blockMap.end(); it != end; ++it) {
         const BasicBlock *BB = it->first;
         sin << "Basic block: " << std::string(BB->getName()) << std::endl;
         const LivenessAnalysis::LiveValues &liveIn = it->second.first;

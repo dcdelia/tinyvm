@@ -19,7 +19,7 @@ using namespace llvm;
 
 /** A quick overview of the dataflow analysis algorithm
  *
- * Assume that s is a generic basic block and f is the exit basic block.
+ * s is a generic basic block and f is the exit basic block.
  *
  * Some definitions:
  * GEN[s]   = set of variables used in s before any assignment
@@ -38,6 +38,7 @@ using namespace llvm;
 
 LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveIn(const BasicBlock* B,
         const LivenessAnalysis::LiveValues &outValues) {
+
     // initially LIVE_IN[B] = LIVE_OUT[B]
     LiveValues inValues(outValues);
 
@@ -45,7 +46,7 @@ LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveIn(const BasicBlock* B
 
     // process all non-PHI instructions starting from the end of the block
     for (BasicBlock::InstListType::const_reverse_iterator revIt = instructions.rbegin(),
-         revEnd = instructions.rend(); revIt != revEnd; ++revIt) {
+            revEnd = instructions.rend(); revIt != revEnd; ++revIt) {
         const Instruction* I = &*revIt;
 
         if (isa<PHINode>(I)) break;
@@ -53,12 +54,10 @@ LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveIn(const BasicBlock* B
         // remove elements that belong to KILL[B]
         inValues.erase(I);
 
-        // add elements that belong to GEN[B]
+        // add elements that belong to GEN[B] (ignore constants and globals)
         for (User::const_op_iterator opIt = I->op_begin(), opEnd = I->op_end();
-             opIt != opEnd; ++opIt) {
-            const Value *V = *opIt;
-
-            // ignore constants, globals
+                opIt != opEnd; ++opIt) {
+            const Value* V = *opIt;
             if (isa<Instruction>(V) || isa<Argument>(V))
                 inValues.insert(V);
         }
@@ -67,7 +66,7 @@ LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveIn(const BasicBlock* B
     return inValues;
 }
 
-bool LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B,
+bool LivenessAnalysis::processBlock(const BasicBlock *B,
     LivenessAnalysis::LiveValues &inValues,
     const LivenessAnalysis::LiveValues &outValues) {
 
@@ -94,7 +93,7 @@ bool LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B,
     // if there are no PHI nodes, update the LIVE_OUT sets for predecessors
     if (firstNonPHIInstr == firstInstr) {
         for (const_pred_iterator it = pred_begin(B), end = pred_end(B);
-             it != end ; ++it) {
+                it != end ; ++it) {
             LiveValues &predOutValues = blockMap[*it].second;
             predOutValues.insert(inValues.begin(), inValues.end());
         }
@@ -104,11 +103,11 @@ bool LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B,
 
     // we use a PHI node to initialize the LIVE_OUT sets for predecessors: this
     // should be faster than using const_pred_iterator from CFG.h
-    const PHINode *phi = cast<PHINode>(&*firstInstr);
-    int numPredecessors = phi->getNumIncomingValues();
+    const PHINode* phi = cast<PHINode>(&*firstInstr);
+    int numPredecessors = cast<PHINode>(&*firstInstr)->getNumIncomingValues();
 
     for (int i = 0; i < numPredecessors; ++i) {
-        const BasicBlock *pred = phi->getIncomingBlock(i);
+        const BasicBlock* pred = phi->getIncomingBlock(i);
 
         LiveValues &predOutValues = blockMap[pred].second;
         predOutValues.insert(inValues.begin(), inValues.end());
@@ -117,11 +116,11 @@ bool LivenessAnalysis::analyzeBBwithPHINodes(const BasicBlock *B,
     // process PHI nodes in B: each incoming value is added to the LIVE_OUT set
     // of the predecessor from which the value is coming.
     for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
-        const PHINode *phi = cast<PHINode>(&*it);
+        phi = cast<PHINode>(&*it);
 
         for (int i = 0; i < numPredecessors; ++i) {
-            const BasicBlock *pred = phi->getIncomingBlock(i);
-            const Value *V = phi->getIncomingValue(i);
+            const BasicBlock* pred = phi->getIncomingBlock(i);
+            const Value* V = phi->getIncomingValue(i);
             LiveValues &predOutValues = blockMap[pred].second;
 
             // ignore constants, globals
@@ -137,16 +136,16 @@ void LivenessAnalysis::run() {
     bool hasChanged;
     const Function::BasicBlockListType &blocks = F->getBasicBlockList();
 
+    // perform backward analysis using a reverse iterator on basic blocks: at
+    // each step recompute LIVE_IN[B] and update B's predecessors
     do {
         hasChanged = false;
-        // use a reversed iterator as we have to perform backward analysis
-        for (Function::BasicBlockListType::const_reverse_iterator rIt = blocks.rbegin(),
-             end = blocks.rend(); rIt != end; ++rIt) {
-            const BasicBlock *B = &*rIt;
-            LiveInAndOutValues &currPair = blockMap[B];
+        for (Function::BasicBlockListType::const_reverse_iterator revIt = blocks.rbegin(),
+                revEnd = blocks.rend(); revIt != revEnd; ++revIt) {
+            const BasicBlock* B = &*revIt;
+            LiveInAndOutValues& currPair = blockMap[B];
 
-            // we recompute LIVE_IN[B] and propagate the results to its predecessors
-            hasChanged |= analyzeBBwithPHINodes(B, currPair.second, currPair.first);
+            hasChanged |= processBlock(B, currPair.second, currPair.first);
         }
     } while (hasChanged);
 }
@@ -159,44 +158,15 @@ LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(BasicBlock* B) 
     return blockMap[B].second;
 }
 
-void LivenessAnalysis::printResultsToScreen(BasicBlock* B) {
-    assert(blockMap.find(B) != blockMap.end());
-    LiveInAndOutValues &pair = blockMap[B];
-
-    std::ostream &sin = std::cerr; // print on stderr
-
-    sin << "Basic block: " << std::string(B->getName()) << std::endl;
-    const LivenessAnalysis::LiveValues &liveIn = pair.first;
-    sin << "LIVE_IN: " << liveIn.size() << std::endl;
-    sin << liveIn << std::endl;
-    const LivenessAnalysis::LiveValues &liveOut = pair.second;
-    sin << "LIVE_OUT: " << liveOut.size() << std::endl;
-    sin << liveOut << std::endl;
-}
-
-std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis) {
-    for (auto it = analysis.blockMap.begin(), end = analysis.blockMap.end(); it != end; ++it) {
-        const BasicBlock *BB = it->first;
-        sin << "Basic block: " << std::string(BB->getName()) << std::endl;
-        const LivenessAnalysis::LiveValues &liveIn = it->second.first;
-        sin << "LIVE_IN: " << liveIn.size() << std::endl;
-        sin << liveIn << std::endl;
-        const LivenessAnalysis::LiveValues &liveOut = it->second.second;
-        sin << "LIVE_OUT: " << liveOut.size() << std::endl;
-        sin << liveOut << std::endl;
-        sin << std::endl;
-    }
-    return sin;
-}
-
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values) {
-    for (LivenessAnalysis::LiveValues::const_iterator begin = values.begin(), end = values.end(), it = begin; it != end; ++it) {
-        const Value *V = *it;
+    for (LivenessAnalysis::LiveValues::const_iterator begin = values.begin(),
+            end = values.end(), it = begin; it != end; ++it) {
+        const Value* V = *it;
         if (it != begin) sin << ", ";
         if (V->hasName()) {
             sin << std::string(V->getName());
         } else {
-            sin << "NO_NAME_TYPE_" << V->getType()->getTypeID();
+            sin << "ANON-TY" << V->getType()->getTypeID();
         }
     }
     return sin;

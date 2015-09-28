@@ -6,6 +6,7 @@
  * =============================================================== */
 #include "Parser.hpp"
 #include "Lexer.hpp"
+#include "Liveness.hpp"
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
@@ -267,7 +268,14 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     // print information about values to fetch
     LivenessAnalysis livenessInfo(src);
-    livenessInfo.printResultsToScreen(src_bb);
+    
+    LivenessAnalysis::LiveValues &liveIn = livenessInfo.getLiveInValues(src_bb);
+    std::cerr << "LIVE_IN: " << liveIn.size() << std::endl;
+    std::cerr << liveIn << std::endl;
+    LivenessAnalysis::LiveValues &liveOut = livenessInfo.getLiveOutValues(src_bb);
+    std::cerr << "LIVE_OUT: " << liveOut.size() << std::endl;
+    std::cerr << liveOut << std::endl;
+
     std::vector<llvm::Value*>* valuesToTransfer = OSRLibrary::defaultValuesToTransferForOpenOSR(livenessInfo, *src_bb);
     std::cerr << "Values to fetch: " << valuesToTransfer->size() << std::endl;
     for (int i = 0, e = valuesToTransfer->size(); i < e; ++i) {
@@ -336,7 +344,14 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     // print information about values to fetch
     StateMap::BlockPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
-    M->getLivenessResults().first.printResultsToScreen(src_bb);
+
+    LivenessAnalysis::LiveValues &liveIn = M->getLivenessResults().first.getLiveInValues(src_bb);
+    std::cerr << "LIVE_IN: " << liveIn.size() << std::endl;
+    std::cerr << liveIn << std::endl;
+    LivenessAnalysis::LiveValues &liveOut = M->getLivenessResults().first.getLiveOutValues(src_bb);
+    std::cerr << "LIVE_OUT: " << liveOut.size() << std::endl;
+    std::cerr << liveOut << std::endl;
+
     std::vector<Value*> valuesToFetch = M->getValuesToFetchFromSrcFunction(tmpSrcDestPair);
     std::cerr << "Values to fetch: " << valuesToFetch.size() << std::endl;
     for (int i = 0, e = valuesToFetch.size(); i < e; ++i) {

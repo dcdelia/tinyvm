@@ -25,9 +25,7 @@ class LivenessAnalysis {
         }
         LiveValues& getLiveInValues(llvm::BasicBlock* B);
         LiveValues& getLiveOutValues(llvm::BasicBlock* B);
-        void printResultsToScreen(llvm::BasicBlock* B);
-        LiveValues analyzeLiveIn(const llvm::BasicBlock* B, const LiveValues &outValues);
-        friend std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis);
+
         friend std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values);
 
     private:
@@ -38,10 +36,10 @@ class LivenessAnalysis {
         BlockToLiveValuesMap blockMap;
 
         void run();
-        bool analyzeBBwithPHINodes(const llvm::BasicBlock *B, LiveValues &inValues, const LiveValues &outValues);
+        LiveValues analyzeLiveIn(const llvm::BasicBlock* B, const LiveValues &outValues);
+        bool processBlock(const llvm::BasicBlock *B, LiveValues &inValues, const LiveValues &outValues);
 };
 
-std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis &analysis);
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values);
 
 #endif

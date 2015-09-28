@@ -88,6 +88,8 @@ public:
     static void* identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *info, void* profDataAddr);
     void registerFunction(Function* F);
     void trackAsmCodeUtil(Module* M);
+    static std::string& LLVMTypeToString(Type* type);
+    static std::string prototypeToString(Function& F);
 
 private:
     IRBuilder<>                     *Builder;
@@ -104,7 +106,6 @@ private:
     const char      *asmFileName;
 
     raw_ostream*    initializeFdStream(const char* fileName);
-    void            prototypeToString(Function& F, std::string &sym_str, std::string &type_str, raw_string_ostream &type_rso);
 };
 
 #endif

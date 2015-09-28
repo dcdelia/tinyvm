@@ -5,25 +5,27 @@
  * License:     See the end of this file for license information
  * =============================================================== */
 #include "MCJITHelper.hpp"
+#include "OSRLibrary.hpp"
+#include "StateMap.hpp"
 
-#include "llvm/Analysis/Passes.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/JITEventListener.h"
-#include "llvm/ExecutionEngine/MCJIT.h"
-#include "llvm/ExecutionEngine/SectionMemoryManager.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/IRReader/IRReader.h"
-#include "llvm/PassManager.h"
-#include "llvm/Support/DynamicLibrary.h"
-#include "llvm/Support/raw_os_ostream.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include <llvm/Analysis/Passes.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/PassManager.h>
+#include <llvm/Support/DynamicLibrary.h>
+#include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/FormattedStream.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Utils/ValueMapper.h>
 
 #include <cstdio>
 #include <cerrno>
@@ -35,9 +37,6 @@
 #include <vector>
 
 #include <fcntl.h>
-
-#include "OSRLibrary.hpp"
-#include "StateMap.hpp"
 
 using namespace llvm;
 
@@ -235,31 +234,32 @@ void MCJITHelper::registerFunction(Function* F) {
     }
 }
 
-void MCJITHelper::prototypeToString(Function& F, std::string &sym_str, std::string &type_str, raw_string_ostream &type_rso) {
+std::string MCJITHelper::prototypeToString(Function& F) {
+    std::string sym_str;
     if (F.isDeclaration()) {
         sym_str.append("extern ");
     }
-    F.getReturnType()->print(type_rso);
-    sym_str.append(type_rso.str() + " " + F.getName().str() + "(");
-    type_str.clear();
 
+    sym_str.append(LLVMTypeToString(F.getReturnType()) + " " + F.getName().str() + "(");
+
+    int slotID = 0;
     if (F.arg_size() > 0) {
         for (Function::arg_iterator it = F.arg_begin(), end = F.arg_end(); ; ) {
             Argument &arg = *it;
-            arg.getType()->print(type_rso);
-            sym_str.append(type_rso.str());
-            type_str.clear();
+            sym_str.append(LLVMTypeToString(arg.getType()));
             if (arg.hasName()) {
                 sym_str.append(" " + arg.getName().str());
             }
             if (++it != end) {
-                sym_str.append(", ");
+                sym_str.append(" %" + std::to_string(++slotID) + ", ");
             } else {
                 break;
             }
         }
     }
     sym_str.append(")");
+
+    return sym_str;
 }
 
 void MCJITHelper::showModules() {
@@ -276,9 +276,7 @@ void MCJITHelper::showModules() {
         // TODO globals
 
         for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
-            std::string fun_str;
-            prototypeToString(*it, fun_str, type_str, type_rso);
-            std::cerr << fun_str << std::endl;
+            std::cerr << prototypeToString(*it) << std::endl;
         }
     }
 }
@@ -288,14 +286,10 @@ void MCJITHelper::showFunctions() {
     if (ActiveFunctions.empty()) {
         std::cerr << "No functions are present." << std::endl;
     } else {
-        std::string type_str;
-        raw_string_ostream type_rso(type_str);
         for (std::map<std::string, Function*>::iterator it = ActiveFunctions.begin(),
                 end = ActiveFunctions.end(); it != end; ++it) {
             Function* F = it->second;
-            std::string fun_str;
-            prototypeToString(*F, fun_str, type_str, type_rso);
-            std::cerr << fun_str << " [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
+            std::cerr << prototypeToString(*F) << " [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
         }
         if (!PrevFunctions.empty()) {
             std::cerr << std::endl << "[Previously active functions]" << std::endl;
@@ -394,6 +388,14 @@ ValueToValueMapTy* MCJITHelper::generateIdentityMapping(Function* F) {
     }
 
     return VMap;
+}
+
+std::string& MCJITHelper::LLVMTypeToString(Type* type) {
+    static std::string type_str;
+    static llvm::raw_string_ostream type_rso(type_str);
+    type_str.clear();
+    type->print(type_rso);
+    return type_rso.str();
 }
 
 void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawInfo, void* profDataAddr) {

@@ -11,10 +11,17 @@
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
 
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Value.h>
+
 class Parser {
 public:
     Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H), verbose(false) {}
     int start(bool displayHelpMessage = true);
+
+    typedef std::vector<const llvm::Value*> IDToValueVec;
+    static IDToValueVec computeSlotIDs(llvm::Function* F);
+    static IDToValueVec computeLineIDs(llvm::Function* F);
 
 private:
     Lexer       *TheLexer;
@@ -23,7 +30,7 @@ private:
 
     // simple auxiliary methods
     void handleBeginCommand();
-    void handleDumpCommand();
+    void handleDumpCommand(bool showLineIDs);
     void handleFunctionInvocation(int iterations);
     void handleHelpCommand();
     void handleInsertOSRCommand();
@@ -42,6 +49,8 @@ private:
     void finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
             std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
             std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
+
+    static void dumpFunctionWithLineIDs(llvm::Function* F);
 };
 
 #endif

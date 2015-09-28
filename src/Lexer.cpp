@@ -52,6 +52,7 @@ int Lexer::getNextToken() {
         if (command == "SHOW_MODS")     return tok_show_mods;
         if (command == "SHOW_ADDR")     return tok_show_addr;
         if (command == "SHOW_FUNS")     return tok_show_funs;
+        if (command == "SHOW_LINE_IDS") return tok_show_lids;
         if (command == "LOAD_LIB")      return tok_load_lib;
         if (command == "VERBOSE")       return tok_verbose;
 

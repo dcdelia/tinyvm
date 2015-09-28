@@ -12,9 +12,18 @@
 #include "StateMap.hpp"
 #include "timer.h"
 
+#include <llvm/IR/Argument.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/CFG.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instruction.h>
+#include <llvm/Support/raw_os_ostream.h>
+
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <iostream>
+
 #include <strings.h> // strcasecmp()
 #include <unistd.h> // access()
 
@@ -36,7 +45,8 @@ int Parser::start(bool displayHelpMsg) {
             case tok_insert_osr:    handleInsertOSRCommand(); break;
             case tok_cfg:           handleShowCFGCommand(false); break;
             case tok_cfg_full:      handleShowCFGCommand(true); break;
-            case tok_dump:          handleDumpCommand(); break;
+            case tok_dump:          handleDumpCommand(false); break;
+            case tok_show_lids:     handleDumpCommand(true); break;
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_show_addr:     handleShowAddrCommand(); break;
@@ -128,7 +138,7 @@ void Parser::handleOptCommand(bool CFGSimplificationOnly) {
     }
 }
 
-void Parser::handleDumpCommand() {
+void Parser::handleDumpCommand(bool showLineIDs) {
     #define INVALID() do { std::cerr << "Invalid syntax for a DUMP command!" << std::endl \
             << "Expected command of the form: DUMP <function_name>" << std::endl; \
             return; } while (0);
@@ -141,6 +151,10 @@ void Parser::handleDumpCommand() {
     if (F == nullptr) {
         std::cerr << "Unable to find function named " << Name << "!" << std::endl;
         return;
+    }
+
+    if (showLineIDs) {
+        dumpFunctionWithLineIDs(F);
     } else {
         F->dump();
     }
@@ -222,6 +236,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address of a given function (forces compilation!)." << std::endl;
+    std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl << "\tShows by-line IR identifiers for a given function." << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
@@ -268,7 +283,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     // print information about values to fetch
     LivenessAnalysis livenessInfo(src);
-    
+
     LivenessAnalysis::LiveValues &liveIn = livenessInfo.getLiveInValues(src_bb);
     std::cerr << "LIVE_IN: " << liveIn.size() << std::endl;
     std::cerr << liveIn << std::endl;
@@ -597,6 +612,116 @@ void Parser::handleVerboseCommand() {
         std::cerr << "Current status: verbose mode disabled. Now enabling it!" << std::endl;
     }
     verbose = !verbose;
+}
+
+Parser::IDToValueVec Parser::computeLineIDs(Function* F) {
+    IDToValueVec vec;
+
+    #define REGLINE(val)    vec.push_back(val)
+    for (Function::const_iterator B = F->begin(), endB = F->end(); B != endB; ++B) {
+        REGLINE(B);
+
+        for (BasicBlock::const_iterator I = B->begin(), endI = B->end(); I != endI; ++I) {
+            REGLINE(I);
+        }
+
+        vec.push_back(nullptr); // separate blocks as in LLVM's F->dump()
+    }
+    #undef REGLINE
+
+    return vec;
+}
+
+Parser::IDToValueVec Parser::computeSlotIDs(Function* F) {
+    IDToValueVec vec;
+
+    #define REGSLOT(val)    vec.push_back(val)
+
+    for (Function::const_arg_iterator arg = F->arg_begin(), endArg = F->arg_end();
+            arg != endArg; ++arg) {
+        if (!arg->hasName()) REGSLOT(arg);
+    }
+
+    for (Function::const_iterator B = F->begin(), endB = F->end(); B != endB; ++B) {
+        if (!B->hasName()) REGSLOT(B);
+
+        for (BasicBlock::const_iterator I = B->begin(), endI = B->end(); I != endI; ++I) {
+            if (!I->getType()->isVoidTy() && !I->hasName()) REGSLOT(I);
+        }
+    }
+
+    #undef REGSLOT
+
+    return vec;
+}
+
+void Parser::dumpFunctionWithLineIDs(llvm::Function* F) {
+    IDToValueVec slotIDs = computeSlotIDs(F);
+    IDToValueVec lineIDs = computeLineIDs(F);
+    raw_os_ostream errStream(std::cerr);
+
+    std::cerr << MCJITHelper::prototypeToString(*F);
+
+    if (F->isDeclaration()) {
+        std::cerr << std::endl;
+        return;
+    }
+
+    std::cerr << "{" << std::endl;
+
+    // to simplify lookup we build a reverse map for BBs only
+    std::map<const BasicBlock*, int> blockToSlotIDMap;
+    for (int index = 0, slots = slotIDs.size(); index < slots; ++index) {
+        if (const BasicBlock* B = dyn_cast<BasicBlock>(slotIDs[index])) {
+            blockToSlotIDMap.insert(std::make_pair(B, index));
+        }
+    }
+
+    int lines = lineIDs.size() - 1; // last one is nullptr
+    for (int lineID = 0; lineID < lines; ) {
+        const Value* v = lineIDs[lineID];
+        if (v == nullptr) {
+            std::cerr << ++lineID << "> " << std::endl;
+        } else if (const BasicBlock* B = dyn_cast<BasicBlock>(v)) {
+            if (B->hasName()) {
+                std::cerr << ++lineID << "> " << B->getName().str() << ":";
+            } else {
+                std::cerr << ++lineID << "> " << "; <label>:" << blockToSlotIDMap[B];
+            }
+            if (B == &F->getEntryBlock()) {
+                std::cerr << "\t\t\t; Entrypoint" << std::endl;
+                continue;
+            }
+            const_pred_iterator PB = pred_begin(B), PE = pred_end(B);
+            if (PB == PE) {
+                std::cerr << "\t\t\t; No predecessors!" << std::endl;
+                continue;
+            } else {
+                std::cerr << "\t\t\t; preds = ";
+                while (1) {
+                    const BasicBlock* pred = *PB;
+                    if (pred->hasName()) {
+                        std::cerr << "%" << pred->getName().str();
+                    } else {
+                        std::cerr << "%" << blockToSlotIDMap[pred];
+                    }
+                    if (++PB == PE) {
+                        std::cerr << std::endl;
+                        break;
+                    } else {
+                        std::cerr << ", ";
+                    }
+                }
+            }
+        } else {
+            const Instruction* I = cast<Instruction>(v);
+            std::cerr << ++lineID << ">   ";
+            I->print(errStream);
+            std::cerr << std::endl;
+        }
+    }
+
+    std::cerr << "}" << std::endl;
 }
 
 /*

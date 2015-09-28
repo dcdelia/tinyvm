@@ -29,7 +29,7 @@ enum Token {
     tok_opt_cfg     = -15,
     tok_opt_full    = -16,
     tok_verbose     = -17,
-    /* -17 is free! */
+    tok_show_lids   = -18,
     tok_cfg         = -19,
     tok_cfg_full    = -20,
     tok_dump        = -21,

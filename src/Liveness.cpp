@@ -141,7 +141,7 @@ void LivenessAnalysis::run() {
         for (Function::BasicBlockListType::const_reverse_iterator revIt = blocks.rbegin(),
                 revEnd = blocks.rend(); revIt != revEnd; ++revIt) {
             const BasicBlock* B = &*revIt;
-            LiveInAndOutValues& currPair = blockMap[B];
+            LiveInAndOutValues &currPair = blockMap[B];
 
             hasChanged |= processBlock(B, currPair.second, currPair.first);
         }

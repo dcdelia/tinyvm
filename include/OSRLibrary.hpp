@@ -58,7 +58,7 @@ class OSRLibrary {
 
         typedef struct OpenOSRInfo {
             llvm::Function*       f1;
-            llvm::BasicBlock*     b1;
+            llvm::BasicBlock*     OSRSrc;
             void*           extra;
         } OpenOSRInfo;
 
@@ -74,9 +74,9 @@ class OSRLibrary {
         static OSRPair insertFinalizedOSR(
                                     llvm::LLVMContext &Context,
                                     llvm::Function& F1,
-                                    llvm::BasicBlock& B1,
+                                    llvm::BasicBlock& OSRSrc,
                                     llvm::Function& F2,
-                                    llvm::BasicBlock& B2,
+                                    llvm::BasicBlock& LPad,
                                     OSRCond& cond,
                                     StateMap& M,
                                     OSRPointConfig &config);
@@ -92,7 +92,7 @@ class OSRLibrary {
 
         static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B);
 
-        static llvm::Function* generateOSRDestFun(
+        static llvm::Function* genContinuationFunc(
                                     llvm::LLVMContext &Context,
                                     llvm::Function &F1,
                                     llvm::Function &F2,

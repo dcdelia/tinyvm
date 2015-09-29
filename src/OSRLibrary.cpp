@@ -57,7 +57,7 @@ static inline void verifyAux(Function* F) {
 /**
  * Public methods
  */
-Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Function &F2,
+Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Function &F2,
         StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M,
         const std::string* F2NewName, bool verbose, StateMap** ptrForF2NewToF2Map) {
 
@@ -194,15 +194,15 @@ Function* OSRLibrary::generateOSRDestFun(LLVMContext &Context, Function &F1, Fun
 
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Function &F1, BasicBlock &B1, Function &F2,
-                        BasicBlock &B2, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
+OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Function &F1, BasicBlock &OSRSrc, Function &F2,
+                        BasicBlock &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
-    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&B1, &B2);
+    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&OSRSrc, &LPad);
     std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = generateOSRDestFun(Context, F1, F2, srcDestBlocks, valuesToPass,
+    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, srcDestBlocks, valuesToPass,
                                 M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
 
     #ifdef PROFILE_TIME
@@ -362,7 +362,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     Function *stub;
     Function *src = info.f1;
-    BasicBlock* srcBlock = info.b1;
+    BasicBlock* srcBlock = info.OSRSrc;
     Type* retTy = src->getReturnType();
     std::string newFunName = (config.updateF1) ?
                                 src->getName().str() :
@@ -449,7 +449,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     IntegerType* int64Ty = Type::getInt64Ty(Context); // TODO macro for x86
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 0, "f1_ptr", info.f1, int64Ty, i8PointerTy);
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 1, "b1_ptr", info.b1, int64Ty, i8PointerTy);
+    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 1, "b1_ptr", info.OSRSrc, int64Ty, i8PointerTy);
     lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 2, "extra_ptr", info.extra, int64Ty, i8PointerTy);
 
     // step (6)

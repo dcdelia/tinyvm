@@ -270,7 +270,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
         std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
     OSRLibrary::OpenOSRInfo info;
     info.f1 = src;
-    info.b1 = src_bb;
+    info.OSRSrc = src_bb;
     MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
     extra->TheHelper = TheHelper;
     info.extra = extra;

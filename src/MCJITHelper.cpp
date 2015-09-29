@@ -404,7 +404,7 @@ void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawIn
     MCJITHelperOSRInfo* extraInfo = (MCJITHelperOSRInfo*)OSRInfo->extra;
 
     Function* F1 = OSRInfo->f1;
-    BasicBlock* B1 = OSRInfo->b1;
+    BasicBlock* B1 = OSRInfo->OSRSrc;
 
     // debug info
     std::cerr << "Value for rawInfo is " << rawInfo << std::endl;
@@ -429,7 +429,7 @@ void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawIn
     std::vector<Value*>* valuesToPass = StateMap::getValuesToSetForBlock(*B1, l.getLiveInValues(B1));
     StateMap::BlockPair blockPair(B1, B2);
     std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");
-    Function* OSRDestFun = OSRLibrary::generateOSRDestFun(TheHelper->Context ,*F1, *F2, blockPair,
+    Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context ,*F1, *F2, blockPair,
                                 *valuesToPass, *M, &OSRDestFunName);
     delete valuesToPass;
 

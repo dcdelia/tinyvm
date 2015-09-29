@@ -36,34 +36,32 @@ using namespace llvm;
  *
  **/
 
-LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveIn(const BasicBlock* B,
-        const LivenessAnalysis::LiveValues &outValues) {
 
-    // initially LIVE_IN[B] = LIVE_OUT[B]
-    LiveValues inValues(outValues);
+LivenessAnalysis::LiveValues LivenessAnalysis::analyzeLiveInForSeq(const BasicBlock* B, const
+        LivenessAnalysis::LiveValues &liveOut, const Instruction* first, const Instruction* last) {
+    // initially LIVE_IN = LIVE_OUT
+    LiveValues liveIn(liveOut);
 
-    const BasicBlock::InstListType &instructions = B->getInstList();
+    BasicBlock::InstListType::const_reverse_iterator revIt = B->getInstList().rbegin();
+    while (last && &*(revIt++) != last);
 
-    // process all non-PHI instructions starting from the end of the block
-    for (BasicBlock::InstListType::const_reverse_iterator revIt = instructions.rbegin(),
-            revEnd = instructions.rend(); revIt != revEnd; ++revIt) {
-        const Instruction* I = &*revIt;
+    const Instruction* I;
+    do {
+        I = &*(revIt++);
 
-        if (isa<PHINode>(I)) break;
+        // remove elements that belong to KILL set
+        liveIn.erase(I);
 
-        // remove elements that belong to KILL[B]
-        inValues.erase(I);
-
-        // add elements that belong to GEN[B] (ignore constants and globals)
+        // add elements that belong to GEN set (ignore constants and globals)
         for (User::const_op_iterator opIt = I->op_begin(), opEnd = I->op_end();
                 opIt != opEnd; ++opIt) {
             const Value* V = *opIt;
             if (isa<Instruction>(V) || isa<Argument>(V))
-                inValues.insert(V);
+                liveIn.insert(V);
         }
-    }
+    } while (I != first);
 
-    return inValues;
+    return liveIn;
 }
 
 bool LivenessAnalysis::processBlock(const BasicBlock *B,
@@ -75,7 +73,7 @@ bool LivenessAnalysis::processBlock(const BasicBlock *B,
 
     // compute LIVE_IN[B] (which might include PHI nodes defined in B) since
     // LIVE_OUT[B] might have changed while analyzing a successor of B
-    LiveValues currInValues = analyzeLiveIn(B, outValues);
+    LiveValues currInValues = analyzeLiveInForSeq(B, outValues, &*firstNonPHIInstr);
 
     // remove PHI nodes created at this block from the set: we do not want to
     // propagate them to a predecessor of B
@@ -156,6 +154,11 @@ LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveInValues(BasicBlock* B) {
 
 LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(BasicBlock* B) {
     return blockMap[B].second;
+}
+
+void LivenessAnalysis::updateLiveValues(const llvm::BasicBlock* B,
+        LivenessAnalysis::LiveValues &&liveIn, LivenessAnalysis::LiveValues &&liveOut) {
+    blockMap[B] = std::make_pair(std::move(liveIn), std::move(liveOut));
 }
 
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values) {

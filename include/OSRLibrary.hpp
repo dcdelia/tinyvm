@@ -69,7 +69,7 @@ class OSRLibrary {
             void*   extra;
         } RawOpenOSRInfo;
 
-        typedef void* (*DestFunGenerator)(RawOpenOSRInfo* rawInfo, void* profDataAddr);
+        typedef void* (*DestFunGenerator)(llvm::Function* F1, llvm::BasicBlock* B1, void* extra, void* profDataAddr);
 
         static OSRPair insertFinalizedOSR(
                                     llvm::LLVMContext &Context,

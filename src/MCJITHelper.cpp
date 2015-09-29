@@ -398,22 +398,16 @@ std::string& MCJITHelper::LLVMTypeToString(Type* type) {
     return type_rso.str();
 }
 
-void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawInfo, void* profDataAddr) {
-
-    OSRLibrary::OpenOSRInfo* OSRInfo = (OSRLibrary::OpenOSRInfo*) rawInfo;
-    MCJITHelperOSRInfo* extraInfo = (MCJITHelperOSRInfo*)OSRInfo->extra;
-
-    Function* F1 = OSRInfo->f1;
-    BasicBlock* B1 = OSRInfo->OSRSrc;
+void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, BasicBlock* B1, void* extra, void* profDataAddr) {
+    MCJITHelperOSRInfo* extraInfo = (MCJITHelperOSRInfo*)extra;
 
     // debug info
-    std::cerr << "Value for rawInfo is " << rawInfo << std::endl;
     std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
     std::cerr << "Value for f1 is " << F1 << std::endl;
     std::cerr << "Value for b1 is " << B1 << std::endl;
     std::cerr << "Value for extra is " << extraInfo << std::endl;
 
-    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(OSRInfo->f1);
+    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(F1);
 
     Function* F2 = identityPair.first;
     extraInfo->f2 = identityPair.first;
@@ -425,7 +419,7 @@ void* MCJITHelper::identityGeneratorForOpenOSR(OSRLibrary::RawOpenOSRInfo *rawIn
 
     MCJITHelper *TheHelper = extraInfo->TheHelper;
 
-    LivenessAnalysis l(OSRInfo->f1);
+    LivenessAnalysis l(F1);
     std::vector<Value*>* valuesToPass = StateMap::getValuesToSetForBlock(*B1, l.getLiveInValues(B1));
     StateMap::BlockPair blockPair(B1, B2);
     std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");

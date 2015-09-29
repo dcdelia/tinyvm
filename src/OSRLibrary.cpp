@@ -373,12 +373,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     /* [Prepare F1'_stub aka stub] Workflow
      * (1) Generate prototype for stub
      * (2) Generate stub function and set argument names and attributes
-     * (3) Get a rawOpenOSRInfo struct type from LLVM Context
-     * (4) Create entry block for the new function and allocate a rawOpenOSRInfo object
-     * (5) Create pointers to access fields in rawOpenOSRInfo and store values from info
-     * (6) Create call to destFunGenerator
-     * (7) Create a prototype for the generated function and make an indirect call
-     * (8) Return the computed value
+     * (3) Create call to destFunGenerator
+     * (4) Create an indirect call to the generated function
+     * (5) Return the computed value
      */
     #ifdef PROFILE_TIME
     timer_start(&my_timer);
@@ -420,39 +417,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     applyAttributesToArguments(stub, src, valuesToPass, true); // skip first argument!
 
-    // step (3)
-    std::vector<Type*> rawOpenOSRInfoTypes;
-    rawOpenOSRInfoTypes.push_back(i8PointerTy); // f1
-    rawOpenOSRInfoTypes.push_back(i8PointerTy); // b1
-    rawOpenOSRInfoTypes.push_back(i8PointerTy); // extra
-    StructType* rawOSRInfoTy = StructType::get(Context, rawOpenOSRInfoTypes);
-
-    // step (4)
     BasicBlock* stubEntryPoint = BasicBlock::Create(Context, "entry", stub);
 
-    AllocaInst* infoAlloca = new AllocaInst(rawOSRInfoTy, "info");
-    stubEntryPoint->getInstList().push_back(infoAlloca);
-
-    // step (5)
-    Value* Idxs[2];
-    Idxs[0] = ConstantInt::get(Context, APInt(32, 0, 10));
-
-    auto lambdaForGEPAndStore = [](LLVMContext& C, AllocaInst* A, BasicBlock* B, Value* (*v)[2], int index, StringRef name,
-            void* field, Type* srcType, Type* destType) -> GetElementPtrInst* {
-        (*v)[1] = ConstantInt::get(C, APInt(32, index, 10));
-        GetElementPtrInst* GEP = GetElementPtrInst::Create(A, *v, name);
-        B->getInstList().push_back(GEP);
-        Value* V = ConstantExpr::getIntToPtr(ConstantInt::get(srcType, (uintptr_t)field), destType);
-        new StoreInst(V, GEP, B);
-        return GEP;
-    };
-
-    IntegerType* int64Ty = Type::getInt64Ty(Context); // TODO macro for x86
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 0, "f1_ptr", info.f1, int64Ty, i8PointerTy);
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 1, "b1_ptr", info.OSRSrc, int64Ty, i8PointerTy);
-    lambdaForGEPAndStore(Context, infoAlloca, stubEntryPoint, &Idxs, 2, "extra_ptr", info.extra, int64Ty, i8PointerTy);
-
-    // step (6)
+    // step (3)
     std::vector<Type*> argTypesForFunToGenerate;
     std::vector<Value*> argsForFunToGenerate;
     for (Function::arg_iterator it = ++(stub->arg_begin()), end = stub->arg_end(); it != end; ++it) {
@@ -462,22 +429,31 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
     FunctionType* funToGenerateTy = FunctionType::get(retTy, argTypesForFunToGenerate, false);
 
     PointerType* pointerToFunToGenerateTy = PointerType::getUnqual(funToGenerateTy);
-    PointerType* pointerToRawOSRInfoTy = PointerType::getUnqual(rawOSRInfoTy);
 
-    Type* destFunGenArgTypes[2];
-    destFunGenArgTypes[0] = pointerToRawOSRInfoTy;
+    Type* destFunGenArgTypes[4];
+    destFunGenArgTypes[0] = i8PointerTy;
     destFunGenArgTypes[1] = i8PointerTy;
+    destFunGenArgTypes[2] = i8PointerTy;
+    destFunGenArgTypes[3] = i8PointerTy;
     FunctionType* destFunGeneratorTy = FunctionType::get(pointerToFunToGenerateTy, destFunGenArgTypes, false);
 
-    Value* destFunGenArgs[2];
-    destFunGenArgs[0] = infoAlloca;
-    destFunGenArgs[1] = stub->arg_begin();
-    //std::cerr << "Arguments for the first call: " << destFunGenArgs[0]->getName().str() << " " << destFunGenArgs[1]->getName().str() << std::endl;
+    // generate inttoptr instructions for hard-wired parameters passed to the generator
+    IntegerType* int64Ty = Type::getInt64Ty(Context);
+    Constant* f1PtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)info.f1), i8PointerTy);
+    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)info.OSRSrc), i8PointerTy);
+    Constant* extraPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)info.extra), i8PointerTy);
     Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)destFunGenerator),
-                                                        PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
+                                PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
+
+    Value* destFunGenArgs[4];
+    destFunGenArgs[0] = f1PtrVal;
+    destFunGenArgs[1] = OSRSrcPtrVal;
+    destFunGenArgs[2] = extraPtrVal;
+    destFunGenArgs[3] = stub->arg_begin();
+
     CallInst* destFunGeneratorCall = CallInst::Create(destFunGenVal, destFunGenArgs, "destFunGenCall", stubEntryPoint); // direct call to absolute address
 
-    // make an indirect call to the generated function
+    // step (4)
     CallInst* generatedFunCall;
     if (retTy->isVoidTy()) {
         generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate);
@@ -487,7 +463,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     stubEntryPoint->getInstList().push_back(generatedFunCall);
 
-    // step (7)
+    // step (5)
     ReturnInst* retInst;
     if (retTy->isVoidTy()) {
         retInst = ReturnInst::Create(Context);
@@ -798,7 +774,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
     if (!valuesForSSAUpdater.empty()) {
         // split OSRdest block at first non-PHI instruction
         BasicBlock::iterator firstNonPHIInstr = OSRdestBlock->getFirstNonPHI();
-        BasicBlock* newBlock = OSRdestBlock->splitBasicBlock(firstNonPHIInstr, "tmpSSAUpdaterBlock");
+        BasicBlock* splitBlock = OSRdestBlock->splitBasicBlock(firstNonPHIInstr, "tmpSSAUpdaterBlock");
 
         for (Value* origValue: valuesForSSAUpdater) {
             if (verbose) {
@@ -821,7 +797,7 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
                 updateSSA.Initialize(oldValue->getType(), StringRef("anon_fixSSA"));
             }
             updateSSA.AddAvailableValue(oldBlock, oldValue);
-            updateSSA.AddAvailableValue(newBlock, newValue);
+            updateSSA.AddAvailableValue(entryPoint, newValue);
 
             if (verbose) {
                 std::cerr << "----> uses being rewritten using SSAUpdater::RewriteUse()" << std::endl;
@@ -850,10 +826,10 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
         }
 
         // merge newBlock and OSRdestBlock back together
-        newBlock->replaceAllUsesWith(OSRdestBlock);
+        splitBlock->replaceAllUsesWith(OSRdestBlock);
         OSRdestBlock->getInstList().back().eraseFromParent();
-        OSRdestBlock->getInstList().splice(OSRdestBlock->end(), newBlock->getInstList());
-        newBlock->eraseFromParent();
+        OSRdestBlock->getInstList().splice(OSRdestBlock->end(), splitBlock->getInstList());
+        splitBlock->eraseFromParent();
     }
     assert(replacedUses + updatedNodes == updatesForVMap.size());
 }

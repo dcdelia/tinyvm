@@ -143,7 +143,7 @@ void LivenessAnalysis::run() {
             const BasicBlock* B = &*revIt;
             LiveInAndOutValues &currPair = blockMap[B];
 
-            hasChanged |= processBlock(B, currPair.second, currPair.first);
+            hasChanged |= processBlock(B, currPair.first, currPair.second);
         }
     } while (hasChanged);
 }

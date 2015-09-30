@@ -32,7 +32,7 @@ class OSRLibrary {
             llvm::Module* modForNewF1;
             StateMap** ptrForF1NewToF1Map;
 
-            // finalized OSR only
+            // resolved OSR only
             const std::string* nameForNewF2;
             llvm::Module* modForNewF2;
             StateMap** ptrForF2NewToF2Map;
@@ -60,7 +60,7 @@ class OSRLibrary {
 
         typedef void* (*DestFunGenerator)(llvm::Function* F1, llvm::BasicBlock* B1, void* extra, void* profDataAddr);
 
-        static OSRPair insertFinalizedOSR(
+        static OSRPair insertResolvedOSR(
                                     llvm::LLVMContext &Context,
                                     llvm::Function& F1,
                                     llvm::BasicBlock& OSRSrc,
@@ -79,6 +79,7 @@ class OSRLibrary {
                                 llvm::Value* profDataVal,
                                 DestFunGenerator destFunGenerator,
                                 std::vector<llvm::Value*> *valuesToTransfer,
+                                LivenessAnalysis *LA,
                                 OSRPointConfig &config);
 
         static llvm::Function* genContinuationFunc(

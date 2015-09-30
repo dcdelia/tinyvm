@@ -196,7 +196,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Function &F1, BasicBlock &OSRSrc, Function &F2,
+OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function &F1, BasicBlock &OSRSrc, Function &F2,
                         BasicBlock &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
     std::vector<Value*> valuesToPass;
@@ -366,9 +366,11 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     return OSRPair(newSrcFun, OSRDestFun);
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F, BasicBlock &OSRSrc,
-        void* extraInfo, OSRLibrary::OSRCond& cond, Value* profDataVal, OSRLibrary::DestFunGenerator
-        destFunGenerator, std::vector<Value*> *valuesToTransfer, OSRLibrary::OSRPointConfig &config) {
+OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
+        BasicBlock &OSRSrc, void* extraInfo, OSRLibrary::OSRCond& cond,
+        Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator,
+        std::vector<Value*> *valuesToTransfer, LivenessAnalysis *LA,
+        OSRLibrary::OSRPointConfig &config) {
 
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
 
@@ -398,10 +400,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     // step (1)
     std::vector<Value*>* valuesToPassTmp = valuesToTransfer;
     if (valuesToTransfer == nullptr) {
-        LivenessAnalysis LA(src);
-        valuesToPassTmp = getLiveValsVecAtInstr(srcBlock->getFirstNonPHI(), LA);
+        valuesToPassTmp = getLiveValsVecAtInstr(srcBlock->getFirstNonPHI(), *LA);
         if (config.verbose) {
-            printLiveVarInfoForDebug(LA.getLiveInValues(srcBlock), LA.getLiveOutValues(srcBlock), *valuesToPassTmp);
+            printLiveVarInfoForDebug(LA->getLiveInValues(srcBlock), LA->getLiveOutValues(srcBlock), *valuesToPassTmp);
         }
     }
     std::vector<Value*> &valuesToPass = *valuesToPassTmp;
@@ -613,7 +614,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             src->removeFromParent();
         } else {
             if (config.verbose) {
-                std::cerr << "WARNING : Replacement of references to functions and"
+                std::cerr << "WARNING : Replacement of references to functions and "
                         << "globals for F1' has not been implemented yet!" << std::endl;;
             }
             config.modForNewF1->getFunctionList().push_back(stub);
@@ -875,7 +876,7 @@ BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Func
     // generate basic block to trigger the OSR transition
     BasicBlock* OSR_B = BasicBlock::Create(Context, Twine("OSRBlockTo", OSRFunName));
 
-    // generate call instruction for the finalized OSR transition
+    // generate call instruction for the resolved OSR transition
     CallInst* callInst;
     if (OSRDest->getReturnType()->isVoidTy()) {
         callInst = CallInst::Create(OSRDest, valuesToPass);

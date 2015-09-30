@@ -11,6 +11,7 @@
 #include "StateMap.hpp"
 #include "timer.h"
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
@@ -105,7 +106,7 @@ void Parser::handleBeginCommand() {
     }
 
     TheLexer->getNextToken(); // eats the EOF in the Lexer
-    delete curLine;
+    //delete curLine;
     std::cerr << "[MODULE] Module parsed and stored into \"" << fileName << "\"." << std::endl,
     fclose(out);
 
@@ -247,22 +248,26 @@ void Parser::handleHelpCommand() {
               << "Functions can be invoked as in C, except for the final semi-colon that must not be added." << std::endl
               << "For the time being, only functions with integer arguments and return values are supported." << std::endl;
 
-    // demo insert_osr (finalized)
+    // insert_osr
     std::cerr << std::endl << "Demo OSR points can be inserted with one of the following commands:" << std::endl
-              << "INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <B1>" << std::endl
-              << "INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <B1> AS <F1'>" << std::endl
-              << "INSERT_OSR <PROB> <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> AT <B2> AS <F2'>" << std::endl
-              << "INSERT_OSR <PROB> <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1>" << std::endl
+              << "INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> SLVD UPDATE IN <F1> AT <P1> TO <F2> AT <P2> AS <F2'>" << std::endl
+              << "INSERT_OSR <PROB> <COND> SLVD COPY IN <F1> AT <P1> AS <F1'> TO <F2> AT <P2> AS <F2'>" << std::endl
               << std::endl << "where:" << std::endl
               << "\tPROB is either -1 (no branch weight) or an integer in {0, ..., 100}" << std::endl
               << "\tCOND is either ALWAYS or NEVER" << std::endl
               << "\tF1 and F2 are existing functions" << std::endl
-              << "\tB1 and B2 are basic block labels in F1 and F2" << std::endl;
-    std::cerr << std::endl << "The command either updates F1 or generates a function F1' cloned from F1 "
-              << "such that when basic block B1 is reached during the execution, an OSR transition is fired. "
-              << "For OPEN transitions, the continuation function will be generated at run-time. "
-              << "For FINAL transitions, function F2' is generated from F2 in order to resume the execution from the "
-              << "beginning of basic block B2." << std::endl;
+              << "\tP1 and P2 are locations in F1 and F2 respectively" << std::endl;
+    std::cerr << std::endl << "The command can either update F1 or generate a new function F1' cloning F1 "
+              << "such that when P1 is reached during the execution, an OSR transition is fired. "
+              << "For OPEN transitions, the continuation function is generated at run-time. "
+              << "For SLVD transitions, a function F2' is generated from F2 to resume the execution at "
+              << "P2." << std::endl;
+    std::cerr << std::endl << "Program locations can be expressed using an LLVM \'%name\' (including "
+              << "numerical IDs for anonymous values) or a line ID \'$i\' reported by SHOW_LINE_IDS. "
+              << "For basic block locations OSR points are inserted before the first non-PHI instruction."
+              << std::endl;
 }
 
 void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
@@ -278,9 +283,10 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     Module* modToUse = src->getParent();
     OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName,
             modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
+    LivenessAnalysis LA(src);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
-        *src_bb, extra, cond, nullptr, generator, nullptr, config);
+        *src_bb, extra, cond, nullptr, generator, nullptr, &LA, config);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
@@ -297,7 +303,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     TheHelper->trackAsmCodeUtil(modToUse);
 }
 
-void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+void Parser::resolvedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
             std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
             std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
 
@@ -309,16 +315,22 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
         std::cerr << "Unable to find function named " << *F2Name << "!" << std::endl;
         return;
     } else {
-        for (Function::iterator it = dest->begin(), end = dest->end(); it != end; ++it) {
-            if (it->getName().equals(*B2Name)) {
-                dest_bb = it;
-                break;
-            }
-        }
-        if (dest_bb == nullptr) {
-            std::cerr << "Unable to find basic block " << *B2Name << " in function " << *F2Name << "!" << std::endl;
+        IDToValueVec slotIDs = computeSlotIDs(dest);
+        IDToValueVec lineIDs = computeLineIDs(dest);
+
+        const Value* v = getValueFromString(*dest, *(const_cast<std::string*>(B2Name)), slotIDs, lineIDs);
+        if (v == nullptr) {
+            std::cerr << "Unable to find location " << *B2Name << " in function "
+                    << *F2Name << ". Did you forget to put the \'%\' (or \'$\') prefix?" << std::endl;
             return;
         }
+        dest_bb = dyn_cast<BasicBlock>(const_cast<Value*>(v));
+        if (!dest_bb) {
+            std::cerr << "Sorry, for the time being only basic block locations are supported!" << std::endl;
+            return;
+        }
+
+        // TODO dyn_cast<PHINode>
     }
 
     if (src != dest) {
@@ -339,10 +351,10 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName, modToUse,
             &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertFinalizedOSR(TheHelper->Context, *src, *src_bb,
+    OSRLibrary::OSRPair pair = OSRLibrary::insertResolvedOSR(TheHelper->Context, *src, *src_bb,
             *dest, *dest_bb, cond, *M, config);
 
-    std::cerr << "insertFinalizedOSR succeded!" << std::endl;
+    std::cerr << "insertResolvedOSR succeded!" << std::endl;
 
     Function *src_new = pair.first, *dest_new = pair.second;
 
@@ -388,7 +400,7 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     if (!strcasecmp(token, "OPEN")) {
         open = true;
-    } else if (strcasecmp(token, "FINAL")) {
+    } else if (strcasecmp(token, "SLVD")) {
         INVALID();
     }
 
@@ -421,16 +433,22 @@ void Parser::handleInsertOSRCommand() {
         std::cerr << "Unable to find function named " << F1Name << "!" << std::endl;
         return;
     } else {
-        for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
-            if (it->getName().equals(B1Name)) {
-                src_bb = it;
-                break;
-            }
-        }
-        if (src_bb == nullptr) {
-            std::cerr << "Unable to find basic block " << B1Name << " in function " << F1Name << "!" << std::endl;
+        IDToValueVec slotIDs = computeSlotIDs(src);
+        IDToValueVec lineIDs = computeLineIDs(src);
+
+        const Value* v = getValueFromString(*src, const_cast<std::string&>(B1Name), slotIDs, lineIDs);
+        if (v == nullptr) {
+            std::cerr << "Unable to find location " << B1Name << " in function "
+                    << F1Name << ". Did you forget to put the \'%\' (or \'$\') prefix?" << std::endl;
             return;
         }
+        src_bb = dyn_cast<BasicBlock>(const_cast<Value*>(v));
+        if (!src_bb) {
+            std::cerr << "Sorry, for the time being only basic block locations are supported!" << std::endl;
+            return;
+        }
+
+        // TODO dyn_cast<PHINode>
     }
 
     std::string F1NewName;
@@ -468,7 +486,7 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     const std::string F2NewName(token);
 
-    finalizedOSRHelper(src, src_bb, update, tmpForF1NewName, &F2Name,
+    resolvedOSRHelper(src, src_bb, update, tmpForF1NewName, &F2Name,
             &B2Name, const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
     delete cmdLine;
@@ -680,6 +698,51 @@ void Parser::dumpFunctionWithLineIDs(llvm::Function* F) {
     }
 
     std::cerr << "}" << std::endl;
+}
+
+const llvm::Value* Parser::getValueFromString(llvm::Function &F, std::string &str,
+        Parser::IDToValueVec &slotIDs, Parser::IDToValueVec &lineIDs) {
+    int length = str.length();
+    if (length < 2) return nullptr;
+
+    bool isLineNumber = false;
+
+    if (str[0] == '$') isLineNumber = true;
+    else if (str[0] != '%') return nullptr;
+
+    std::string::const_iterator it = ++str.begin(); // skip first char
+    while (it != str.end() && std::isdigit(*it)) ++it;
+    bool isNumber = (it == str.end());
+
+    // line number
+    if (isLineNumber) {
+        if (!isNumber) return nullptr;
+        int ID = (int)strtol(str.c_str()+1, NULL, 10);
+
+        if (ID >= lineIDs.size()) return nullptr;
+        return lineIDs[ID];
+    }
+
+    // anonymous LLVM Value
+    if (isNumber) {
+        int ID = (int)strtol(str.c_str()+1, NULL, 10);
+        if (ID >= slotIDs.size()) return nullptr;
+        return slotIDs[ID];
+    }
+
+    // named LLVM Value
+    std::string name = str.substr(1, length - 1);
+    llvm::StringRef nameRef(name);
+
+    for (Function::const_iterator B = F.begin(), endB = F.end(); B != endB; ++B) {
+        if (B->hasName() && B->getName().equals(nameRef)) return B;
+
+        for (BasicBlock::const_iterator I = B->begin(), endI = B->end(); I != endI; ++I) {
+            if (I->hasName() && I->getName().equals(nameRef)) return I;
+        }
+    }
+
+    return nullptr;
 }
 
 /*

@@ -19,10 +19,6 @@ public:
     Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H), verbose(false) {}
     int start(bool displayHelpMessage = true);
 
-    typedef std::vector<const llvm::Value*> IDToValueVec;
-    static IDToValueVec computeSlotIDs(llvm::Function* F);
-    static IDToValueVec computeLineIDs(llvm::Function* F);
-
 private:
     Lexer       *TheLexer;
     MCJITHelper *TheHelper;
@@ -44,13 +40,21 @@ private:
     void handleOptCommand(bool CFGSimplificationOnly);
     void handleVerboseCommand();
 
-    void openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+    void openOSRHelper(llvm::Function* src, llvm::BasicBlock* src_bb, bool update,
             std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
-    void finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+    void resolvedOSRHelper(llvm::Function* src, llvm::BasicBlock* src_bb, bool update,
             std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
             std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
 
+    typedef std::vector<const llvm::Value*> IDToValueVec;
+    static IDToValueVec computeSlotIDs(llvm::Function* F);
+    static IDToValueVec computeLineIDs(llvm::Function* F);
     static void dumpFunctionWithLineIDs(llvm::Function* F);
+
+    // works only on Instruction and BasicBlock
+    static const llvm::Value* getValueFromString(llvm::Function &F, std::string &str,
+        IDToValueVec &slotIDs, IDToValueVec &lineIDs);
+
 };
 
 #endif

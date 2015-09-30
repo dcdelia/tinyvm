@@ -284,7 +284,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     std::cerr << "LIVE_OUT: " << liveOut.size() << std::endl;
     std::cerr << liveOut << std::endl;
 
-    std::vector<llvm::Value*>* valuesToTransfer = OSRLibrary::defaultValuesToTransferForOpenOSR(livenessInfo, *src_bb);
+    std::vector<llvm::Value*>* valuesToTransfer = OSRLibrary::getLiveValsVecAtInstr(src_bb->getFirstNonPHI(), livenessInfo);
     std::cerr << "Values to fetch: " << valuesToTransfer->size() << std::endl;
     for (int i = 0, e = valuesToTransfer->size(); i < e; ++i) {
         std::cerr << (*valuesToTransfer)[i]->getName().str() << " ";

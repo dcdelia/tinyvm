@@ -81,7 +81,7 @@ class OSRLibrary {
                                 std::vector<llvm::Value*> *valuesToTransfer,
                                 OSRPointConfig &config);
 
-        static std::vector<llvm::Value*>* defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B);
+        static std::vector<llvm::Value*>* getLiveValsVecAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);
 
         static llvm::Function* genContinuationFunc(
                                     llvm::LLVMContext &Context,
@@ -95,7 +95,7 @@ class OSRLibrary {
                                     bool verbose = false,
                                     StateMap** ptrForF2NewToF2Map = nullptr);
 
-        static LivenessAnalysis::LiveValues getLiveValsAtOSRSrc(const llvm::Instruction* OSRSrc, LivenessAnalysis &LA);
+        static LivenessAnalysis::LiveValues getLiveValsAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);
 
     private:
         static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F,

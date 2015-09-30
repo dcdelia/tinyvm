@@ -107,7 +107,7 @@ public:
     ValueInfo*  getValueInfo(llvm::Value* v, BlockPair &pair);
 
     // this method is static so that insertOpenOSR can access it
-    static std::vector<llvm::Value*>* getValuesToSetForBlock(llvm::BasicBlock &B, LivenessAnalysis::LiveValues& liveInAtBlock);
+    static std::vector<llvm::Value*>* getValuesToSetForBlock(llvm::BasicBlock &B, LivenessAnalysis );
     // for testing and performance evaluation
     static std::pair<llvm::Function*, StateMap*> generateIdentityMapping(llvm::Function *F);
 

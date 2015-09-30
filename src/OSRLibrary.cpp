@@ -203,7 +203,7 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
 
     Instruction* OSRSrcInstr = OSRSrc.getFirstNonPHI();
     LivenessAnalysis &LA = M.getLivenessResults().first;
-    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtOSRSrc(OSRSrcInstr, LA);
+    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(OSRSrcInstr, LA);
 
     //std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
     for (const Value* v: liveInAtOSRSrc) {
@@ -397,7 +397,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     std::vector<Value*>* valuesToPassTmp = valuesToTransfer;
     if (valuesToTransfer == nullptr) {
         LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(src);
-        valuesToPassTmp = defaultValuesToTransferForOpenOSR(livenessAnalysisForSrcFunction, *srcBlock);
+        valuesToPassTmp = getLiveValsVecAtInstr(srcBlock->getFirstNonPHI(), livenessAnalysisForSrcFunction);
     }
     std::vector<Value*> &valuesToPass = *valuesToPassTmp;
 
@@ -925,10 +925,10 @@ BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBl
     return NB;
 }
 
-std::vector<llvm::Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B) {
+std::vector<llvm::Value*>* OSRLibrary::getLiveValsVecAtInstr(const Instruction* I, LivenessAnalysis &LA) {
     std::vector<Value*>* vec = new std::vector<Value*>();
 
-    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtOSRSrc(B.getFirstNonPHI(), L);
+    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(I, LA);
     for (const Value* v: liveInAtOSRSrc) {
         vec->push_back(const_cast<Value*>(v));
     }
@@ -936,12 +936,12 @@ std::vector<llvm::Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(Livenes
     return vec;
 }
 
-LivenessAnalysis::LiveValues OSRLibrary::getLiveValsAtOSRSrc(const Instruction* OSRSrc, LivenessAnalysis &LA) {
-    const BasicBlock* B = OSRSrc->getParent();
+LivenessAnalysis::LiveValues OSRLibrary::getLiveValsAtInstr(const Instruction* I, LivenessAnalysis &LA) {
+    const BasicBlock* B = I->getParent();
 
     LivenessAnalysis::LiveValues &liveOutAtB = LA.getLiveOutValues(B);
 
-    return LivenessAnalysis::analyzeLiveInForSeq(B, liveOutAtB, OSRSrc, nullptr);
+    return LivenessAnalysis::analyzeLiveInForSeq(B, liveOutAtB, I, nullptr);
 }
 
 void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,

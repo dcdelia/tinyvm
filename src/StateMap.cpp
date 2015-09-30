@@ -14,6 +14,7 @@
 #include "llvm/IR/ValueMap.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "OSRLibrary.hpp"
 
 using namespace llvm;
 
@@ -37,29 +38,6 @@ std::pair<Function*, StateMap*> StateMap::generateIdentityMapping(Function *F) {
     return std::pair<Function*, StateMap*>(copy, M);
 }
 
-std::vector<Value*>* StateMap::getValuesToSetForBlock(BasicBlock &B, LivenessAnalysis::LiveValues& liveInAtBlock) {
-    std::vector<Value*> *valuesToPass = new std::vector<Value*>();
-
-    // add LIVE_IN values
-    for (const Value* cdest_v: liveInAtBlock) {
-        Value* src_v = const_cast<Value*>(cdest_v);
-        valuesToPass->push_back(src_v);
-    }
-
-    // add PHI nodes in the block
-    BasicBlock::const_iterator firstNonPHIInstr = B.getFirstNonPHI();
-    BasicBlock::const_iterator firstInstr = B.begin();
-    for (BasicBlock::const_iterator it = firstInstr; it != firstNonPHIInstr; ++it) {
-        Instruction* dest_inst = const_cast<Instruction*>(&*it);
-        Value* dest_v = cast<Value>(dest_inst);
-        if (std::find(valuesToPass->begin(), valuesToPass->end(), dest_v) == valuesToPass->end()) {
-            valuesToPass->push_back(dest_v); // avoid duplicates!
-        }
-    }
-
-    return valuesToPass;
-}
-
 std::vector<Value*>& StateMap::getValuesToSetForDestFunction(StateMap::BlockPair &pair) {
     BasicBlock* destBB = pair.second;
 
@@ -67,9 +45,9 @@ std::vector<Value*>& StateMap::getValuesToSetForDestFunction(StateMap::BlockPair
     if (it == cacheForValuesToSetForBlocks.end()) {
         std::vector<Value*> *v;
         if (destBB->getParent() == F1) {
-            v = getValuesToSetForBlock(*destBB, F1LivenessAnalysis.getLiveInValues(destBB));
+            v = OSRLibrary::getLiveValsVecAtInstr(destBB->getFirstNonPHI(), F1LivenessAnalysis);
         } else {
-            v = getValuesToSetForBlock(*destBB, F2LivenessAnalysis.getLiveInValues(destBB));
+            v = OSRLibrary::getLiveValsVecAtInstr(destBB->getFirstNonPHI(), F2LivenessAnalysis);
         }
         cacheForValuesToSetForBlocks.insert(std::pair<BasicBlock*, std::vector<Value*>>(destBB, std::move(*v)));
         return cacheForValuesToSetForBlocks[destBB]; // TODO can I do this better?

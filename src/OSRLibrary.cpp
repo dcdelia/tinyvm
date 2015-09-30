@@ -926,8 +926,14 @@ BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBl
 }
 
 std::vector<llvm::Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B) {
-    LivenessAnalysis::LiveValues& liveInAtSrcBlock = L.getLiveInValues(&B);
-    return StateMap::getValuesToSetForBlock(B, liveInAtSrcBlock);
+    std::vector<Value*>* vec = new std::vector<Value*>();
+
+    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtOSRSrc(B.getFirstNonPHI(), L);
+    for (const Value* v: liveInAtOSRSrc) {
+        vec->push_back(const_cast<Value*>(v));
+    }
+
+    return vec;
 }
 
 LivenessAnalysis::LiveValues OSRLibrary::getLiveValsAtOSRSrc(const Instruction* OSRSrc, LivenessAnalysis &LA) {

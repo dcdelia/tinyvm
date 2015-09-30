@@ -350,23 +350,6 @@ void Parser::finalizedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     dest_bb = M->getCorrespondingBlock(src_bb);
     assert(dest_bb != nullptr);
 
-    // print information about values to fetch
-    StateMap::BlockPair tmpSrcDestPair = std::pair<BasicBlock*, BasicBlock*>(src_bb, dest_bb);
-
-    LivenessAnalysis::LiveValues &liveIn = M->getLivenessResults().first.getLiveInValues(src_bb);
-    std::cerr << "LIVE_IN: " << liveIn.size() << std::endl;
-    std::cerr << liveIn << std::endl;
-    LivenessAnalysis::LiveValues &liveOut = M->getLivenessResults().first.getLiveOutValues(src_bb);
-    std::cerr << "LIVE_OUT: " << liveOut.size() << std::endl;
-    std::cerr << liveOut << std::endl;
-
-    std::vector<Value*> valuesToFetch = M->getValuesToFetchFromSrcFunction(tmpSrcDestPair);
-    std::cerr << "Values to fetch: " << valuesToFetch.size() << std::endl;
-    for (int i = 0, e = valuesToFetch.size(); i < e; ++i) {
-        std::cerr << valuesToFetch[i]->getName().str() << " ";
-    }
-    std::cerr << std::endl;
-
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;

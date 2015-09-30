@@ -17,6 +17,10 @@
 
 using namespace llvm;
 
+std::vector<llvm::Value*>* StateMap::getExtraValuesToFetch(const Instruction* OSRSrc, const Instruction* LPad) {
+    return nullptr;
+}
+
 std::pair<Function*, Function*> StateMap::getFunctions() {
     return std::pair<Function*, Function*>(F1, F2);
 }

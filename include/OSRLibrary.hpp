@@ -7,6 +7,7 @@
 #ifndef TINYVM_OSRLIBRARY_H
 #define TINYVM_OSRLIBRARY_H
 
+#include "Liveness.hpp"
 #include "StateMap.hpp"
 
 #include <map>
@@ -86,15 +87,15 @@ class OSRLibrary {
                                     llvm::LLVMContext &Context,
                                     llvm::Function &F1,
                                     llvm::Function &F2,
-                                    StateMap::BlockPair &srcDestBlocks,
+                                    llvm::BasicBlock &OSRSrc,
+                                    llvm::BasicBlock &LPad,
                                     std::vector<llvm::Value*> &valuesToPass,
                                     StateMap &M,
                                     const std::string* F2NewName,
                                     bool verbose = false,
                                     StateMap** ptrForF2NewToF2Map = nullptr);
 
-        static llvm::Function* prepareForRedirection(llvm::Function& F);
-        static void enableRedirection(uint64_t f, uint64_t destination);
+        static LivenessAnalysis::LiveValues getLiveValsAtOSRSrc(const llvm::Instruction* OSRSrc, LivenessAnalysis &LA);
 
     private:
         static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F,
@@ -111,6 +112,8 @@ class OSRLibrary {
                 std::vector<llvm::Value*> &valuesToPass);
         static llvm::BasicBlock* insertOSRCond(llvm::LLVMContext &Context, llvm::Function* F, llvm::BasicBlock* B,
             llvm::BasicBlock* OSR_B, OSRCond& cond, const llvm::Twine& BBName, int branchTakenProb);
+        static void printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
+            LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch);
 };
 
 #endif

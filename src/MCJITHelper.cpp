@@ -421,9 +421,8 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, BasicBlock* B1, voi
 
     LivenessAnalysis l(F1);
     std::vector<Value*>* valuesToPass = StateMap::getValuesToSetForBlock(*B1, l.getLiveInValues(B1));
-    StateMap::BlockPair blockPair(B1, B2);
     std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");
-    Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context ,*F1, *F2, blockPair,
+    Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context ,*F1, *F2, *B1, *B2,
                                 *valuesToPass, *M, &OSRDestFunName);
     delete valuesToPass;
 

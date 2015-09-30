@@ -148,11 +148,11 @@ void LivenessAnalysis::run() {
     } while (hasChanged);
 }
 
-LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveInValues(BasicBlock* B) {
+LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveInValues(const BasicBlock* B) {
     return blockMap[B].first;
 }
 
-LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(BasicBlock* B) {
+LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(const BasicBlock* B) {
     return blockMap[B].second;
 }
 

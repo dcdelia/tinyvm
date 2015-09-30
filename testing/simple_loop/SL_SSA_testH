@@ -1,2 +1,3 @@
+VERBOSE
 LOAD_IR testing/IR/simple_loop_SSA.ll
 INSERT_OSR 95 ALWAYS FINAL COPY IN simple_loop AT H AS sl1 TO simple_loop AT H AS sl2

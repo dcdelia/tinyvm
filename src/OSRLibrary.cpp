@@ -4,6 +4,7 @@
  * Author:      (C) 2015 Daniele Cono D'Elia
  * License:     See the end of this file for license information
  * =============================================================== */
+#include "Liveness.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
 
@@ -58,7 +59,7 @@ static inline void verifyAux(Function* F) {
  * Public methods
  */
 Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Function &F2,
-        StateMap::BlockPair &srcDestBlocks, std::vector<Value*> &valuesToPass, StateMap &M,
+        BasicBlock& OSRSrc, BasicBlock& LPad, std::vector<Value*> &valuesToPass, StateMap &M,
         const std::string* F2NewName, bool verbose, StateMap** ptrForF2NewToF2Map) {
 
     #ifdef PROFILE_TIME
@@ -80,7 +81,8 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     ValueToValueMapTy destToOSRDestVMap;
     Function* OSRDestFun;
     Function* dest = &F2;
-    BasicBlock* dest_block = srcDestBlocks.second;
+    BasicBlock* dest_block = &LPad;
+    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&OSRSrc, &LPad);
 
     std::vector<Value*> &origValuesToSetAtDestBlock = M.getValuesToSetForDestFunction(srcDestBlocks);
 
@@ -197,12 +199,25 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Function &F1, BasicBlock &OSRSrc, Function &F2,
                         BasicBlock &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
-    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&OSRSrc, &LPad);
-    std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
+    std::vector<Value*> valuesToPass;
+
+    Instruction* OSRSrcInstr = OSRSrc.getFirstNonPHI();
+    LivenessAnalysis &LA = M.getLivenessResults().first;
+    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtOSRSrc(OSRSrcInstr, LA);
+
+    //std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
+    for (const Value* v: liveInAtOSRSrc) {
+        valuesToPass.push_back(const_cast<Value*>(v));
+    }
+
+    if (config.verbose) {
+        printLiveVarInfoForDebug(LA.getLiveInValues(&OSRSrc), LA.getLiveOutValues(&OSRSrc), valuesToPass);
+    }
+
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, srcDestBlocks, valuesToPass,
+    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, OSRSrc, LPad, valuesToPass,
                                 M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
 
     #ifdef PROFILE_TIME
@@ -238,12 +253,11 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     Module*     parentForSrc = src->getParent();
 
     Function*   newSrcFun;
-    std::vector<Value*>* ptrToValuesToPass;
+
     OSRCond*    ptrToOSRCond;
     BasicBlock* ptrToSrcBlock;
 
     // TODO rewrite this part
-    std::vector<Value*> newValuesToPass;
     OSRCond newCond;
     ValueToValueMapTy srcToNewSrcVMap;
 
@@ -260,23 +274,21 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
         }
 
         // I have to regenerate valuesToPass as well!
-        for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
-            newValuesToPass.push_back(srcToNewSrcVMap[*it]);
+        for (int i = 0, n = valuesToPass.size(); i < n; ++i) {
+            valuesToPass[i] = srcToNewSrcVMap[valuesToPass[i]];
         }
 
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
 
-        ptrToValuesToPass = &newValuesToPass;
         ptrToOSRCond = &newCond;
-        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcDestBlocks.first]);
+        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[&OSRSrc]);
     } else {
         newSrcFun = src;
-        ptrToValuesToPass = &valuesToPass;
         ptrToOSRCond = &cond;
-        ptrToSrcBlock = srcDestBlocks.first;
+        ptrToSrcBlock = &OSRSrc;
     }
 
-    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, *ptrToValuesToPass); // (3)
+    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, valuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
     insertOSRCond(Context, newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
@@ -620,15 +632,6 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     return OSRPair(newSrcFun, stub);
 }
 
-Function* OSRLibrary::prepareForRedirection(Function &F) {
-    return nullptr;
-}
-
-void OSRLibrary::enableRedirection(uint64_t f, uint64_t destination) {
-    // NOTE: I-cache invalidation does not belong to the OSR Library
-}
-
-
 /**
  * Auxiliary methods
  */
@@ -925,6 +928,28 @@ BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBl
 std::vector<llvm::Value*>* OSRLibrary::defaultValuesToTransferForOpenOSR(LivenessAnalysis &L, llvm::BasicBlock &B) {
     LivenessAnalysis::LiveValues& liveInAtSrcBlock = L.getLiveInValues(&B);
     return StateMap::getValuesToSetForBlock(B, liveInAtSrcBlock);
+}
+
+LivenessAnalysis::LiveValues OSRLibrary::getLiveValsAtOSRSrc(const Instruction* OSRSrc, LivenessAnalysis &LA) {
+    const BasicBlock* B = OSRSrc->getParent();
+
+    LivenessAnalysis::LiveValues &liveOutAtB = LA.getLiveOutValues(B);
+
+    return LivenessAnalysis::analyzeLiveInForSeq(B, liveOutAtB, OSRSrc, nullptr);
+}
+
+void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
+        LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch) {
+    std::cerr << "LIVE_IN at block: (" << liveIn.size() << ")\t";
+    std::cerr << liveIn << std::endl;
+    std::cerr << "LIVE_OUT at block: (" << liveOut.size() << ")\t";
+    std::cerr << liveOut << std::endl;
+
+    std::cerr << "Values to fetch: (" << valuesToFetch.size() << ")\t{ ";
+    for (Value* v: valuesToFetch) {
+        std::cerr <<  v->getName().str() << " ";
+    }
+    std::cerr << "}" << std::endl;
 }
 
 /*

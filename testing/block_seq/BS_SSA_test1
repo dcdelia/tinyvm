@@ -1,3 +1,4 @@
+VERBOSE
 LOAD_IR testing/IR/block_sequence_SSA.ll
 TRACK_ASM
 INSERT_OSR 95 ALWAYS FINAL COPY IN block_sequence AT B1 AS bs1 TO block_sequence AT B1 AS bs2

@@ -80,6 +80,10 @@ public:
     std::pair<llvm::Function*, llvm::Function*> getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> getLivenessResults();
 
+    // work in progress
+    std::vector<llvm::Value*>* getExtraValuesToFetch(const llvm::Instruction* OSRSrc,
+        const llvm::Instruction* LPad);
+
     // methods for generating OSR functions/stubs
     std::vector<llvm::Value*>& getValuesToSetForDestFunction(BlockPair &pair); // & as they are cached
     std::vector<llvm::Value*> getValuesToFetchFromSrcFunction(BlockPair &pair);

@@ -23,10 +23,10 @@ class LivenessAnalysis {
         LivenessAnalysis(llvm::Function *F): F(F) {
             run();
         }
-        LiveValues& getLiveInValues(llvm::BasicBlock* B);
-        LiveValues& getLiveOutValues(llvm::BasicBlock* B);
+        LiveValues& getLiveInValues(const llvm::BasicBlock* B);
+        LiveValues& getLiveOutValues(const llvm::BasicBlock* B);
 
-        LiveValues analyzeLiveInForSeq(const llvm::BasicBlock* B, const LiveValues &liveOut,
+        static LiveValues analyzeLiveInForSeq(const llvm::BasicBlock* B, const LiveValues &liveOut,
             const llvm::Instruction* first, const llvm::Instruction* last = nullptr);
 
         void updateLiveValues(const llvm::BasicBlock* B, LiveValues &&liveIn, LiveValues &&liveOut);

@@ -1,7 +1,7 @@
 LOAD_IR shootout/fannkuch-redux/finalAlwaysFire.ll
 INSERT_OSR 95 ALWAYS FINAL UPDATE IN flip AT entry TO flip AT entry AS flip_OSR
-OPT_CFG flip
-OPT_CFG flip_OSR
+OPT_FULL flip
+OPT_FULL flip_OSR
 bench(12)
 REPEAT 10 bench(12)
 QUIT

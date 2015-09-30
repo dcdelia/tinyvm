@@ -1,0 +1,9 @@
+LOAD_IR isord.r.ll
+INSERT_OSR -1 ALWAYS OPEN COPY IN isord AT loop.body AS isordfromopen
+DUMP isord
+DUMP isordfromopen
+DUMP isordfromopen_stub
+QUIT
+
+
+

@@ -1,0 +1,6 @@
+LOAD_IR isord.r.ll
+LOAD_IR isord2to.r.ll
+LOAD_IR isordfrom.r.prof.ll
+LOAD_IR test.ll
+test(200000000,0)
+test(200000000,1)

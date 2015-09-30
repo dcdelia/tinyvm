@@ -1,0 +1,10 @@
+TRACK_ASM
+LOAD_IR isord2.ll
+INSERT_OSR -1 ALWAYS FINAL COPY IN isord2 AT .lr.ph AS isord2from TO isord2 AT .lr.ph AS isord2to
+OPT_CFG isord2from
+OPT_CFG isord2to
+DUMP isord2from
+DUMP isord2to
+SHOW_ASM
+QUIT
+

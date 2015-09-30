@@ -10,13 +10,13 @@
 #include "Liveness.hpp"
 #include "StateMap.hpp"
 
-#include <map>
-
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
+
+#include <map>
 
 class OSRLibrary {
     public:

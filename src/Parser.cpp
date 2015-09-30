@@ -6,7 +6,6 @@
  * =============================================================== */
 #include "Parser.hpp"
 #include "Lexer.hpp"
-#include "Liveness.hpp"
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
@@ -274,23 +273,6 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
-    // print information about values to fetch
-    LivenessAnalysis livenessInfo(src);
-
-    LivenessAnalysis::LiveValues &liveIn = livenessInfo.getLiveInValues(src_bb);
-    std::cerr << "LIVE_IN: " << liveIn.size() << std::endl;
-    std::cerr << liveIn << std::endl;
-    LivenessAnalysis::LiveValues &liveOut = livenessInfo.getLiveOutValues(src_bb);
-    std::cerr << "LIVE_OUT: " << liveOut.size() << std::endl;
-    std::cerr << liveOut << std::endl;
-
-    std::vector<llvm::Value*>* valuesToTransfer = OSRLibrary::getLiveValsVecAtInstr(src_bb->getFirstNonPHI(), livenessInfo);
-    std::cerr << "Values to fetch: " << valuesToTransfer->size() << std::endl;
-    for (int i = 0, e = valuesToTransfer->size(); i < e; ++i) {
-        std::cerr << (*valuesToTransfer)[i]->getName().str() << " ";
-    }
-    std::cerr << std::endl;
-
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     Module* modToUse = src->getParent();
@@ -298,7 +280,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
             modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
-        *src_bb, extra, cond, nullptr, generator, valuesToTransfer, config);
+        *src_bb, extra, cond, nullptr, generator, nullptr, config);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 

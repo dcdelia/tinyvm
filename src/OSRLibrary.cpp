@@ -382,6 +382,8 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
                                     src->getName().str() + "WithOSR" :
                                     *config.nameForNewF1;
 
+
+
     /* [Prepare F1'_stub aka stub] Workflow
      * (1) Generate prototype for stub
      * (2) Generate stub function and set argument names and attributes
@@ -396,8 +398,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     // step (1)
     std::vector<Value*>* valuesToPassTmp = valuesToTransfer;
     if (valuesToTransfer == nullptr) {
-        LivenessAnalysis livenessAnalysisForSrcFunction = LivenessAnalysis(src);
-        valuesToPassTmp = getLiveValsVecAtInstr(srcBlock->getFirstNonPHI(), livenessAnalysisForSrcFunction);
+        LivenessAnalysis LA(src);
+        valuesToPassTmp = getLiveValsVecAtInstr(srcBlock->getFirstNonPHI(), LA);
+        if (config.verbose) {
+            printLiveVarInfoForDebug(LA.getLiveInValues(srcBlock), LA.getLiveOutValues(srcBlock), *valuesToPassTmp);
+        }
     }
     std::vector<Value*> &valuesToPass = *valuesToPassTmp;
 
@@ -946,12 +951,12 @@ LivenessAnalysis::LiveValues OSRLibrary::getLiveValsAtInstr(const Instruction* I
 
 void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
         LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch) {
-    std::cerr << "LIVE_IN at block: (" << liveIn.size() << ")\t";
+    std::cerr << "LIVE_IN at block: (" << liveIn.size() << ")   ";
     std::cerr << liveIn << std::endl;
-    std::cerr << "LIVE_OUT at block: (" << liveOut.size() << ")\t";
+    std::cerr << "LIVE_OUT at block: (" << liveOut.size() << ")  ";
     std::cerr << liveOut << std::endl;
 
-    std::cerr << "Values to fetch: (" << valuesToFetch.size() << ")\t{ ";
+    std::cerr << "Values to fetch: (" << valuesToFetch.size() << ")    { ";
     for (Value* v: valuesToFetch) {
         std::cerr <<  v->getName().str() << " ";
     }

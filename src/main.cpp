@@ -4,15 +4,15 @@
  * Author:      (C) 2015 Daniele Cono D'Elia
  * License:     See the end of this file for license information
  * =============================================================== */
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/MCJIT.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/TargetSelect.h"
-
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
 #include "Parser.hpp"
+
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/TargetSelect.h>
 
 #include <cstdio>
 

@@ -8,12 +8,13 @@
 #ifndef TINYVM_STACKMAP_H
 #define TINYVM_STACKMAP_H
 
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/JITEventListener.h"
-#include "llvm/Object/ObjectFile.h"
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
+#include <llvm/Object/ObjectFile.h>
+
+#include <vector>
 
 #include <stdint.h>
-#include <vector>
 
 using namespace llvm;
 

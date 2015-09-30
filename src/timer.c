@@ -10,7 +10,7 @@
 #include <time.h>
 #include <sys/time.h>
 
-// TODO: this is C code!
+// TODO update prints for USE_GETTIMEOFDAY
 
 void timer_start(tinyvm_timer_t* timer) {
     #if USE_GETTIMEOFDAY == 1

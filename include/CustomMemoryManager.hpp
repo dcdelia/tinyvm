@@ -7,7 +7,7 @@
 #ifndef TINYVM_CUSTOMMEMORYMANAGER_H
 #define TINYVM_CUSTOMMEMORYMANAGER_H
 
-#include "llvm/ExecutionEngine/SectionMemoryManager.h"
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
 
 #include <string>
 

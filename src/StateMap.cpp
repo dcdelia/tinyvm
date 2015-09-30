@@ -4,17 +4,18 @@
  * Author:      (C) 2015 Daniele Cono D'Elia
  * License:     See the end of this file for license information
  * =============================================================== */
+#include "OSRLibrary.hpp"
 #include "StateMap.hpp"
 
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Value.h"
-#include "llvm/IR/ValueMap.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "OSRLibrary.hpp"
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Value.h>
+#include <llvm/IR/ValueMap.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <llvm/Transforms/Utils/Cloning.h>
+
 
 using namespace llvm;
 

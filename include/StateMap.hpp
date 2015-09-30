@@ -8,12 +8,12 @@
 #ifndef TINYVM_STATEMAP_HPP
 #define	TINYVM_STATEMAP_HPP
 
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Value.h"
-#include "llvm/IR/ValueMap.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Value.h>
+#include <llvm/IR/ValueMap.h>
+#include <llvm/Transforms/Utils/ValueMapper.h>
 
 #include <map>
 

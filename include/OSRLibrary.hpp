@@ -12,11 +12,11 @@
 
 #include <map>
 
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/Transforms/Utils/ValueMapper.h>
 
 class OSRLibrary {
     public:
@@ -81,8 +81,6 @@ class OSRLibrary {
                                 std::vector<llvm::Value*> *valuesToTransfer,
                                 OSRPointConfig &config);
 
-        static std::vector<llvm::Value*>* getLiveValsVecAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);
-
         static llvm::Function* genContinuationFunc(
                                     llvm::LLVMContext &Context,
                                     llvm::Function &F1,
@@ -95,7 +93,9 @@ class OSRLibrary {
                                     bool verbose = false,
                                     StateMap** ptrForF2NewToF2Map = nullptr);
 
-        static LivenessAnalysis::LiveValues getLiveValsAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);
+        static std::vector<llvm::Value*>* getLiveValsVecAtInstr(
+                                            const llvm::Instruction* I,
+                                            LivenessAnalysis &LA);
 
     private:
         static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F,
@@ -114,6 +114,7 @@ class OSRLibrary {
             llvm::BasicBlock* OSR_B, OSRCond& cond, const llvm::Twine& BBName, int branchTakenProb);
         static void printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
             LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch);
+        static LivenessAnalysis::LiveValues getLiveValsAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);
 };
 
 #endif

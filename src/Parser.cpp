@@ -268,16 +268,9 @@ void Parser::handleHelpCommand() {
 
 void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
         std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
-    OSRLibrary::OpenOSRInfo info;
-    info.f1 = src;
-    info.OSRSrc = src_bb;
+
     MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
     extra->TheHelper = TheHelper;
-    info.extra = extra;
-
-    //std::cerr << "Value for info.f1 is " << info.f1 << std::endl;
-    //std::cerr << "Value for info.b1 is " << info.b1 << std::endl;
-    //std::cerr << "Value for info.extra is " << info.extra << std::endl;
 
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
@@ -304,8 +297,8 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName,
             modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, info,
-        cond, nullptr, generator, valuesToTransfer, config);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
+        *src_bb, extra, cond, nullptr, generator, valuesToTransfer, config);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 

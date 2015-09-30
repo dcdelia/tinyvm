@@ -354,15 +354,15 @@ OSRLibrary::OSRPair OSRLibrary::insertFinalizedOSR(LLVMContext &Context, Functio
     return OSRPair(newSrcFun, OSRDestFun);
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::OpenOSRInfo& info,
-        OSRLibrary::OSRCond& cond, Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator,
-        std::vector<Value*> *valuesToTransfer, OSRLibrary::OSRPointConfig &config) {
+OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F, BasicBlock &OSRSrc,
+        void* extraInfo, OSRLibrary::OSRCond& cond, Value* profDataVal, OSRLibrary::DestFunGenerator
+        destFunGenerator, std::vector<Value*> *valuesToTransfer, OSRLibrary::OSRPointConfig &config) {
 
     PointerType* i8PointerTy = PointerType::get(IntegerType::get(Context, 8), 0);
 
     Function *stub;
-    Function *src = info.f1;
-    BasicBlock* srcBlock = info.OSRSrc;
+    Function *src = &F;
+    BasicBlock* srcBlock = &OSRSrc;
     Type* retTy = src->getReturnType();
     std::string newFunName = (config.updateF1) ?
                                 src->getName().str() :
@@ -439,9 +439,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, OSRLibrary::
 
     // generate inttoptr instructions for hard-wired parameters passed to the generator
     IntegerType* int64Ty = Type::getInt64Ty(Context);
-    Constant* f1PtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)info.f1), i8PointerTy);
-    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)info.OSRSrc), i8PointerTy);
-    Constant* extraPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)info.extra), i8PointerTy);
+    Constant* f1PtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)src), i8PointerTy);
+    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)srcBlock), i8PointerTy);
+    Constant* extraPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)extraInfo), i8PointerTy);
     Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)destFunGenerator),
                                 PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
 

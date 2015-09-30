@@ -56,18 +56,6 @@ class OSRLibrary {
             };
         } OSRPointConfig;
 
-        typedef struct OpenOSRInfo {
-            llvm::Function*       f1;
-            llvm::BasicBlock*     OSRSrc;
-            void*           extra;
-        } OpenOSRInfo;
-
-        // to simpify raw IR generation do the casts inside the destFunGenerator (written in C++)
-        typedef struct RawOpenOSRInfo {
-            void*   f1;
-            void*   b1;
-            void*   extra;
-        } RawOpenOSRInfo;
 
         typedef void* (*DestFunGenerator)(llvm::Function* F1, llvm::BasicBlock* B1, void* extra, void* profDataAddr);
 
@@ -83,7 +71,9 @@ class OSRLibrary {
 
         static OSRPair insertOpenOSR(
                                 llvm::LLVMContext &Context,
-                                OpenOSRInfo& info,
+                                llvm::Function &F,
+                                llvm::BasicBlock &OSRSrc,
+                                void* extraInfo,
                                 OSRCond& cond,
                                 llvm::Value* profDataVal,
                                 DestFunGenerator destFunGenerator,

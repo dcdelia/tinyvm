@@ -63,9 +63,9 @@ class OSRLibrary {
         static OSRPair insertResolvedOSR(
                                     llvm::LLVMContext &Context,
                                     llvm::Function& F1,
-                                    llvm::BasicBlock& OSRSrc,
+                                    llvm::Instruction& OSRSrc,
                                     llvm::Function& F2,
-                                    llvm::BasicBlock& LPad,
+                                    llvm::Instruction& LPad,
                                     OSRCond& cond,
                                     StateMap& M,
                                     OSRPointConfig &config);
@@ -73,7 +73,7 @@ class OSRLibrary {
         static OSRPair insertOpenOSR(
                                 llvm::LLVMContext &Context,
                                 llvm::Function &F,
-                                llvm::BasicBlock &OSRSrc,
+                                llvm::Instruction &OSRSrc,
                                 void* extraInfo,
                                 OSRCond& cond,
                                 llvm::Value* profDataVal,

@@ -196,12 +196,14 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function &F1, BasicBlock &OSRSrc, Function &F2,
-                        BasicBlock &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
+OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function &F1, Instruction &OSRSrc, Function &F2,
+                        Instruction &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
     std::vector<Value*> valuesToPass;
+    BasicBlock* OSRSrcBlock = OSRSrc.getParent();
+    BasicBlock* LPadBlock = LPad.getParent();
 
-    Instruction* OSRSrcInstr = OSRSrc.getFirstNonPHI();
+    Instruction* OSRSrcInstr = OSRSrcBlock->getFirstNonPHI();
     LivenessAnalysis &LA = M.getLivenessResults().first;
     LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(OSRSrcInstr, LA);
 
@@ -211,13 +213,13 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     }
 
     if (config.verbose) {
-        printLiveVarInfoForDebug(LA.getLiveInValues(&OSRSrc), LA.getLiveOutValues(&OSRSrc), valuesToPass);
+        printLiveVarInfoForDebug(LA.getLiveInValues(OSRSrcBlock), LA.getLiveOutValues(OSRSrcBlock), valuesToPass);
     }
 
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, OSRSrc, LPad, valuesToPass,
+    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, *OSRSrcBlock, *LPadBlock, valuesToPass,
                                 M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
 
     #ifdef PROFILE_TIME
@@ -281,11 +283,11 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
 
         ptrToOSRCond = &newCond;
-        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[&OSRSrc]);
+        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[OSRSrcBlock]);
     } else {
         newSrcFun = src;
         ptrToOSRCond = &cond;
-        ptrToSrcBlock = &OSRSrc;
+        ptrToSrcBlock = OSRSrcBlock;
     }
 
     BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, valuesToPass); // (3)
@@ -367,7 +369,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
-        BasicBlock &OSRSrc, void* extraInfo, OSRLibrary::OSRCond& cond,
+        Instruction &OSRSrc, void* extraInfo, OSRLibrary::OSRCond& cond,
         Value* profDataVal, OSRLibrary::DestFunGenerator destFunGenerator,
         std::vector<Value*> *valuesToTransfer, LivenessAnalysis *LA,
         OSRLibrary::OSRPointConfig &config) {
@@ -376,7 +378,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
     Function *stub;
     Function *src = &F;
-    BasicBlock* srcBlock = &OSRSrc;
+    BasicBlock* srcBlock = OSRSrc.getParent();
     Type* retTy = src->getReturnType();
     std::string newFunName = (config.updateF1) ?
                                 src->getName().str() :

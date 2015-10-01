@@ -40,10 +40,10 @@ private:
     void handleOptCommand(bool CFGSimplificationOnly);
     void handleVerboseCommand();
 
-    void openOSRHelper(llvm::Function* src, llvm::BasicBlock* src_bb, bool update,
+    void openOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,
             std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
-    void resolvedOSRHelper(llvm::Function* src, llvm::BasicBlock* src_bb, bool update,
-            std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
+    void resolvedOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,
+            std::string* F1NewName, const std::string* F2Name, const std::string* LPadName,
             std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb);
 
     typedef std::vector<const llvm::Value*> IDToValueVec;
@@ -51,8 +51,11 @@ private:
     static IDToValueVec computeLineIDs(llvm::Function* F);
     static void dumpFunctionWithLineIDs(llvm::Function* F);
 
-    // works only on Instruction and BasicBlock
-    static const llvm::Value* getValueFromString(llvm::Function &F, std::string &str,
+    static const llvm::Instruction* getOSRLocationFromStrIDs(llvm::Function &F,
+        const std::string &LocID);
+
+    // works for Argument, BasicBlock and Instruction
+    static const llvm::Value* getValueFromStrID(llvm::Function &F, std::string &str,
         IDToValueVec &slotIDs, IDToValueVec &lineIDs);
 
 };

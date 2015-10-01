@@ -270,7 +270,7 @@ void Parser::handleHelpCommand() {
               << std::endl;
 }
 
-void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
+void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
 
     MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
@@ -286,7 +286,7 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     LivenessAnalysis LA(src);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
-        *src_bb, extra, cond, nullptr, generator, nullptr, &LA, config);
+        *OSRSrc, extra, cond, nullptr, generator, nullptr, &LA, config);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
@@ -303,46 +303,20 @@ void Parser::openOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     TheHelper->trackAsmCodeUtil(modToUse);
 }
 
-void Parser::resolvedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
-            std::string* F1NewName, const std::string* F2Name, const std::string* B2Name,
+void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
+            std::string* F1NewName, const std::string* F2Name, const std::string* LPadName,
             std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
-
-    Function* dest;
-    BasicBlock* dest_bb = nullptr;
-
-    dest = TheHelper->getFunction(*F2Name);
-    if (dest == nullptr) {
-        std::cerr << "Unable to find function named " << *F2Name << "!" << std::endl;
-        return;
-    } else {
-        IDToValueVec slotIDs = computeSlotIDs(dest);
-        IDToValueVec lineIDs = computeLineIDs(dest);
-
-        const Value* v = getValueFromString(*dest, *(const_cast<std::string*>(B2Name)), slotIDs, lineIDs);
-        if (v == nullptr) {
-            std::cerr << "Unable to find location " << *B2Name << " in function "
-                    << *F2Name << ". Did you forget to put the \'%\' (or \'$\') prefix?" << std::endl;
-            return;
-        }
-        dest_bb = dyn_cast<BasicBlock>(const_cast<Value*>(v));
-        if (!dest_bb) {
-            std::cerr << "Sorry, for the time being only basic block locations are supported!" << std::endl;
-            return;
-        }
-
-        // TODO dyn_cast<PHINode>
-    }
-
-    if (src != dest) {
-        std::cerr << "Sorry, I don't support OSR transitions for F2 != F1 yet!" << std::endl;
-        return;
-    }
 
     std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
     StateMap* M = tmpMapPair.second;
-    dest = tmpMapPair.first;
-    dest_bb = M->getCorrespondingBlock(src_bb);
-    assert(dest_bb != nullptr);
+    Function *dest = tmpMapPair.first;
+    Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, *LPadName));
+    if (LPad == nullptr) return;
+
+    if (LPad->getParent() != M->getCorrespondingBlock(OSRSrc->getParent())) { // TODO
+        std::cerr << "I don't know how to perform an OSR transition from P1 to P2, sorry!" << std::endl;
+        return;
+    }
 
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
@@ -351,8 +325,8 @@ void Parser::resolvedOSRHelper(Function* src, BasicBlock* src_bb, bool update,
     OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName, modToUse,
             &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
 
-    OSRLibrary::OSRPair pair = OSRLibrary::insertResolvedOSR(TheHelper->Context, *src, *src_bb,
-            *dest, *dest_bb, cond, *M, config);
+    OSRLibrary::OSRPair pair = OSRLibrary::insertResolvedOSR(TheHelper->Context, *src, *OSRSrc,
+            *dest, *LPad, cond, *M, config);
 
     std::cerr << "insertResolvedOSR succeded!" << std::endl;
 
@@ -422,34 +396,16 @@ void Parser::handleInsertOSRCommand() {
     if (strcasecmp(token, "AT")) INVALID();
 
     getToken();
-    const std::string B1Name(token);
+    const std::string P1Name(token);
 
-    // look for F1 and B1
-    Function *src;
-    BasicBlock *src_bb = nullptr;
-
-    src = TheHelper->getFunction(F1Name);
+    // look for F1 and P1
+    Function* src = TheHelper->getFunction(F1Name);
     if (src == nullptr) {
-        std::cerr << "Unable to find function named " << F1Name << "!" << std::endl;
+        std::cerr << "Unable to find function " << F1Name << "!" << std::endl;
         return;
-    } else {
-        IDToValueVec slotIDs = computeSlotIDs(src);
-        IDToValueVec lineIDs = computeLineIDs(src);
-
-        const Value* v = getValueFromString(*src, const_cast<std::string&>(B1Name), slotIDs, lineIDs);
-        if (v == nullptr) {
-            std::cerr << "Unable to find location " << B1Name << " in function "
-                    << F1Name << ". Did you forget to put the \'%\' (or \'$\') prefix?" << std::endl;
-            return;
-        }
-        src_bb = dyn_cast<BasicBlock>(const_cast<Value*>(v));
-        if (!src_bb) {
-            std::cerr << "Sorry, for the time being only basic block locations are supported!" << std::endl;
-            return;
-        }
-
-        // TODO dyn_cast<PHINode>
     }
+    Instruction* OSRSrc = const_cast<Instruction*>(getOSRLocationFromStrIDs(*src, P1Name));
+    if (OSRSrc == nullptr) return;
 
     std::string F1NewName;
     if (!update) {
@@ -463,7 +419,7 @@ void Parser::handleInsertOSRCommand() {
     std::string* tmpForF1NewName = (update) ? nullptr : &F1NewName;
 
     if (open) {
-        openOSRHelper(src, src_bb, update, tmpForF1NewName, cond, branchTakenProb);
+        openOSRHelper(src, OSRSrc, update, tmpForF1NewName, cond, branchTakenProb);
         delete cmdLine;
         return;
     }
@@ -474,11 +430,16 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     const std::string F2Name(token);
 
+    if (F1Name != F2Name) {
+        std::cerr << "Sorry, I don't support OSR transitions for F2 != F1 yet!" << std::endl;
+        return;
+    }
+
     getToken();
     if (strcasecmp(token, "AT")) INVALID();
 
     getToken();
-    const std::string B2Name(token);
+    const std::string P2Name(token);
 
     getToken();
     if (strcasecmp(token, "AS")) INVALID();
@@ -486,8 +447,8 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     const std::string F2NewName(token);
 
-    resolvedOSRHelper(src, src_bb, update, tmpForF1NewName, &F2Name,
-            &B2Name, const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
+    resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &F2Name,
+            &P2Name, const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
     delete cmdLine;
     #undef getToken
@@ -649,7 +610,7 @@ void Parser::dumpFunctionWithLineIDs(llvm::Function* F) {
     std::map<const BasicBlock*, int> blockToSlotIDMap;
     for (int index = 0, slots = slotIDs.size(); index < slots; ++index) {
         if (const BasicBlock* B = dyn_cast<BasicBlock>(slotIDs[index])) {
-            blockToSlotIDMap.insert(std::make_pair(B, index));
+            blockToSlotIDMap.insert(std::pair<const BasicBlock*, int>(B, index));
         }
     }
 
@@ -700,7 +661,7 @@ void Parser::dumpFunctionWithLineIDs(llvm::Function* F) {
     std::cerr << "}" << std::endl;
 }
 
-const llvm::Value* Parser::getValueFromString(llvm::Function &F, std::string &str,
+const llvm::Value* Parser::getValueFromStrID(llvm::Function &F, std::string &str,
         Parser::IDToValueVec &slotIDs, Parser::IDToValueVec &lineIDs) {
     int length = str.length();
     if (length < 2) return nullptr;
@@ -734,6 +695,11 @@ const llvm::Value* Parser::getValueFromString(llvm::Function &F, std::string &st
     std::string name = str.substr(1, length - 1);
     llvm::StringRef nameRef(name);
 
+    for (Function::const_arg_iterator arg = F.arg_begin(), endArg = F.arg_end();
+            arg != endArg; ++arg) {
+        if (arg->hasName() && arg->getName().equals(nameRef)) return arg;
+    }
+
     for (Function::const_iterator B = F.begin(), endB = F.end(); B != endB; ++B) {
         if (B->hasName() && B->getName().equals(nameRef)) return B;
 
@@ -742,6 +708,39 @@ const llvm::Value* Parser::getValueFromString(llvm::Function &F, std::string &st
         }
     }
 
+    return nullptr;
+}
+
+const Instruction* Parser::getOSRLocationFromStrIDs(Function &F, const std::string &LocID) {
+    IDToValueVec slotIDs = computeSlotIDs(&F);
+    IDToValueVec lineIDs = computeLineIDs(&F);
+
+    const Value* v = getValueFromStrID(F, const_cast<std::string&>(LocID), slotIDs, lineIDs);
+    if (v == nullptr) {
+        std::cerr << "Unable to find location " << LocID << " in function " << F.getName().str()
+                  << ". Did you forget to put the \'%\' (or \'$\') prefix?" << std::endl;
+        return nullptr;
+    }
+
+    if (const BasicBlock* B = dyn_cast<BasicBlock>(v)) {
+        return B->getFirstNonPHI();
+    }
+
+    if (const Instruction* I = dyn_cast<Instruction>(v)) {
+        if (isa<PHINode>(I)) {
+            std::cerr << "ERROR: PHI instructions can't be used as OSR locations!" << std::endl;
+            return nullptr;
+        }
+
+        if (I != I->getParent()->getFirstNonPHI()) {
+            std::cerr << "Sorry, for the time being only firstNonPHI instructions are supported." << std::endl;
+            return nullptr;
+        }
+
+        return I;
+    }
+
+    std::cerr << "ERROR: only instructions and basic blocks are valid OSR locations!" << std::endl;
     return nullptr;
 }
 

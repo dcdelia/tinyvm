@@ -158,7 +158,7 @@ LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(const BasicBloc
 
 void LivenessAnalysis::updateLiveValues(const llvm::BasicBlock* B,
         LivenessAnalysis::LiveValues &&liveIn, LivenessAnalysis::LiveValues &&liveOut) {
-    blockMap[B] = std::make_pair(std::move(liveIn), std::move(liveOut));
+    blockMap[B] = std::pair<LiveValues, LiveValues>(std::move(liveIn), std::move(liveOut));
 }
 
 std::ostream &operator<<(std::ostream &sin, const LivenessAnalysis::LiveValues &values) {

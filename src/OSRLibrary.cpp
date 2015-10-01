@@ -254,10 +254,10 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     Function*   src = &F1;
     Module*     parentForSrc = src->getParent();
 
-    Function*   newSrcFun;
+    Function*       newSrcFun;
+    Instruction*    newOSRSrc;
 
     OSRCond*    ptrToOSRCond;
-    BasicBlock* ptrToSrcBlock;
 
     // TODO rewrite this part
     OSRCond newCond;
@@ -283,19 +283,18 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap); // (2)
 
         ptrToOSRCond = &newCond;
-        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[OSRSrcBlock]);
+        newOSRSrc = cast<Instruction>(srcToNewSrcVMap[&OSRSrc]);
     } else {
         newSrcFun = src;
         ptrToOSRCond = &cond;
-        ptrToSrcBlock = OSRSrcBlock;
+        newOSRSrc = &OSRSrc;
     }
 
     BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, valuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
-    insertOSRCond(Context, newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
-            Twine("splitBlockForOSRTo", OSRDestFunProt->getName()),
-            config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
+    insertOSRCond(Context, newSrcFun, newOSRSrc, OSR_B, *ptrToOSRCond,
+            Twine("OSR_split"), config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
 
     #ifdef PROFILE_TIME
     timer_end(&my_timer);
@@ -517,8 +516,8 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     ValueToValueMapTy srcToNewSrcVMap; // used only when updateF1 = false
 
     Function* newSrcFun;
+    Instruction* newOSRSrc;
     OSRCond* ptrToOSRCond;
-    BasicBlock* ptrToSrcBlock;
 
     // TODO rewrite this part
     OSRCond newCond;
@@ -535,11 +534,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
 
         ptrToOSRCond = &newCond;
-        ptrToSrcBlock = cast<BasicBlock>(srcToNewSrcVMap[srcBlock]);
+        newOSRSrc = cast<Instruction>(srcToNewSrcVMap[&OSRSrc]);
     } else {
         newSrcFun = src;
         ptrToOSRCond = &cond;
-        ptrToSrcBlock = srcBlock;
+        newOSRSrc = &OSRSrc;
     }
 
     // step (2)
@@ -567,9 +566,8 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     OSR_B->insertInto(newSrcFun);
 
     // step (4)
-    insertOSRCond(Context, newSrcFun, ptrToSrcBlock, OSR_B, *ptrToOSRCond,
-            Twine("splitBlockForOSRTo", stub->getName()),
-            config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
+    insertOSRCond(Context, newSrcFun, newOSRSrc, OSR_B, *ptrToOSRCond,
+            Twine("OSR_split"), config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
 
     #ifdef PROFILE_TIME
     timer_end(&my_timer);
@@ -872,18 +870,17 @@ OSRLibrary::OSRCond OSRLibrary::regenerateOSRCond(OSRLibrary::OSRCond &cond, Val
 
 BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Function* OSRDest,
         std::vector<Value*> &valuesToPass) {
-    StringRef OSRFunName = OSRDest->getName();
     Type* retTy = OSRDest->getReturnType();
 
     // generate basic block to trigger the OSR transition
-    BasicBlock* OSR_B = BasicBlock::Create(Context, Twine("OSRBlockTo", OSRFunName));
+    BasicBlock* OSR_B = BasicBlock::Create(Context, Twine("OSR_fire"));
 
     // generate call instruction for the resolved OSR transition
     CallInst* callInst;
     if (OSRDest->getReturnType()->isVoidTy()) {
         callInst = CallInst::Create(OSRDest, valuesToPass);
     } else {
-        callInst = CallInst::Create(OSRDest, valuesToPass, Twine("OSRCallTo", OSRFunName));
+        callInst = CallInst::Create(OSRDest, valuesToPass, Twine("OSRRet"));
     }
 
     OSR_B->getInstList().push_back(callInst);
@@ -900,15 +897,11 @@ BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Func
     return OSR_B;
 }
 
-BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBlock* B, BasicBlock* OSR_B,
-        OSRLibrary::OSRCond& cond, const Twine& BBName, int branchTakenProb) {
-    // split the block after the first non-PHI insruction
-    BasicBlock::iterator firstNonPHIInstr = B->getFirstNonPHI();
-    BasicBlock* NB = B->splitBasicBlock(firstNonPHIInstr, BBName);
-
-    /* Note from LLVM documentation: split() doesn't preserve any passes.
-     * To split blocks while keeping loop information consistent, use the
-     * SplitBlock utility function. */
+BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F,
+        Instruction* OSRSrc, BasicBlock* FireOSRBlock, OSRCond& cond,
+        const Twine& BBName, int branchTakenProb) {
+    BasicBlock* B = OSRSrc->getParent();
+    BasicBlock* contBlock = B->splitBasicBlock(OSRSrc, BBName);
 
     // remove the unconditional branch to NB inside B
     TerminatorInst* oldTerminator = B->getTerminator();
@@ -920,7 +913,7 @@ BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBl
     }
 
     // insert a conditional branch on the value computed by the last inserted instruction
-    BranchInst* br = BranchInst::Create(OSR_B, NB, cond.back());
+    BranchInst* br = BranchInst::Create(FireOSRBlock, contBlock, cond.back());
 
     if (branchTakenProb != -1) {
         MDBuilder builder(Context);
@@ -930,7 +923,7 @@ BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F, BasicBl
 
     B->getInstList().push_back(br);
 
-    return NB;
+    return contBlock;
 }
 
 std::vector<llvm::Value*>* OSRLibrary::getLiveValsVecAtInstr(const Instruction* I, LivenessAnalysis &LA) {

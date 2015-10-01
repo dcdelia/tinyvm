@@ -111,8 +111,8 @@ class OSRLibrary {
         static OSRCond regenerateOSRCond(OSRCond &cond, llvm::ValueToValueMapTy &VMap);
         static llvm::BasicBlock* generateTriggerOSRBlock(llvm::LLVMContext &Context, llvm::Function* OSRDest,
                 std::vector<llvm::Value*> &valuesToPass);
-        static llvm::BasicBlock* insertOSRCond(llvm::LLVMContext &Context, llvm::Function* F, llvm::BasicBlock* B,
-            llvm::BasicBlock* OSR_B, OSRCond& cond, const llvm::Twine& BBName, int branchTakenProb);
+        static llvm::BasicBlock* insertOSRCond(llvm::LLVMContext &Context, llvm::Function* F, llvm::Instruction* OSRSrc,
+            llvm::BasicBlock* FireOSRBlock, OSRCond& cond, const llvm::Twine& BBName, int branchTakenProb);
         static void printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
             LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch);
         static LivenessAnalysis::LiveValues getLiveValsAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);

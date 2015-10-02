@@ -137,13 +137,17 @@ public:
     void    registerLandingPad(llvm::Instruction* OSRSrc, llvm::Instruction* LPad, bool bidirectional = false);
 
     // TODO: methods for registering ValueInfo and BlockPairInfo
-    BlockPairInfo& getOrCreateMapBlockPairInfo(BlockPair &pair);
+    //BlockPairInfo& getOrCreateMapBlockPairInfo(BlockPair &pair);
+    BlockPairInfo& getOrCreateMapBlockPairInfo(LocPair &pair); // TODO separate methods??
 
     // methods for querying
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
-    llvm::BasicBlock* getCorrespondingBlock(llvm::BasicBlock *B);
-    ValueInfo*  getValueInfo(llvm::Value* v, BlockPair &pair);
+
+    //ValueInfo*  getValueInfo(llvm::Value* v, BlockPair &pair);
+    ValueInfo*  getValueInfo(llvm::Value* v, LocPair &pair);
+
     llvm::Instruction* getLandingPad(llvm::Instruction* OSRSrc);
+    //llvm::BasicBlock* getCorrespondingBlock(llvm::BasicBlock *B);
 
     // this method is static so that insertOpenOSR can access it
     static std::vector<llvm::Value*>* getValuesToSetForBlock(llvm::BasicBlock &B, LivenessAnalysis );
@@ -158,6 +162,7 @@ private:
     BlockMap            correspondingBlockMap;
     LocMap              landingPadMap;
     BlockPairStateMap   blockPairStateMap;
+    LocPairInfoMap      locPairInfoMap;
     LivenessAnalysis    F1_LA, F2_LA;
     ValuesToSetCache    cacheForValuesToSetAtLPad;
     std::map<llvm::BasicBlock*, std::vector<llvm::Value*>> cacheForValuesToSetForBlocks;

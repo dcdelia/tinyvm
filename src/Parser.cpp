@@ -313,7 +313,7 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, *LPadName));
     if (LPad == nullptr) return;
 
-    if (LPad->getParent() != M->getCorrespondingBlock(OSRSrc->getParent())) { // TODO
+    if (LPad != M->getLandingPad(OSRSrc)) { // TODO
         std::cerr << "I don't know how to perform an OSR transition from P1 to P2, sorry!" << std::endl;
         return;
     }

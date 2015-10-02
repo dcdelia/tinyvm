@@ -219,14 +219,6 @@ Value* StateMap::getCorrespondingOneToOneValue(Value *v) {
     return nullptr;
 }
 
-BasicBlock* StateMap::getCorrespondingBlock(BasicBlock *B) {
-    BlockMap::iterator blockIt = correspondingBlockMap.find(B);
-    if (blockIt != correspondingBlockMap.end()) {
-        return blockIt->second;
-    }
-    return nullptr;
-}
-
 Instruction* StateMap::getLandingPad(llvm::Instruction* OSRSrc) {
     LocMap::iterator it = landingPadMap.find(OSRSrc);
     if (it != landingPadMap.end()) {
@@ -235,10 +227,10 @@ Instruction* StateMap::getLandingPad(llvm::Instruction* OSRSrc) {
     return nullptr;
 }
 
-StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::BlockPair &pair) {
-    BlockPairStateMap::iterator BPSMIt = blockPairStateMap.find(pair);
-    if (BPSMIt != blockPairStateMap.end()) {
-        BlockPairInfo& bpInfo = BPSMIt->second;
+StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::LocPair &pair) {
+    LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
+    if (LPIMIt != locPairInfoMap.end()) {
+        BlockPairInfo& bpInfo = LPIMIt->second;
         ValueInfoMap::iterator VIMIt = bpInfo.valueInfoMap.find(v);
         if (VIMIt != bpInfo.valueInfoMap.end()) {
             return VIMIt->second;
@@ -246,6 +238,7 @@ StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::BlockPair &pair)
     }
     return nullptr;
 }
+
 
 void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirectional) {
     (*defaultOneToOneMap)[dest_v] = src_v;
@@ -268,12 +261,14 @@ void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool b
     }
 }
 
-StateMap::BlockPairInfo& StateMap::getOrCreateMapBlockPairInfo(StateMap::BlockPair &pair) {
-    if (blockPairStateMap.count(pair) == 0) {
-        blockPairStateMap.insert(std::pair<BlockPair, BlockPairInfo>(pair, BlockPairInfo()));
-    }
+StateMap::BlockPairInfo& StateMap::getOrCreateMapBlockPairInfo(StateMap::LocPair &pair) {
+    LocPairInfoMap::iterator it = locPairInfoMap.find(pair);
+    if (it != locPairInfoMap.end()) return it->second;
 
-    return blockPairStateMap[pair];
+    std::pair<LocPairInfoMap::iterator, bool> ret = locPairInfoMap.
+        insert(std::pair<LocPair, BlockPairInfo>(pair, BlockPairInfo()));
+
+    return ret.first->second;
 }
 
 /*

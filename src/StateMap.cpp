@@ -109,6 +109,18 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
 
 }
 
+std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntryPoint(
+        LLVMContext &Context, Instruction* OSRSrc, Instruction* LPad,
+        Instruction* OSRContLPad, std::vector<Value*>& valuesToSetAtOSRCont,
+        ValueToValueMapTy& fetchedValuesToOSRContArgs) {
+    BlockPair pair(OSRSrc->getParent(), LPad->getParent());
+    BasicBlock* OSRContDestBB = OSRContLPad->getParent();
+
+    return genContinuationFunctionEntryPoint(pair, OSRContDestBB, valuesToSetAtOSRCont,
+            fetchedValuesToOSRContArgs, Context);
+}
+
+
 std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntryPoint(StateMap::BlockPair &pair, BasicBlock* newDestBB,
         std::vector<Value*>& valuesToSetAtDest, ValueToValueMapTy& fetchedValuesToNewDestArgs, LLVMContext &Context) {
 

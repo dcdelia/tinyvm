@@ -117,6 +117,14 @@ public:
     std::vector<llvm::Value*>& getValuesToSetAtLPad(llvm::Instruction* LPad); // cached
 
     std::pair<llvm::BasicBlock*, llvm::ValueToValueMapTy*> genContinuationFunctionEntryPoint(
+                                                                llvm::LLVMContext &Context,
+                                                                llvm::Instruction* OSRSrc,
+                                                                llvm::Instruction* LPad,
+                                                                llvm::Instruction* OSRContLPad,
+                                                                std::vector<llvm::Value*>& valuesToSetAtOSRCont,
+                                                                llvm::ValueToValueMapTy& fetchedValuesToOSRContArgs);
+
+    std::pair<llvm::BasicBlock*, llvm::ValueToValueMapTy*> genContinuationFunctionEntryPoint(
                                                                         BlockPair &pair,
                                                                         llvm::BasicBlock* newDestBB,
                                                                         std::vector<llvm::Value*>& valuesToSetAtDest,

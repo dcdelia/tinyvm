@@ -66,10 +66,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     timer_start(&my_timer);
     #endif
 
-    BasicBlock* OSRSrcBlock = OSRSrc.getParent();
     BasicBlock* LPadBlock = LPad.getParent();
-
-    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(OSRSrcBlock, LPadBlock);
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -82,10 +79,9 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
      * (8)  Insert new entrypoint
      * (9)  Replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
      */
-    ValueToValueMapTy fetchedValuesToOSRDestArgs;
-    ValueToValueMapTy destToOSRDestVMap;
-    Function* OSRDestFun;
-    Function* dest = &F2;
+    ValueToValueMapTy fetchedValuesToOSRContArgs;
+    ValueToValueMapTy F2ToOSRContVMap;
+    Function* OSRContFun;
 
     std::vector<Value*> &valuesToSetAtLPad = M.getValuesToSetAtLPad(&LPad);
 
@@ -94,46 +90,45 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     for (Value* v: valuesToPass) {
         ArgTypes.push_back(v->getType());
     }
-    FunctionType *OSRDestFTy = FunctionType::get(dest->getReturnType(), ArgTypes, false);
+    FunctionType *OSRContFTy = FunctionType::get(F2.getReturnType(), ArgTypes, false);
 
     // step (2): generate OSRDest function and set argument names
     if (F2NewName == nullptr) {
-        OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), Twine("OSRDest", dest->getName()));
+        OSRContFun = Function::Create(OSRContFTy, F2.getLinkage(), Twine("OSRCont_", F2.getName()));
     } else {
-        OSRDestFun = Function::Create(OSRDestFTy, dest->getLinkage(), Twine(*F2NewName));
+        OSRContFun = Function::Create(OSRContFTy, F2.getLinkage(), Twine(*F2NewName));
     }
-    Function::arg_iterator OSRDestArgIt = OSRDestFun->arg_begin();
+    Function::arg_iterator OSRDestArgIt = OSRContFun->arg_begin();
     for (Value* src_v: valuesToPass) {
-        fetchedValuesToOSRDestArgs[src_v] = OSRDestArgIt;
+        fetchedValuesToOSRContArgs[src_v] = OSRDestArgIt;
         if (src_v->hasName()) {
             (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr"));
         } else {
             (OSRDestArgIt++)->setName(Twine("temp"));
         }
     }
-    assert(OSRDestArgIt == OSRDestFun->arg_end());
+    assert(OSRDestArgIt == OSRContFun->arg_end());
 
     // step (3): duplicate the body of F2 inside OSRDest
-    duplicateBodyIntoNewFunction(dest, OSRDestFun, destToOSRDestVMap);
+    duplicateBodyIntoNewFunction(&F2, OSRContFun, F2ToOSRContVMap);
 
     // step (4): apply attributes to fetched Argument values
-    applyAttributesToArguments(OSRDestFun, dest, valuesToPass);
+    applyAttributesToArguments(OSRContFun, &F2, valuesToPass);
 
     // step (5): ask the StateMap to generate the new entrypoint and retrieve
     //           mapping for [reconstructed] live values
-    BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();
-    BasicBlock* newDestBlock = cast<BasicBlock>(destToOSRDestVMap[LPadBlock]);
+    BasicBlock* oldEntryPoint = &OSRContFun->getEntryBlock();
 
-    //std::vector<Value*>& valuesToSetAtDest = M.getValuesToSetForDestFunction(srcDestBlocks);
-    std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.genContinuationFunctionEntryPoint(srcDestBlocks,
-            newDestBlock, valuesToSetAtLPad, fetchedValuesToOSRDestArgs, Context);
+    Instruction* OSRContLPad = cast<Instruction>(F2ToOSRContVMap[&LPad]);
+    std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.genContinuationFunctionEntryPoint(
+            Context, &OSRSrc, &LPad, OSRContLPad, valuesToSetAtLPad, fetchedValuesToOSRContArgs);
 
     BasicBlock* newEntryPoint = entryPointPair.first;
     ValueToValueMapTy *updatesForDestToOSRDestVMap = entryPointPair.second;
 
     // step (6): replace dead arguments with a default null value and match live arguments
     size_t dead_args = 0, live_args = 0;
-    for (const Argument &destArg: dest->args()) {
+    for (const Argument &destArg: F2.args()) {
         ValueToValueMapTy::iterator it = updatesForDestToOSRDestVMap->find(&destArg);
         if (it == updatesForDestToOSRDestVMap->end()) { // argument is dead
             Value* v = UndefValue::get(destArg.getType());
@@ -146,29 +141,29 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
                         << "reference to it with undef" << std::endl;
                 }
             }
-            destToOSRDestVMap.insert(std::pair<const Argument*, Value*>(&destArg, v));
+            F2ToOSRContVMap.insert(std::pair<const Argument*, Value*>(&destArg, v));
             dead_args++;
         } else { // argument is live
-            destToOSRDestVMap.insert(std::pair<const Argument*, Value*>(&destArg, it->second));
+            F2ToOSRContVMap.insert(std::pair<const Argument*, Value*>(&destArg, it->second));
             // updateOpMappingForClonedBody() will update each Use of this argument
             updatesForDestToOSRDestVMap->erase(it);
             live_args++;
         }
     }
-    assert(dead_args + live_args == dest->getArgumentList().size());
+    assert(dead_args + live_args == F2.getArgumentList().size());
 
     // step (7): fix operand references using destToOSRDestVMap
-    fixOperandReferencesFromVMap(OSRDestFun, dest, destToOSRDestVMap);
+    fixOperandReferencesFromVMap(OSRContFun, &F2, F2ToOSRContVMap);
 
     // step (8): insert new entrypoint
-    newEntryPoint->insertInto(OSRDestFun, oldEntryPoint);
-    assert(&OSRDestFun->getEntryBlock() == newEntryPoint);
+    newEntryPoint->insertInto(OSRContFun, oldEntryPoint);
+    assert(&OSRContFun->getEntryBlock() == newEntryPoint);
 
-    // compute (part of) unidirectional state mapping from OSRDestFun to dest
+    // compute (part of) unidirectional state mapping from OSRDestFun to F2
     if (ptrForF2NewToF2Map != nullptr) {
-        *ptrForF2NewToF2Map = new StateMap(OSRDestFun, dest);
-        for (ValueToValueMapTy::iterator it = destToOSRDestVMap.begin(),
-                end = destToOSRDestVMap.end(); it != end; ++it) {
+        *ptrForF2NewToF2Map = new StateMap(OSRContFun, &F2);
+        for (ValueToValueMapTy::iterator it = F2ToOSRContVMap.begin(),
+                end = F2ToOSRContVMap.end(); it != end; ++it) {
             Value* OSRDest_v = it->second;
             Value* dest_v = const_cast<Value*>(it->first);
             if (BasicBlock* OSRDest_Block = cast<BasicBlock>(OSRDest_v)) {
@@ -181,8 +176,8 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
-    replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, LPadBlock, valuesToSetAtLPad,
-            destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
+    replaceUsesWithNewValuesAndUpdatePHINodes(OSRContFun, LPadBlock, valuesToSetAtLPad,
+            F2ToOSRContVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
     if (verbose) {
         std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
     }
@@ -195,7 +190,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     fprintf(stderr, "Time spent in creating continuation function: %.9f seconds\n", elapsed);
     #endif
 
-    return OSRDestFun;
+    return OSRContFun;
 
 }
 

@@ -111,7 +111,7 @@ void Parser::handleBeginCommand() {
     fclose(out);
 
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(std::string(fileName));
-    TheHelper->addModule(std::move(M), false);
+    TheHelper->addModule(std::move(M));
     std::cerr << "[LOAD] The new module has been loaded." << std::endl;
 }
 
@@ -465,7 +465,7 @@ void Parser::handleLoadIRCommand() {
     }
     std::cerr << "[LOAD] Opening \"" << fileName << "\" as IR source file..." << std::endl;
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(*FileName);
-    TheHelper->addModule(std::move(M), false);
+    TheHelper->addModule(std::move(M));
     delete FileName;
 }
 

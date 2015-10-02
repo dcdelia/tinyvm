@@ -69,9 +69,7 @@ public:
     LLVMContext     &Context;
 
     // public methods
-    void addModule(std::unique_ptr<Module> M, bool OptimizeModule = false);
-    void createAndAddModuleForFunction(Function* F, bool OptimizeFunction = false,
-                    bool analyzeCallsToExternalFunctions = false, bool analyzeAccessesToGlobals = false);
+    void addModule(std::unique_ptr<Module> M);
     std::unique_ptr<Module> createModuleFromFile(const std::string &FileName);
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);

@@ -84,7 +84,8 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     BasicBlock* dest_block = &LPad;
     StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&OSRSrc, &LPad);
 
-    std::vector<Value*> &origValuesToSetAtDestBlock = M.getValuesToSetForDestFunction(srcDestBlocks);
+    Instruction* LPadInstr = LPad.getFirstNonPHI();
+    std::vector<Value*> &valuesToSetAtLPad = M.getValuesToSetAtLPad(LPadInstr);
 
     // step (1): generate prototype for OSRDest function
     std::vector<Type*> ArgTypes;
@@ -121,9 +122,9 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();
     BasicBlock* newDestBlock = cast<BasicBlock>(destToOSRDestVMap[dest_block]);
 
-    std::vector<Value*>& valuesToSetAtDest = M.getValuesToSetForDestFunction(srcDestBlocks);
+    //std::vector<Value*>& valuesToSetAtDest = M.getValuesToSetForDestFunction(srcDestBlocks);
     std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.createEntryPointForNewDestFunction(srcDestBlocks,
-            newDestBlock, valuesToSetAtDest, fetchedValuesToOSRDestArgs, Context);
+            newDestBlock, valuesToSetAtLPad, fetchedValuesToOSRDestArgs, Context);
 
     BasicBlock* newEntryPoint = entryPointPair.first;
     ValueToValueMapTy *updatesForDestToOSRDestVMap = entryPointPair.second;
@@ -178,7 +179,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
-    replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, origValuesToSetAtDestBlock,
+    replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, valuesToSetAtLPad,
             destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
     if (verbose) {
         std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
@@ -199,18 +200,12 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function &F1, Instruction &OSRSrc, Function &F2,
                         Instruction &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
-    std::vector<Value*> valuesToPass;
     BasicBlock* OSRSrcBlock = OSRSrc.getParent();
     BasicBlock* LPadBlock = LPad.getParent();
 
-    Instruction* OSRSrcInstr = OSRSrcBlock->getFirstNonPHI();
     LivenessAnalysis &LA = M.getLivenessResults().first;
-    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(OSRSrcInstr, LA);
-
-    //std::vector<Value*> valuesToPass = M.getValuesToFetchFromSrcFunction(srcDestBlocks);
-    for (const Value* v: liveInAtOSRSrc) {
-        valuesToPass.push_back(const_cast<Value*>(v));
-    }
+    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(&OSRSrc, LA);
+    std::vector<Value*> valuesToPass = M.getValuesToFetchAtOSRSrc(&OSRSrc, &LPad, &liveInAtOSRSrc);
 
     if (config.verbose) {
         printLiveVarInfoForDebug(LA.getLiveInValues(OSRSrcBlock), LA.getLiveOutValues(OSRSrcBlock), valuesToPass);

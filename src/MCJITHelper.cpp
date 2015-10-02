@@ -67,7 +67,6 @@ FunctionPassManager MCJITHelper::createFPM(Module* M, bool CFGSimplificationOnly
     // Simplify the control flow graph (e.g. delete unreachable blocks)
     FPM.add(createCFGSimplificationPass());
 
-
     FPM.doInitialization();
 
     return FPM;
@@ -84,21 +83,10 @@ void MCJITHelper::trackAsmCodeUtil(Module* M) {
     }
 }
 
-void MCJITHelper::addModule(std::unique_ptr<Module> M, bool OptimizeModule) {
+void MCJITHelper::addModule(std::unique_ptr<Module> M) {
     Module* M_ptr = M.get();
 
     M_ptr->setDataLayout(JIT->getDataLayout());
-
-    if (OptimizeModule) {
-        FunctionPassManager FPM = createFPM(M_ptr);
-
-        // apply to each function
-        Module::iterator it;
-        Module::iterator end = M->end();
-        for (it = M->begin(); it != end; ++it) {
-            FPM.run(*it);
-        }
-    }
 
     // for showing assembly code when generated
     trackAsmCodeUtil(M_ptr);
@@ -190,7 +178,7 @@ int (*MCJITHelper::createAnonymousFunctionForCall(const std::string &FunctionNam
 
     verifyFunction(*F);
 
-    addModule(std::move(M), false);
+    addModule(std::move(M));
 
     int (*fun)() = (int (*)())JIT->getFunctionAddress(AnonymousFunctionName); // TODO
 
@@ -440,7 +428,7 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, BasicBlock* B1, voi
     FPM.doInitialization();
     FPM.run(*OSRDestFun);
 
-    TheHelper->addModule(std::move(modForJIT), false);
+    TheHelper->addModule(std::move(modForJIT));
 
     return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
 }

@@ -28,7 +28,7 @@ std::pair<Function*, Function*> StateMap::getFunctions() {
 }
 
 std::pair<LivenessAnalysis&, LivenessAnalysis&> StateMap::getLivenessResults() {
-    return std::pair<LivenessAnalysis&, LivenessAnalysis&>(F1LivenessAnalysis, F2LivenessAnalysis);
+    return std::pair<LivenessAnalysis&, LivenessAnalysis&>(F1_LA, F2_LA);
 }
 
 std::pair<Function*, StateMap*> StateMap::generateIdentityMapping(Function *F) {
@@ -39,26 +39,29 @@ std::pair<Function*, StateMap*> StateMap::generateIdentityMapping(Function *F) {
     return std::pair<Function*, StateMap*>(copy, M);
 }
 
-std::vector<Value*>& StateMap::getValuesToSetForDestFunction(StateMap::BlockPair &pair) {
-    BasicBlock* destBB = pair.second;
+std::vector<Value*>& StateMap::getValuesToSetAtLPad(Instruction* LPad) {
+    ValuesToSetCache::iterator it = cacheForValuesToSetAtLPad.find(LPad);
+    if (it != cacheForValuesToSetAtLPad.end()) return it->second;
 
-    std::map<BasicBlock*, std::vector<Value*>>::iterator it = cacheForValuesToSetForBlocks.find(destBB);
-    if (it == cacheForValuesToSetForBlocks.end()) {
-        std::vector<Value*> *v;
-        if (destBB->getParent() == F1) {
-            v = OSRLibrary::getLiveValsVecAtInstr(destBB->getFirstNonPHI(), F1LivenessAnalysis);
-        } else {
-            v = OSRLibrary::getLiveValsVecAtInstr(destBB->getFirstNonPHI(), F2LivenessAnalysis);
-        }
-        cacheForValuesToSetForBlocks.insert(std::pair<BasicBlock*, std::vector<Value*>>(destBB, std::move(*v)));
-        return cacheForValuesToSetForBlocks[destBB]; // TODO can I do this better?
+    std::vector<Value*>* vec;
+    if (LPad->getParent()->getParent() == F1) {
+        vec = OSRLibrary::getLiveValsVecAtInstr(LPad, F1_LA);
     } else {
-        return it->second;
+        vec = OSRLibrary::getLiveValsVecAtInstr(LPad, F2_LA);
     }
+
+    std::pair<ValuesToSetCache::iterator, bool> ret = cacheForValuesToSetAtLPad.
+        insert(std::pair<Instruction*, std::vector<Value*>>(LPad, std::move(*vec)));
+
+    return ret.first->second;
 }
 
-std::vector<Value*> StateMap::getValuesToFetchFromSrcFunction(StateMap::BlockPair &pair) {
+std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
+        Instruction* LPad, LivenessAnalysis::LiveValues *liveAtOSRSrc) {
+    // TODO liveAtOSRSrc to be used for build_comp()
     std::vector<Value*> valuesToFetch;
+
+    BlockPair pair(OSRSrc->getParent(), LPad->getParent());
 
     BlockPairInfo* bpInfo = nullptr;
     BlockPairStateMap::iterator BPSMIt = blockPairStateMap.find(pair);
@@ -74,7 +77,7 @@ std::vector<Value*> StateMap::getValuesToFetchFromSrcFunction(StateMap::BlockPai
         }
     }
 
-    std::vector<Value*>& valuesToSetAtDest = getValuesToSetForDestFunction(pair);
+    std::vector<Value*>& valuesToSetAtDest = getValuesToSetAtLPad(LPad);
     for (Value* valueToSet: valuesToSetAtDest) {
         // check for defaultOneToOneMap first
         OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap->find(valueToSet);
@@ -102,13 +105,12 @@ std::vector<Value*> StateMap::getValuesToFetchFromSrcFunction(StateMap::BlockPai
         llvm::report_fatal_error("[getValuesToFetchFromSrcFunction] could not find mapping information for the Value above");
     }
 
-    /* The number of duplicates is very likely to be small! So I won't construct a std::set
-     * http://stackoverflow.com/questions/1041620/whats-the-most-efficient-way-to-erase-duplicates-and-sort-a-vector
-     */
+    // we expect a few duplicates at most, so a vector is fine
     std::sort(valuesToFetch.begin(), valuesToFetch.end());
     valuesToFetch.erase(std::unique(valuesToFetch.begin(), valuesToFetch.end()), valuesToFetch.end());
 
     return valuesToFetch;
+
 }
 
 std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::createEntryPointForNewDestFunction(StateMap::BlockPair &pair, BasicBlock* newDestBB,
@@ -205,18 +207,24 @@ Value* StateMap::getCorrespondingOneToOneValue(Value *v) {
     OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap->find(v);
     if (oneToOneIt != defaultOneToOneMap->end()) {
         return oneToOneIt->second;
-    } else {
-        return nullptr;
     }
+    return nullptr;
 }
 
 BasicBlock* StateMap::getCorrespondingBlock(BasicBlock *B) {
     BlockMap::iterator blockIt = correspondingBlockMap.find(B);
     if (blockIt != correspondingBlockMap.end()) {
         return blockIt->second;
-    } else {
-        return nullptr;
     }
+    return nullptr;
+}
+
+Instruction* StateMap::getLandingPad(llvm::Instruction* OSRSrc) {
+    LocMap::iterator it = landingPadMap.find(OSRSrc);
+    if (it != landingPadMap.end()) {
+        return it->second;
+    }
+    return nullptr;
 }
 
 StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::BlockPair &pair) {
@@ -242,6 +250,13 @@ void StateMap::registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b,
     correspondingBlockMap[src_b] = dest_b;
     if (bidirectional) {
         correspondingBlockMap[dest_b] = src_b;
+    }
+}
+
+void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool bidirectional) {
+    landingPadMap[OSRSrc] = LPad;
+    if (bidirectional) {
+        landingPadMap[LPad] = OSRSrc;
     }
 }
 

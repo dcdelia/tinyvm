@@ -83,7 +83,7 @@ public:
     CmpInst* generateAlwaysTrueCond();
     CmpInst* generateAlwaysFalseCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
-    static void* identityGeneratorForOpenOSR(Function* F1, BasicBlock* B1, void* extra, void* profDataAddr);
+    static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
     void registerFunction(Function* F);
     void trackAsmCodeUtil(Module* M);
     static std::string& LLVMTypeToString(Type* type);

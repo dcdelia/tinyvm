@@ -386,14 +386,14 @@ std::string& MCJITHelper::LLVMTypeToString(Type* type) {
     return type_rso.str();
 }
 
-void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, BasicBlock* B1, void* extra, void* profDataAddr) {
+void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr) {
     MCJITHelperOSRInfo* extraInfo = (MCJITHelperOSRInfo*)extra;
 
     // debug info
-    std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
-    std::cerr << "Value for f1 is " << F1 << std::endl;
-    std::cerr << "Value for b1 is " << B1 << std::endl;
+    std::cerr << "Value for F1 is " << F1 << std::endl;
+    std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
     std::cerr << "Value for extra is " << extraInfo << std::endl;
+    std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
 
     std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(F1);
 
@@ -402,14 +402,13 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, BasicBlock* B1, voi
 
     StateMap* M = identityPair.second;
     extraInfo->m = identityPair.second;
-    
+
     MCJITHelper *TheHelper = extraInfo->TheHelper;
 
-    Instruction* OSRSrc = B1->getFirstNonPHI();
     Instruction* LPad = M->getLandingPad(OSRSrc);
 
     LivenessAnalysis LA(F1);
-    std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(B1->getFirstNonPHI(), LA);
+    std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(OSRSrc, LA);
     std::string OSRDestFunName = (F2->getName().str()).append("DestOSR");
     Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
             *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName);

@@ -58,7 +58,11 @@ class OSRLibrary {
         } OSRPointConfig;
 
 
-        typedef void* (*DestFunGenerator)(llvm::Function* F1, llvm::BasicBlock* B1, void* extra, void* profDataAddr);
+        typedef void* (*DestFunGenerator)(
+                                    llvm::Function* F1,
+                                    llvm::Instruction* OSRSrc,
+                                    void* extra,
+                                    void* profDataAddr);
 
         static OSRPair insertResolvedOSR(
                                     llvm::LLVMContext &Context,
@@ -103,8 +107,8 @@ class OSRLibrary {
             std::vector<llvm::Value*> &valuesToPass, bool skipFirst = false);
         static void duplicateBodyIntoNewFunction(llvm::Function* F, llvm::Function *NF, llvm::ValueToValueMapTy& VMap);
         static void fixOperandReferencesFromVMap(llvm::Function* NF, llvm::Function* F, llvm::ValueToValueMapTy &VMap);
-        static void replaceUsesWithNewValuesAndUpdatePHINodes(llvm::Function* NF, llvm::BasicBlock* origDestBlock,
-            std::vector<llvm::Value*> &origValuesToSetForDestBlock, llvm::ValueToValueMapTy &VMap,
+        static void replaceUsesAndFixSSA(llvm::Function* OSRCont, llvm::Instruction* OSRContLPad,
+            std::vector<llvm::Value*> &valuesToSetAtOrigLPad, llvm::ValueToValueMapTy &VMap,
             llvm::ValueToValueMapTy &updatesForVMap, llvm::SmallVectorImpl<llvm::PHINode*> *insertedPHINodes,
             bool verbose, StateMap** ptrForF2NewToF2Map);
         static llvm::Function* duplicateFunction(llvm::Function* F, const llvm::Twine &Name, llvm::ValueToValueMapTy &VMap);

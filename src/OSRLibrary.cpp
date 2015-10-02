@@ -66,8 +66,6 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     timer_start(&my_timer);
     #endif
 
-    BasicBlock* LPadBlock = LPad.getParent();
-
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
      * (2)  Generate OSRDest function and set argument names
@@ -82,6 +80,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     ValueToValueMapTy fetchedValuesToOSRContArgs;
     ValueToValueMapTy F2ToOSRContVMap;
     Function* OSRContFun;
+    Instruction* OSRContLPad;
 
     std::vector<Value*> &valuesToSetAtLPad = M.getValuesToSetAtLPad(&LPad);
 
@@ -104,13 +103,14 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
         if (src_v->hasName()) {
             (OSRDestArgIt++)->setName(Twine(src_v->getName(), "_osr"));
         } else {
-            (OSRDestArgIt++)->setName(Twine("temp"));
+            (OSRDestArgIt++)->setName(Twine("anon_osr"));
         }
     }
     assert(OSRDestArgIt == OSRContFun->arg_end());
 
     // step (3): duplicate the body of F2 inside OSRDest
     duplicateBodyIntoNewFunction(&F2, OSRContFun, F2ToOSRContVMap);
+    OSRContLPad = cast<Instruction>(F2ToOSRContVMap[&LPad]);
 
     // step (4): apply attributes to fetched Argument values
     applyAttributesToArguments(OSRContFun, &F2, valuesToPass);
@@ -119,26 +119,24 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     //           mapping for [reconstructed] live values
     BasicBlock* oldEntryPoint = &OSRContFun->getEntryBlock();
 
-    Instruction* OSRContLPad = cast<Instruction>(F2ToOSRContVMap[&LPad]);
     std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.genContinuationFunctionEntryPoint(
             Context, &OSRSrc, &LPad, OSRContLPad, valuesToSetAtLPad, fetchedValuesToOSRContArgs);
 
     BasicBlock* newEntryPoint = entryPointPair.first;
-    ValueToValueMapTy *updatesForDestToOSRDestVMap = entryPointPair.second;
+    ValueToValueMapTy *changesForF2toOSRContVMap = entryPointPair.second;
 
-    // step (6): replace dead arguments with a default null value and match live arguments
+    // step (6): match live arguments and use undef for dead ones
     size_t dead_args = 0, live_args = 0;
     for (const Argument &destArg: F2.args()) {
-        ValueToValueMapTy::iterator it = updatesForDestToOSRDestVMap->find(&destArg);
-        if (it == updatesForDestToOSRDestVMap->end()) { // argument is dead
+        ValueToValueMapTy::iterator it = changesForF2toOSRContVMap->find(&destArg);
+        if (it == changesForF2toOSRContVMap->end()) { // argument is dead
             Value* v = UndefValue::get(destArg.getType());
             if (verbose) {
                 if (destArg.hasName()) {
-                    std::cerr << "Argument " << destArg.getName().str() <<
-                        " has become dead: I will replace any reference to it with undef" << std::endl;
+                    std::cerr << "Argument %" << destArg.getName().str() <<
+                        " is now dead" << std::endl;
                 } else {
-                    std::cerr << "Anonymous argument has become dead: I will replace any "
-                        << "reference to it with undef" << std::endl;
+                    std::cerr << "Anonymous argument is now dead" << std::endl;
                 }
             }
             F2ToOSRContVMap.insert(std::pair<const Argument*, Value*>(&destArg, v));
@@ -146,7 +144,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
         } else { // argument is live
             F2ToOSRContVMap.insert(std::pair<const Argument*, Value*>(&destArg, it->second));
             // updateOpMappingForClonedBody() will update each Use of this argument
-            updatesForDestToOSRDestVMap->erase(it);
+            changesForF2toOSRContVMap->erase(it);
             live_args++;
         }
     }
@@ -176,13 +174,13 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
-    replaceUsesWithNewValuesAndUpdatePHINodes(OSRContFun, LPadBlock, valuesToSetAtLPad,
-            F2ToOSRContVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
+    replaceUsesAndFixSSA(OSRContFun, OSRContLPad, valuesToSetAtLPad,
+            F2ToOSRContVMap, *changesForF2toOSRContVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
     if (verbose) {
-        std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
+        std::cerr << "Inserted PHI nodes: " << insertedPHINodes.size() << std::endl;
     }
 
-    delete updatesForDestToOSRDestVMap;
+    delete changesForF2toOSRContVMap;
 
     #ifdef PROFILE_TIME
     timer_end(&my_timer);
@@ -392,7 +390,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     // step (1)
     std::vector<Value*>* valuesToPassTmp = valuesToTransfer;
     if (valuesToTransfer == nullptr) {
-        valuesToPassTmp = getLiveValsVecAtInstr(srcBlock->getFirstNonPHI(), *LA);
+        valuesToPassTmp = getLiveValsVecAtInstr(&OSRSrc, *LA);
         if (config.verbose) {
             printLiveVarInfoForDebug(LA->getLiveInValues(srcBlock), LA->getLiveOutValues(srcBlock), *valuesToPassTmp);
         }
@@ -450,7 +448,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     // generate inttoptr instructions for hard-wired parameters passed to the generator
     IntegerType* int64Ty = Type::getInt64Ty(Context);
     Constant* f1PtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)src), i8PointerTy);
-    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)srcBlock), i8PointerTy);
+    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)&OSRSrc), i8PointerTy);
     Constant* extraPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)extraInfo), i8PointerTy);
     Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)destFunGenerator),
                                 PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
@@ -703,91 +701,89 @@ void OSRLibrary::fixOperandReferencesFromVMap(Function* NF, Function* F, ValueTo
     }
 }
 
-void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBlock* origDestBlock,
-        std::vector<Value*> &origValuesToSetForDestBlock, ValueToValueMapTy &VMap,
+void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPad,
+        std::vector<Value*> &valuesToSetAtOrigLPad, ValueToValueMapTy &VMap,
         ValueToValueMapTy &updatesForVMap, SmallVectorImpl<PHINode*> *insertedPHINodes,
         bool verbose, StateMap** ptrForF2NewToF2Map) {
-    BasicBlock* entryPoint = &NF->getEntryBlock();
-    BasicBlock* OSRdestBlock = cast<BasicBlock>(VMap[origDestBlock]);
+    BasicBlock* entryPoint = &OSRCont->getEntryBlock();
+    BasicBlock* OSRContLPadBlock = OSRContLPad->getParent();
 
     /* For each value to set at the target basic block, we have three cases:
      * 1) value is an argument
      * 2) value is a PHI node defined in the target block
      * 3) value is defined elsewhere (univocally or through a PHI node)
      *
-     * The first case has already been handled in a previous step.
+     * Case 1 must be handled before calling this method. Cases 2 and 3 can be
+     * handled with SSAUpdater by taking into account the [additional] value
+     * coming from the OSR entrypoint when rewriting uses of a value to set.
      *
-     * The second case is handled by adding a PHI edge for the available
-     * value coming from the OSR entrypoint.
-     *
-     * The third case can be handled using SSAUpdater to account for the
-     * the new available value coming from the OSR entrypoint and to fix
-     * the CFG to keep the SSA form consistent. */
+     * OPT: when the landing pad is the first non-PHI instruction in its block,
+     * case 2 is handled by adding an incoming edge from the OSR entrypoint. */
     size_t updatedNodes = 0;
     size_t replacedUses = 0;
 
-    SSAUpdater updateSSA(insertedPHINodes);
+    std::vector<Value*> SSAUpdaterWorklist;
+    bool isLPadFirstNonPHI = (OSRContLPad == OSRContLPadBlock->getFirstNonPHI());
 
-    PHINode* lastInserted = nullptr;
+    if (isLPadFirstNonPHI) {
+        for (Value* origValue: valuesToSetAtOrigLPad) {
+            if (isa<Argument>(origValue)) continue;
 
-    std::vector<Value*> valuesForSSAUpdater;
+            Value* oldValue = VMap[origValue];
+            Instruction* oldInst = cast<Instruction>(oldValue);
 
-    // treat case 1 & 2 first
-    for (std::vector<Value*>::iterator it = origValuesToSetForDestBlock.begin(),
-            end = origValuesToSetForDestBlock.end(); it != end; ++it) {
-        Value* origValue = *it;
-        if (isa<Argument>(origValue)) continue; // it has already been handled
-
-        Value* oldValue = VMap[origValue];
-        Instruction* oldInst = cast<Instruction>(oldValue);
-        BasicBlock* oldBlock = oldInst->getParent();
-
-        if (oldBlock == OSRdestBlock) {
-            if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
-                if (verbose) {
-                    if (origValue->hasName()) {
-                        std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
-                    } else {
-                        std::cerr << "Processing anonymous value: " << std::endl;
+            if (oldInst->getParent() == OSRContLPadBlock) {
+                if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
+                    if (verbose) {
+                        if (node->hasName()) {
+                            std::cerr << "Processing PHI node %" << node->getName().str() << std::endl;
+                        } else {
+                            std::cerr << "Processing PHI node "; node->dump();
+                        }
                     }
-                    std::cerr << "--> value is a PHI node defined in the target block" << std::endl;
+
+                    Value* newValue = updatesForVMap[origValue];
+                    node->addIncoming(newValue, entryPoint);
+                    ++updatedNodes;
+
+                    if (ptrForF2NewToF2Map != nullptr) { // update state mapping
+                        (*ptrForF2NewToF2Map)->registerOneToOneValue(oldValue, origValue);
+                    }
+
+                    continue;
                 }
+            }
 
-                Value* newValue = updatesForVMap[origValue];
-                BasicBlock* newBlock = entryPoint;
-
-                node->addIncoming(newValue, newBlock);
-
-                if (ptrForF2NewToF2Map != nullptr) { // update state mapping
-                    (*ptrForF2NewToF2Map)->registerOneToOneValue(oldValue, origValue);
-                }
-
-                ++updatedNodes;
-
-                continue;
+            SSAUpdaterWorklist.push_back(origValue);
+        }
+    } else {
+        for (Value* origValue: valuesToSetAtOrigLPad) {
+            if (!isa<Argument>(origValue)) {
+                SSAUpdaterWorklist.push_back(origValue);
             }
         }
-
-        valuesForSSAUpdater.push_back(origValue);
     }
 
-    if (!valuesForSSAUpdater.empty()) {
-        // split OSRdest block at first non-PHI instruction
-        BasicBlock::iterator firstNonPHIInstr = OSRdestBlock->getFirstNonPHI();
-        BasicBlock* splitBlock = OSRdestBlock->splitBasicBlock(firstNonPHIInstr, "tmpSSAUpdaterBlock");
+    if (!SSAUpdaterWorklist.empty()) {
+        // initialize SSAUpdater
+        SSAUpdater updateSSA(insertedPHINodes);
+        PHINode* lastInserted = nullptr;
 
-        for (Value* origValue: valuesForSSAUpdater) {
+        // split OSRContLPadBlock block at OSRContLPad
+        BasicBlock* splitBlock = OSRContLPadBlock->splitBasicBlock(OSRContLPad, "OSRCont_split");
+
+        for (Value* origValue: SSAUpdaterWorklist) {
             if (verbose) {
                 if (origValue->hasName()) {
-                    std::cerr << "Processing value: " << origValue->getName().str() << std::endl;
+                    std::cerr << "Processing value %" << origValue->getName().str() << std::endl;
                 } else {
-                    std::cerr << "Processing anonymous value: " << std::endl;
+                    std::cerr << "Processing value ";
+                    origValue->dump();
                 }
             }
 
             Value* oldValue = VMap[origValue];
             Instruction* oldInst = cast<Instruction>(oldValue);
-            BasicBlock* oldBlock = oldInst->getParent();
 
             Value* newValue = updatesForVMap[origValue];
 
@@ -796,20 +792,12 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             } else {
                 updateSSA.Initialize(oldValue->getType(), StringRef("anon_fixSSA"));
             }
-            updateSSA.AddAvailableValue(oldBlock, oldValue);
+
+            updateSSA.AddAvailableValue(oldInst->getParent(), oldValue);
             updateSSA.AddAvailableValue(entryPoint, newValue);
 
-            if (verbose) {
-                std::cerr << "----> uses being rewritten using SSAUpdater::RewriteUse()" << std::endl;
-            }
-
             for (Value::use_iterator UI = oldValue->use_begin(), UE = oldValue->use_end(); UI != UE; ) {
-                // Grab the use before incrementing the iterator.
-                Use &U = *UI;
-
-                // Increment the iterator before removing the use from the list.
-                ++UI;
-
+                Use &U = *(UI++);
                 updateSSA.RewriteUse(U);
             }
 
@@ -825,12 +813,15 @@ void OSRLibrary::replaceUsesWithNewValuesAndUpdatePHINodes(Function* NF, BasicBl
             }
         }
 
-        // merge newBlock and OSRdestBlock back together
-        splitBlock->replaceAllUsesWith(OSRdestBlock);
-        OSRdestBlock->getInstList().back().eraseFromParent();
-        OSRdestBlock->getInstList().splice(OSRdestBlock->end(), splitBlock->getInstList());
-        splitBlock->eraseFromParent();
+        // OPT: merge OSRContLPadBlock and splitBlock back together
+        if (isLPadFirstNonPHI) {
+            splitBlock->replaceAllUsesWith(OSRContLPadBlock);
+            OSRContLPadBlock->getInstList().back().eraseFromParent();
+            OSRContLPadBlock->getInstList().splice(OSRContLPadBlock->end(), splitBlock->getInstList());
+            splitBlock->eraseFromParent();
+        }
     }
+
     assert(replacedUses + updatedNodes == updatesForVMap.size());
 }
 

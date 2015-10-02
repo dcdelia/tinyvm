@@ -19,10 +19,6 @@
 
 using namespace llvm;
 
-std::vector<llvm::Value*>* StateMap::getExtraValuesToFetch(const Instruction* OSRSrc, const Instruction* LPad) {
-    return nullptr;
-}
-
 std::pair<Function*, Function*> StateMap::getFunctions() {
     return std::pair<Function*, Function*>(F1, F2);
 }
@@ -113,7 +109,7 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
 
 }
 
-std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::createEntryPointForNewDestFunction(StateMap::BlockPair &pair, BasicBlock* newDestBB,
+std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntryPoint(StateMap::BlockPair &pair, BasicBlock* newDestBB,
         std::vector<Value*>& valuesToSetAtDest, ValueToValueMapTy& fetchedValuesToNewDestArgs, LLVMContext &Context) {
 
     ValueToValueMapTy* updatedValuesToUse = new ValueToValueMapTy();
@@ -125,7 +121,7 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::createEntryPointForNewDestF
         bpInfo = &(BPSMIt->second);
 
         if (bpInfo->globalCompCode != nullptr) {
-            llvm::report_fatal_error("Sorry, global compensation code hasn't been implemented yet!"); // TODO
+            llvm::report_fatal_error("Sorry, global compensation code hasn't been fully implemented yet!"); // TODO
         }
     }
 

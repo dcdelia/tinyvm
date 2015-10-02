@@ -108,10 +108,6 @@ public:
     std::pair<llvm::Function*, llvm::Function*> getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> getLivenessResults();
 
-    // work in progress
-    std::vector<llvm::Value*>* getExtraValuesToFetch(const llvm::Instruction* OSRSrc,
-        const llvm::Instruction* LPad);
-
     // methods for generating OSR functions/stubs
     std::vector<llvm::Value*> getValuesToFetchAtOSRSrc(
                                 llvm::Instruction* OSRSrc,
@@ -120,7 +116,7 @@ public:
 
     std::vector<llvm::Value*>& getValuesToSetAtLPad(llvm::Instruction* LPad); // cached
 
-    std::pair<llvm::BasicBlock*, llvm::ValueToValueMapTy*> createEntryPointForNewDestFunction(
+    std::pair<llvm::BasicBlock*, llvm::ValueToValueMapTy*> genContinuationFunctionEntryPoint(
                                                                         BlockPair &pair,
                                                                         llvm::BasicBlock* newDestBB,
                                                                         std::vector<llvm::Value*>& valuesToSetAtDest,

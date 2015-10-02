@@ -59,12 +59,17 @@ static inline void verifyAux(Function* F) {
  * Public methods
  */
 Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Function &F2,
-        BasicBlock& OSRSrc, BasicBlock& LPad, std::vector<Value*> &valuesToPass, StateMap &M,
+        Instruction& OSRSrc, Instruction& LPad, std::vector<Value*> &valuesToPass, StateMap &M,
         const std::string* F2NewName, bool verbose, StateMap** ptrForF2NewToF2Map) {
 
     #ifdef PROFILE_TIME
     timer_start(&my_timer);
     #endif
+
+    BasicBlock* OSRSrcBlock = OSRSrc.getParent();
+    BasicBlock* LPadBlock = LPad.getParent();
+
+    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(OSRSrcBlock, LPadBlock);
 
     /* [Prepare F2' aka OSRDest] Workflow:
      * (1)  Generate prototype for OSRDest function
@@ -81,11 +86,8 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     ValueToValueMapTy destToOSRDestVMap;
     Function* OSRDestFun;
     Function* dest = &F2;
-    BasicBlock* dest_block = &LPad;
-    StateMap::BlockPair srcDestBlocks = std::pair<BasicBlock*, BasicBlock*>(&OSRSrc, &LPad);
 
-    Instruction* LPadInstr = LPad.getFirstNonPHI();
-    std::vector<Value*> &valuesToSetAtLPad = M.getValuesToSetAtLPad(LPadInstr);
+    std::vector<Value*> &valuesToSetAtLPad = M.getValuesToSetAtLPad(&LPad);
 
     // step (1): generate prototype for OSRDest function
     std::vector<Type*> ArgTypes;
@@ -120,10 +122,10 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     // step (5): ask the StateMap to generate the new entrypoint and retrieve
     //           mapping for [reconstructed] live values
     BasicBlock* oldEntryPoint = &OSRDestFun->getEntryBlock();
-    BasicBlock* newDestBlock = cast<BasicBlock>(destToOSRDestVMap[dest_block]);
+    BasicBlock* newDestBlock = cast<BasicBlock>(destToOSRDestVMap[LPadBlock]);
 
     //std::vector<Value*>& valuesToSetAtDest = M.getValuesToSetForDestFunction(srcDestBlocks);
-    std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.createEntryPointForNewDestFunction(srcDestBlocks,
+    std::pair<BasicBlock*, ValueToValueMapTy*> entryPointPair = M.genContinuationFunctionEntryPoint(srcDestBlocks,
             newDestBlock, valuesToSetAtLPad, fetchedValuesToOSRDestArgs, Context);
 
     BasicBlock* newEntryPoint = entryPointPair.first;
@@ -179,7 +181,7 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
-    replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, dest_block, valuesToSetAtLPad,
+    replaceUsesWithNewValuesAndUpdatePHINodes(OSRDestFun, LPadBlock, valuesToSetAtLPad,
             destToOSRDestVMap, *updatesForDestToOSRDestVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
     if (verbose) {
         std::cerr << "Inserted PHI nodes: %lu" << insertedPHINodes.size() << std::endl;
@@ -201,7 +203,6 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
                         Instruction &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
     BasicBlock* OSRSrcBlock = OSRSrc.getParent();
-    BasicBlock* LPadBlock = LPad.getParent();
 
     LivenessAnalysis &LA = M.getLivenessResults().first;
     LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(&OSRSrc, LA);
@@ -214,8 +215,8 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, *OSRSrcBlock, *LPadBlock, valuesToPass,
-                                M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
+    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, OSRSrc, LPad,
+            valuesToPass, M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
 
     #ifdef PROFILE_TIME
     timer_start(&my_timer);

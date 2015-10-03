@@ -28,12 +28,16 @@ List of available commands:
 	Enable/disable logging of generated x86-64 assembly code.
 --> SHOW_ADDR <function_name>
 	Shows compiled-code address of a given function (forces compilation!).
+--> SHOW_LINE_IDS <function_name>
+	Shows by-line IR identifiers for a given function.
 --> SHOW_ASM
 	Show logged x86-64 assembly code.
 --> SHOW_FUNS
 	Show function symbols tracked by MCJITHelper.
 --> SHOW_MODS
 	Show loaded modules and their symbols.
+--> VERBOSE
+	Enable/disable verbose mode.
 --> QUIT
 	Exits TinyVM.
 
@@ -43,20 +47,23 @@ For the time being, only functions with integer arguments and return values are
 supported.
 
 Demo OSR points can be inserted with one of the following commands:
-INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <B1>
-INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <B1> AS <F1'>
-INSERT_OSR <PROB> <COND> FINAL UPDATE IN <F1> AT <B1> TO <F2> AT <B2> AS <F2'>
-INSERT_OSR <PROB> <COND> FINAL COPY IN <F1> AT <B1> AS <F1'> TO <F2> AT <B2> AS <F2'>
+INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1>
+INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'>
+INSERT_OSR <PROB> <COND> SLVD UPDATE IN <F1> AT <P1> TO <F2> AT <P2> AS <F2'>
+INSERT_OSR <PROB> <COND> SLVD COPY IN <F1> AT <P1> AS <F1'> TO <F2> AT <P2> AS <F2'>
 
 where:
 	PROB is either -1 (no branch weight) or an integer in {0, ..., 100}
 	COND is either ALWAYS or NEVER
 	F1 and F2 are existing functions
-	B1 and B2 are basic block labels in F1 and F2
+	P1 and P2 are locations in F1 and F2 respectively
 
-The command either updates F1 or generates a function F1' cloned from F1 such
-that when basic block B1 is reached during the execution, an OSR transition is
-fired. For OPEN transitions, the continuation function will be generated at
-run-time. For FINAL transitions, function F2' is generated from F2 in order to
-resume the execution from the beginning of basic block B2.
+The command can either update F1 or generate a new function F1' cloning F1 such
+that when P1 is reached during the execution, an OSR transition is fired. For
+OPEN transitions, the continuation function is generated at run-time. For SLVD
+transitions, a function F2' is generated from F2 to resume the execution at P2.
+
+Program locations can be expressed using an LLVM '%name' (including numerical
+IDs for anonymous values) or a line ID '$i' reported by SHOW_LINE_IDS. For basic
+block locations OSR points are inserted before the first non-PHI instruction.
 ```

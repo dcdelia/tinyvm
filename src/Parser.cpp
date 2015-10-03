@@ -732,11 +732,6 @@ const Instruction* Parser::getOSRLocationFromStrIDs(Function &F, const std::stri
             return nullptr;
         }
 
-        if (I != I->getParent()->getFirstNonPHI()) {
-            std::cerr << "Sorry, for the time being only firstNonPHI instructions are supported." << std::endl;
-            return nullptr;
-        }
-
         return I;
     }
 

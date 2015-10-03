@@ -30,14 +30,14 @@ std::pair<LivenessAnalysis&, LivenessAnalysis&> StateMap::getLivenessResults() {
 std::pair<Function*, StateMap*> StateMap::generateIdentityMapping(Function *F) {
     ValueToValueMapTy VMap;
     Function* copy = CloneFunction(F, VMap, false);
-    StateMap* M = new StateMap(F, copy, VMap, false); // reverseMap = false
+    StateMap* M = new StateMap(F, copy, &VMap, true); // bidirectional = true
 
     return std::pair<Function*, StateMap*>(copy, M);
 }
 
 std::vector<Value*>& StateMap::getValuesToSetAtLPad(Instruction* LPad) {
-    ValuesToSetCache::iterator it = cacheForValuesToSetAtLPad.find(LPad);
-    if (it != cacheForValuesToSetAtLPad.end()) return it->second;
+    ValuesToSetCache::iterator it = valuesToSetAtLPadCache.find(LPad);
+    if (it != valuesToSetAtLPadCache.end()) return it->second;
 
     std::vector<Value*>* vec;
     if (LPad->getParent()->getParent() == F1) {
@@ -46,7 +46,7 @@ std::vector<Value*>& StateMap::getValuesToSetAtLPad(Instruction* LPad) {
         vec = OSRLibrary::getLiveValsVecAtInstr(LPad, F2_LA);
     }
 
-    std::pair<ValuesToSetCache::iterator, bool> ret = cacheForValuesToSetAtLPad.
+    std::pair<ValuesToSetCache::iterator, bool> ret = valuesToSetAtLPadCache.
         insert(std::pair<Instruction*, std::vector<Value*>>(LPad, std::move(*vec)));
 
     return ret.first->second;
@@ -74,8 +74,8 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
     std::vector<Value*>& valuesToSetAtDest = getValuesToSetAtLPad(LPad);
     for (Value* valueToSet: valuesToSetAtDest) {
         // check for defaultOneToOneMap first
-        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap->find(valueToSet);
-        if (oneToOneIt != defaultOneToOneMap->end()) {
+        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(valueToSet);
+        if (oneToOneIt != defaultOneToOneMap.end()) {
             valuesToFetch.push_back(oneToOneIt->second);
             continue;
         } else if (lpInfo != nullptr) {
@@ -129,8 +129,8 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
        // process values to set
     BasicBlock* lastCreatedBB = entryPoint;
     for (Value* dest_v: valuesToSetAtOSRCont) {
-        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap->find(dest_v);
-        if (oneToOneIt != defaultOneToOneMap->end()) {
+        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(dest_v);
+        if (oneToOneIt != defaultOneToOneMap.end()) {
             Value* src_v = oneToOneIt->second;
             (*updatedValuesToUse)[dest_v] = fetchedValuesToOSRContArgs[src_v];
             continue;
@@ -201,8 +201,8 @@ BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest
 }
 
 Value* StateMap::getCorrespondingOneToOneValue(Value *v) {
-    OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap->find(v);
-    if (oneToOneIt != defaultOneToOneMap->end()) {
+    OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(v);
+    if (oneToOneIt != defaultOneToOneMap.end()) {
         return oneToOneIt->second;
     }
     return nullptr;
@@ -230,9 +230,9 @@ StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::LocPair &pair) {
 
 
 void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirectional) {
-    (*defaultOneToOneMap)[dest_v] = src_v;
+    defaultOneToOneMap[dest_v] = src_v;
     if (bidirectional) {
-        (*defaultOneToOneMap)[src_v] = dest_v;
+        defaultOneToOneMap[src_v] = dest_v;
     }
 }
 

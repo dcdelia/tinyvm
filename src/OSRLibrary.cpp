@@ -263,7 +263,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
 
         // generate state mapping between src and newSrcFun
         if (config.ptrForF1NewToF1Map != nullptr) {
-            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, srcToNewSrcVMap, true); // bidirectional mapping
+            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, &srcToNewSrcVMap, true); // bidirectional mapping
         }
 
         // I have to regenerate valuesToPass as well!
@@ -519,7 +519,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
         // generate state mapping between src and newSrcFun
         if (config.ptrForF1NewToF1Map != nullptr) {
-            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, srcToNewSrcVMap, true); // bidirectional mapping
+            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, &srcToNewSrcVMap, true); // bidirectional mapping
         }
 
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap);

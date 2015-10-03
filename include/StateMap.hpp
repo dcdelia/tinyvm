@@ -55,41 +55,21 @@ public:
     typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
     typedef std::map<LocPair, LocPairInfo> LocPairInfoMap;
 
-    /* Constructors */
-/*
-    StateMap(llvm::Function* F1, llvm::Function* F2, llvm::ValueToValueMapTy *VMap = nullptr) :
-        F1(F1), F2(F2), defaultOneToOneMap(nullptr), F1_LA(LivenessAnalysis(F1)), F2_LA(LivenessAnalysis(F2))
-    {
-        if (VMap != nullptr) {
-            for (llvm::ValueToValueMapTy::const_iterator it = VMap->begin(),
-                    end = VMap->end(); it != end; ++ it) {
-                llvm::Value* src_v = const_cast<llvm::Value*>(it->first);
-                llvm::Value* dest_v = it->second;
-
-            }
-        }
-
-    }
-*/
-
-    StateMap(llvm::Function* F1, llvm::Function* F2) :
-        F1(F1), F2(F2), defaultOneToOneMap(new OneToOneValueMap()),
-        F1_LA(LivenessAnalysis(F1)), F2_LA(LivenessAnalysis(F2)) {
-    }
-
-    StateMap(llvm::Function* F1, llvm::Function* F2, llvm::ValueToValueMapTy &VMap, bool reverseMap = false) : F1(F1), F2(F2),
-        F1_LA(LivenessAnalysis(F1)), F2_LA(LivenessAnalysis(F2)) {
-        defaultOneToOneMap = new OneToOneValueMap();
-        for (llvm::ValueToValueMapTy::const_iterator it = VMap.begin(), end = VMap.end(); it != end; ++ it) {
+    // constructor
+    StateMap(llvm::Function* F1, llvm::Function* F2, llvm::ValueToValueMapTy *VMap = nullptr,
+            bool bidirectional = false) : F1(F1), F2(F2), F1_LA(LivenessAnalysis(F1)),
+            F2_LA(LivenessAnalysis(F2)) {
+        if (VMap == nullptr) return;
+        for (llvm::ValueToValueMapTy::const_iterator it = VMap->begin(),
+                end = VMap->end(); it != end; ++ it) {
             llvm::Value* src_v = const_cast<llvm::Value*>(it->first);
             llvm::Value* dest_v = it->second;
-            registerOneToOneValue(src_v, dest_v, reverseMap);
+            registerOneToOneValue(src_v, dest_v, bidirectional);
             if (llvm::Instruction* OSRSrc = llvm::dyn_cast<llvm::Instruction>(src_v)) {
                 if (!llvm::isa<llvm::PHINode>(OSRSrc)) {
-                    registerLandingPad(OSRSrc, llvm::cast<llvm::Instruction>(dest_v), reverseMap);
+                    registerLandingPad(OSRSrc, llvm::cast<llvm::Instruction>(dest_v), bidirectional);
                 }
             }
-
         }
     }
 
@@ -126,19 +106,19 @@ public:
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
     llvm::Instruction* getLandingPad(llvm::Instruction* OSRSrc);
 
-    // for testing and performance evaluation
+    // clone a function and generate a direct 1:1 mapping
     static std::pair<llvm::Function*, StateMap*> generateIdentityMapping(llvm::Function *F);
 
 private:
     typedef std::map<llvm::Instruction*, std::vector<llvm::Value*>> ValuesToSetCache;
     typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap; // avoid clash with llvm::ValueMap
 
-    llvm::Function *F1, *F2;
-    OneToOneValueMap*   defaultOneToOneMap;
+    llvm::Function      *F1, *F2;
+    OneToOneValueMap    defaultOneToOneMap;
     LocMap              landingPadMap;
     LocPairInfoMap      locPairInfoMap;
     LivenessAnalysis    F1_LA, F2_LA;
-    ValuesToSetCache    cacheForValuesToSetAtLPad;
+    ValuesToSetCache    valuesToSetAtLPadCache;
 
     // helper methods
     llvm::BasicBlock* addLocalCompensationCode(llvm::BasicBlock* curBlock, llvm::Value* dest_v, ValueInfo* valInfo,

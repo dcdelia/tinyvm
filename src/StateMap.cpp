@@ -57,17 +57,15 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
     // TODO liveAtOSRSrc to be used for build_comp()
     std::vector<Value*> valuesToFetch;
 
-    BlockPair pair(OSRSrc->getParent(), LPad->getParent());
-
-    BlockPairInfo* bpInfo = nullptr;
-    BlockPairStateMap::iterator BPSMIt = blockPairStateMap.find(pair);
-    if (BPSMIt != blockPairStateMap.end()) {
-        bpInfo = &(BPSMIt->second);
+    LocPairInfo* lpInfo = nullptr;
+    LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(LocPair(OSRSrc, LPad));
+    if (LPIMIt != locPairInfoMap.end()) {
+        lpInfo = &(LPIMIt->second);
 
         // fetch arguments for global compensation code (if any)
-        if (bpInfo->globalCompCode != nullptr) {
-            for (CompCodeArgs::iterator it = bpInfo->globalCompCode->args->begin(),
-                    end = bpInfo->globalCompCode->args->end(); it != end; ++it) {
+        if (lpInfo->globalCompCode != nullptr) {
+            for (CompCodeArgs::iterator it = lpInfo->globalCompCode->args->begin(),
+                    end = lpInfo->globalCompCode->args->end(); it != end; ++it) {
                 valuesToFetch.push_back(*it);
             }
         }
@@ -80,10 +78,10 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
         if (oneToOneIt != defaultOneToOneMap->end()) {
             valuesToFetch.push_back(oneToOneIt->second);
             continue;
-        } else if (bpInfo != nullptr) {
+        } else if (lpInfo != nullptr) {
             // check for oneToOneValue or compensation code specific for this pair
-            ValueInfoMap::iterator VIMIt = bpInfo->valueInfoMap.find(valueToSet);
-            if (VIMIt != bpInfo->valueInfoMap.end()) {
+            ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(valueToSet);
+            if (VIMIt != lpInfo->valueInfoMap.end()) {
                 ValueInfo* VI = VIMIt->second;
                 if (VI->isOneToOneValue()) {
                     valuesToFetch.push_back(VI->oneToOneValue);
@@ -113,61 +111,52 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
         LLVMContext &Context, Instruction* OSRSrc, Instruction* LPad,
         Instruction* OSRContLPad, std::vector<Value*>& valuesToSetAtOSRCont,
         ValueToValueMapTy& fetchedValuesToOSRContArgs) {
-    BlockPair pair(OSRSrc->getParent(), LPad->getParent());
-    BasicBlock* OSRContDestBB = OSRContLPad->getParent();
-
-    return genContinuationFunctionEntryPoint(pair, OSRContDestBB, valuesToSetAtOSRCont,
-            fetchedValuesToOSRContArgs, Context);
-}
-
-
-std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntryPoint(StateMap::BlockPair &pair, BasicBlock* newDestBB,
-        std::vector<Value*>& valuesToSetAtDest, ValueToValueMapTy& fetchedValuesToNewDestArgs, LLVMContext &Context) {
 
     ValueToValueMapTy* updatedValuesToUse = new ValueToValueMapTy();
     BasicBlock* entryPoint = BasicBlock::Create(Context, "OSR_entry");
+    LocPair pair(OSRSrc, LPad);
 
-    BlockPairInfo* bpInfo = nullptr;
-    BlockPairStateMap::iterator BPSMIt = blockPairStateMap.find(pair);
-    if (BPSMIt != blockPairStateMap.end()) {
-        bpInfo = &(BPSMIt->second);
+    LocPairInfo* lpInfo = nullptr;
+    LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
+    if (LPIMIt != locPairInfoMap.end()) {
+        lpInfo = &(LPIMIt->second);
 
-        if (bpInfo->globalCompCode != nullptr) {
+        if (lpInfo->globalCompCode != nullptr) {
             llvm::report_fatal_error("Sorry, global compensation code hasn't been fully implemented yet!"); // TODO
         }
     }
 
-    // process values to set
+       // process values to set
     BasicBlock* lastCreatedBB = entryPoint;
-    for (Value* dest_v: valuesToSetAtDest) {
+    for (Value* dest_v: valuesToSetAtOSRCont) {
         OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap->find(dest_v);
         if (oneToOneIt != defaultOneToOneMap->end()) {
             Value* src_v = oneToOneIt->second;
-            (*updatedValuesToUse)[dest_v] = fetchedValuesToNewDestArgs[src_v];
+            (*updatedValuesToUse)[dest_v] = fetchedValuesToOSRContArgs[src_v];
             continue;
-        } else if (bpInfo != nullptr) {
+        } else if (lpInfo != nullptr) {
             // check for oneToOneValue or compensation code specific for this pair
-            ValueInfoMap::iterator VIMIt = bpInfo->valueInfoMap.find(dest_v);
-            if (VIMIt != bpInfo->valueInfoMap.end()) {
+            ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(dest_v);
+            if (VIMIt != lpInfo->valueInfoMap.end()) {
                 ValueInfo* VI = VIMIt->second;
                 if (VI->isOneToOneValue()) {
                     Value* src_v = VI->oneToOneValue;
-                    (*updatedValuesToUse)[dest_v] = fetchedValuesToNewDestArgs[src_v];
+                    (*updatedValuesToUse)[dest_v] = fetchedValuesToOSRContArgs[src_v];
                     continue;
                 } else {
                     lastCreatedBB = addLocalCompensationCode(lastCreatedBB, dest_v, VI,
-                        updatedValuesToUse, fetchedValuesToNewDestArgs);
+                        updatedValuesToUse, fetchedValuesToOSRContArgs);
                 }
                 continue;
             }
         }
 
         dest_v->dump();
-        llvm::report_fatal_error("[createEntryPointForNewDestFunction] could not find mapping information for the Value above");
+        llvm::report_fatal_error("[genContinuationFunctionEntryPoint] missing mapping information for the Value shown above");
     }
 
     // add branch instruction
-    BranchInst* brToDest = BranchInst::Create(newDestBB);
+    BranchInst* brToDest = BranchInst::Create(OSRContLPad->getParent());
     lastCreatedBB->getInstList().push_back(brToDest);
 
     return std::pair<BasicBlock*, ValueToValueMapTy*>(lastCreatedBB, updatedValuesToUse);
@@ -230,9 +219,9 @@ Instruction* StateMap::getLandingPad(llvm::Instruction* OSRSrc) {
 StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::LocPair &pair) {
     LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
     if (LPIMIt != locPairInfoMap.end()) {
-        BlockPairInfo& bpInfo = LPIMIt->second;
-        ValueInfoMap::iterator VIMIt = bpInfo.valueInfoMap.find(v);
-        if (VIMIt != bpInfo.valueInfoMap.end()) {
+        LocPairInfo& lpInfo = LPIMIt->second;
+        ValueInfoMap::iterator VIMIt = lpInfo.valueInfoMap.find(v);
+        if (VIMIt != lpInfo.valueInfoMap.end()) {
             return VIMIt->second;
         }
     }
@@ -247,13 +236,6 @@ void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirecti
     }
 }
 
-void StateMap::registerCorrespondingBlock(BasicBlock* src_b, BasicBlock* dest_b, bool bidirectional) {
-    correspondingBlockMap[src_b] = dest_b;
-    if (bidirectional) {
-        correspondingBlockMap[dest_b] = src_b;
-    }
-}
-
 void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool bidirectional) {
     landingPadMap[OSRSrc] = LPad;
     if (bidirectional) {
@@ -261,12 +243,12 @@ void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool b
     }
 }
 
-StateMap::BlockPairInfo& StateMap::getOrCreateMapBlockPairInfo(StateMap::LocPair &pair) {
+StateMap::LocPairInfo& StateMap::getOrCreateMapBlockPairInfo(StateMap::LocPair &pair) {
     LocPairInfoMap::iterator it = locPairInfoMap.find(pair);
     if (it != locPairInfoMap.end()) return it->second;
 
     std::pair<LocPairInfoMap::iterator, bool> ret = locPairInfoMap.
-        insert(std::pair<LocPair, BlockPairInfo>(pair, BlockPairInfo()));
+        insert(std::pair<LocPair, LocPairInfo>(pair, LocPairInfo()));
 
     return ret.first->second;
 }

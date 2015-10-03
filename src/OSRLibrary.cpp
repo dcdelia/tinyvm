@@ -164,10 +164,12 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
                 end = F2ToOSRContVMap.end(); it != end; ++it) {
             Value* OSRDest_v = it->second;
             Value* dest_v = const_cast<Value*>(it->first);
-            if (BasicBlock* OSRDest_Block = cast<BasicBlock>(OSRDest_v)) {
-                (*ptrForF2NewToF2Map)->registerCorrespondingBlock(OSRDest_Block, cast<BasicBlock>(dest_v), false);
-            } else {
-                (*ptrForF2NewToF2Map)->registerOneToOneValue(OSRDest_v, dest_v, false);
+            (*ptrForF2NewToF2Map)->registerOneToOneValue(OSRDest_v, dest_v, false);
+            if (Instruction* anOSRSrc = llvm::dyn_cast<Instruction>(OSRDest_v)) {
+                if (!isa<llvm::PHINode>(anOSRSrc)) {
+                    (*ptrForF2NewToF2Map)->registerLandingPad(anOSRSrc,
+                            llvm::cast<Instruction>(dest_v), false);
+                }
             }
         }
     }

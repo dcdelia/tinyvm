@@ -22,9 +22,6 @@
 
 class StateMap {
 public:
-    typedef std::pair<llvm::BasicBlock*, llvm::BasicBlock*> BlockPair;
-    typedef std::map<llvm::BasicBlock*, llvm::BasicBlock*>  BlockMap;
-
     typedef llvm::SmallVectorImpl<llvm::Value*> CompCodeArgs;
     typedef llvm::SmallVectorImpl<llvm::Value*> CodeSequence;
 
@@ -47,19 +44,16 @@ public:
 
     typedef std::map<llvm::Value*, ValueInfo*> ValueInfoMap;
 
-    typedef struct BlockPairInfo { // rename into LocPairInfo
+    typedef struct LocPairInfo { // rename into LocPairInfo
         ValueInfoMap        valueInfoMap;
         CompCode*           globalCompCode; // value field == nullptr
-    } BlockPairInfo;
+    } LocPairInfo;
 
 
     // locations are LLVM instructions
     typedef std::pair<llvm::Instruction*, llvm::Instruction*> LocPair;
     typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
-    typedef std::map<LocPair, BlockPairInfo> LocPairInfoMap;
-
-    typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap; // avoid clash with llvm::ValueMap
-    typedef std::map<BlockPair, BlockPairInfo> BlockPairStateMap;
+    typedef std::map<LocPair, LocPairInfo> LocPairInfoMap;
 
     /* Constructors */
 /*
@@ -89,11 +83,6 @@ public:
         for (llvm::ValueToValueMapTy::const_iterator it = VMap.begin(), end = VMap.end(); it != end; ++ it) {
             llvm::Value* src_v = const_cast<llvm::Value*>(it->first);
             llvm::Value* dest_v = it->second;
-            // old code
-            if (llvm::BasicBlock* src_b = llvm::dyn_cast<llvm::BasicBlock>(src_v)) {
-                registerCorrespondingBlock(src_b, llvm::cast<llvm::BasicBlock>(dest_v), reverseMap);
-            } //else { registerOneToOneValue(src_v, dest_v, reverseMap); }
-            // new code
             registerOneToOneValue(src_v, dest_v, reverseMap);
             if (llvm::Instruction* OSRSrc = llvm::dyn_cast<llvm::Instruction>(src_v)) {
                 if (!llvm::isa<llvm::PHINode>(OSRSrc)) {
@@ -124,48 +113,32 @@ public:
                                                                 std::vector<llvm::Value*>& valuesToSetAtOSRCont,
                                                                 llvm::ValueToValueMapTy& fetchedValuesToOSRContArgs);
 
-    std::pair<llvm::BasicBlock*, llvm::ValueToValueMapTy*> genContinuationFunctionEntryPoint(
-                                                                        BlockPair &pair,
-                                                                        llvm::BasicBlock* newDestBB,
-                                                                        std::vector<llvm::Value*>& valuesToSetAtDest,
-                                                                        llvm::ValueToValueMapTy& fetchedValuesToNewDestArgs,
-                                                                        llvm::LLVMContext &Context);
-
     // methods for registering mapping information
     void    registerOneToOneValue(llvm::Value* src_v, llvm::Value* dest_v, bool bidirectional = false);
-    void    registerCorrespondingBlock(llvm::BasicBlock* src_b, llvm::BasicBlock* dest_b, bool bidirectional = true);
     void    registerLandingPad(llvm::Instruction* OSRSrc, llvm::Instruction* LPad, bool bidirectional = false);
 
-    // TODO: methods for registering ValueInfo and BlockPairInfo
-    //BlockPairInfo& getOrCreateMapBlockPairInfo(BlockPair &pair);
-    BlockPairInfo& getOrCreateMapBlockPairInfo(LocPair &pair); // TODO separate methods??
+    // TODO: methods for registering ValueInfo and LocPairInfo
+    LocPairInfo& getOrCreateMapBlockPairInfo(LocPair &pair); // TODO separate methods??
+
+    ValueInfo*  getValueInfo(llvm::Value* v, LocPair &pair); // TODO LocPairInfo as arg?
 
     // methods for querying
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
-
-    //ValueInfo*  getValueInfo(llvm::Value* v, BlockPair &pair);
-    ValueInfo*  getValueInfo(llvm::Value* v, LocPair &pair);
-
     llvm::Instruction* getLandingPad(llvm::Instruction* OSRSrc);
-    //llvm::BasicBlock* getCorrespondingBlock(llvm::BasicBlock *B);
 
-    // this method is static so that insertOpenOSR can access it
-    static std::vector<llvm::Value*>* getValuesToSetForBlock(llvm::BasicBlock &B, LivenessAnalysis );
     // for testing and performance evaluation
     static std::pair<llvm::Function*, StateMap*> generateIdentityMapping(llvm::Function *F);
 
 private:
     typedef std::map<llvm::Instruction*, std::vector<llvm::Value*>> ValuesToSetCache;
+    typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap; // avoid clash with llvm::ValueMap
 
     llvm::Function *F1, *F2;
     OneToOneValueMap*   defaultOneToOneMap;
-    BlockMap            correspondingBlockMap;
     LocMap              landingPadMap;
-    BlockPairStateMap   blockPairStateMap;
     LocPairInfoMap      locPairInfoMap;
     LivenessAnalysis    F1_LA, F2_LA;
     ValuesToSetCache    cacheForValuesToSetAtLPad;
-    std::map<llvm::BasicBlock*, std::vector<llvm::Value*>> cacheForValuesToSetForBlocks;
 
     // helper methods
     llvm::BasicBlock* addLocalCompensationCode(llvm::BasicBlock* curBlock, llvm::Value* dest_v, ValueInfo* valInfo,

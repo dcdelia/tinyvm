@@ -1,5 +1,5 @@
 LOAD_IR isord.r.ll
-INSERT_OSR -1 ALWAYS FINAL COPY IN isord AT loop.body AS isordfrom TO isord AT loop.body AS isordto
+INSERT_OSR -1 ALWAYS FINAL COPY IN isord AT %loop.body AS isordfrom TO isord AT %loop.body AS isordto
 DUMP isord
 DUMP isordfrom
 QUIT

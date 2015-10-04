@@ -387,23 +387,19 @@ std::string& MCJITHelper::LLVMTypeToString(Type* type) {
 }
 
 void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr) {
-    MCJITHelperOSRInfo* extraInfo = (MCJITHelperOSRInfo*)extra;
+    MCJITHelper* TheHelper = (MCJITHelper*) extra;
 
-    // debug info
-    std::cerr << "Value for F1 is " << F1 << std::endl;
-    std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
-    std::cerr << "Value for extra is " << extraInfo << std::endl;
-    std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
+    if (TheHelper->verbose) {
+        std::cerr << "Value for F1 is " << F1 << std::endl;
+        std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
+        std::cerr << "Value for extra is " << extra << std::endl;
+        std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
+    }
 
     std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(F1);
 
     Function* F2 = identityPair.first;
-    extraInfo->f2 = identityPair.first;
-
     StateMap* M = identityPair.second;
-    extraInfo->m = identityPair.second;
-
-    MCJITHelper *TheHelper = extraInfo->TheHelper;
 
     Instruction* LPad = M->getLandingPad(OSRSrc);
 
@@ -431,6 +427,11 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc
     TheHelper->addModule(std::move(modForJIT));
 
     return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
+}
+
+void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr) {
+    // TODO
+    return nullptr;
 }
 
 void MCJITHelper::SymListener::NotifyObjectEmitted(const object::ObjectFile &Obj,

@@ -33,13 +33,6 @@ using namespace llvm;
 
 class MCJITHelper {
 public:
-    typedef struct MCJITHelperOSRInfo {
-        MCJITHelper*    TheHelper;
-        Function*       f2;
-        BasicBlock*     b2;
-        StateMap*       m;
-    } MCJITHelperOSRInfo;
-
     MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) :
             Context(C), verbose(false), trackAsmCode(false),
             asmFdStream(nullptr), asmFileName("session.asm") {
@@ -88,12 +81,20 @@ public:
     CmpInst* generateAlwaysTrueCond();
     CmpInst* generateAlwaysFalseCond();
     ValueToValueMapTy* generateIdentityMapping(Function* F);
-    static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
     void registerFunction(Function* F);
     void trackAsmCodeUtil(Module* M);
     static std::string& LLVMTypeToString(Type* type);
     static std::string prototypeToString(Function& F);
     std::vector<uint64_t> getCompiledFuncAddr(std::string Name);
+
+    /* Code generation for open OSR transitions */
+    typedef struct DynamicInlinerInfo {
+        MCJITHelper*    TheHelper;
+        Value*          valToInline;
+    } DynamicInlinerInfo;
+
+    static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
+    static void* dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
 
 private:
     typedef std::pair<uint64_t, std::string> AddrSymPair;

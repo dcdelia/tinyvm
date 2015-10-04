@@ -274,10 +274,6 @@ void Parser::handleHelpCommand() {
 
 void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
-
-    MCJITHelper::MCJITHelperOSRInfo* extra = new MCJITHelper::MCJITHelperOSRInfo();
-    extra->TheHelper = TheHelper;
-
     OSRLibrary::DestFunGenerator generator = MCJITHelper::identityGeneratorForOpenOSR;
 
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
@@ -288,7 +284,7 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     LivenessAnalysis LA(src);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
-        *OSRSrc, extra, cond, nullptr, generator, nullptr, &LA, config);
+        *OSRSrc, TheHelper, cond, nullptr, generator, nullptr, &LA, config);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 

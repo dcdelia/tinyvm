@@ -93,9 +93,10 @@ public:
     void trackAsmCodeUtil(Module* M);
     static std::string& LLVMTypeToString(Type* type);
     static std::string prototypeToString(Function& F);
+    std::vector<uint64_t> getCompiledFuncAddr(std::string Name);
 
 private:
-    typedef std::pair<uint64_t, StringRef> AddrSymPair;
+    typedef std::pair<uint64_t, std::string> AddrSymPair;
     IRBuilder<>                     *Builder;
     CustomMemoryManager             *MManager;
     std::vector<Module*>            Modules;

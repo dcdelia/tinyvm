@@ -27,7 +27,7 @@ List of available commands:
 --> TRACK_ASM
 	Enable/disable logging of generated x86-64 assembly code.
 --> SHOW_ADDR <function_name>
-	Shows compiled-code address of a given function (forces compilation!).
+	Shows compiled-code address for a given function symbol.
 --> SHOW_LINE_IDS <function_name>
 	Shows by-line IR identifiers for a given function.
 --> SHOW_ASM

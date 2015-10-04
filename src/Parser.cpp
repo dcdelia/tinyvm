@@ -235,7 +235,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> OPT_FULL <function_name>" << std::endl << "\tPerforms several optimization passes over a given function." << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
-    std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address of a given function (forces compilation!)." << std::endl;
+    std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address for a given function symbol." << std::endl;
     std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl << "\tShows by-line IR identifiers for a given function." << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
@@ -502,11 +502,18 @@ void Parser::handleShowAddrCommand() {
     const std::string FunctionName = TheLexer->getIdentifier();
     #undef INVALID
 
-    void* ptr = (void*)TheHelper->JIT->getFunctionAddress(FunctionName);
-    if (ptr == nullptr) {
-        std::cerr << "Cannot locate corresponding compiled function!" << std::endl;
+    // we do not rely on MCJIT's getSymbolAddress/getFunctionAddress
+    std::vector<uint64_t> addresses = TheHelper->getCompiledFuncAddr(FunctionName);
+    if (addresses.empty()) {
+        std::cerr << "Cannot locate compiled code for the given function symbol!" << std::endl;
+    } else if (addresses.size() == 1) {
+        std::cerr << "Compiled code available at address " << (void*)addresses.front() << std::endl;
     } else {
-        std::cerr << "Compiled code for the function has been loaded at " << ptr << std::endl;
+        std::cerr << "Multiple addresses available. Reporting them in most recently compiled order:" << std::endl;
+        for (uint64_t addr: addresses) {
+            std::cerr << (void*)addr << " ";
+        }
+        std::cerr << std::endl;
     }
 }
 

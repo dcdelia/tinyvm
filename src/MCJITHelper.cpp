@@ -439,6 +439,7 @@ void MCJITHelper::SymListener::NotifyObjectEmitted(const object::ObjectFile &Obj
     OwningBinary<ObjectFile> DebugObjOwner = L.getObjectForDebug(Obj);
     const ObjectFile &DebugObj = *DebugObjOwner.getBinary();
 
+    bool verbose = *verboseFlagPtr;
     for (symbol_iterator it = DebugObj.symbol_begin(),
             end = DebugObj.symbol_end(); it != end; ++it) {
         object::SymbolRef::Type SymType;
@@ -449,13 +450,25 @@ void MCJITHelper::SymListener::NotifyObjectEmitted(const object::ObjectFile &Obj
             if (it->getName(name)) continue;
             if (it->getAddress(addr)) continue;
 
-            Table->push_back(AddrSymPair(addr, name));
-            if (*verboseFlagPtr) {
+            Table->push_back(AddrSymPair(addr, name.str()));
+            if (verbose) {
                 std::cerr << "Loading native code for function " << name.str()
                           << " at address " << (void*)addr << std::endl;
             }
         }
     }
+}
+
+std::vector<uint64_t> MCJITHelper::getCompiledFuncAddr(std::string Name) {
+    std::vector<uint64_t> result;
+
+    for (AddrSymPair pair: CompiledFunAddrTable) {
+        // order: most recently compiled first
+        if (Name == pair.second)
+            result.push_back(pair.first);
+    }
+
+    return result;
 }
 
 /*

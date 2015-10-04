@@ -13,18 +13,25 @@
 #include <string>
 
 void* CustomMemoryManager::getPointerToNamedFunction(const std::string &Name, bool AbortOnFailure) {
-    // try the standard symbol resolution first
+    // try standard symbol resolution
     void *ptr = SectionMemoryManager::getPointerToNamedFunction(Name, false);
+
+    #if 0
     if (ptr) return ptr;
 
     ptr = (void*)TheMCJITHelper->JIT->getFunctionAddress(Name);
+    #endif
     if (!ptr && AbortOnFailure) {
-        char errorMsg[256];
-        sprintf(errorMsg, "Could not get pointer to named function %s\n", Name.c_str());
-        llvm::report_fatal_error(std::string(errorMsg));
-    } else {
-        std::cerr << "Symbol solved using CMM" << std::endl;  // TODO debug
+        std::string errMsg = "Could not get pointer to named function ";
+        errMsg.append(Name);
+        llvm::report_fatal_error(errMsg);
     }
+    #if 0
+        else {
+        std::cerr << "Symbol solved using CMM" << std::endl;
+    }
+    #endif
+
     return ptr;
 }
 

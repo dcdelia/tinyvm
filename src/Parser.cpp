@@ -281,8 +281,8 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     Module* modToUse = src->getParent();
-    OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName,
-            modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
+    OSRLibrary::OSRPointConfig config(TheHelper->verbose, update, branchTakenProb,
+            F1NewName, modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
     LivenessAnalysis LA(src);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
@@ -322,8 +322,8 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
     Module* modToUse = src->getParent();
-    OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb, F1NewName, modToUse,
-            &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
+    OSRLibrary::OSRPointConfig config(TheHelper->verbose, update, branchTakenProb,
+            F1NewName, modToUse, &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertResolvedOSR(TheHelper->Context, *src, *OSRSrc,
             *dest, *LPad, cond, *M, config);
@@ -543,12 +543,12 @@ void Parser::handleTrackAsmCommand() {
 }
 
 void Parser::handleVerboseCommand() {
-    if (verbose) {
+    if (TheHelper->verbose) {
         std::cerr << "Current status: verbose mode enabled. Now disabling it!" << std::endl;
     } else {
         std::cerr << "Current status: verbose mode disabled. Now enabling it!" << std::endl;
     }
-    verbose = !verbose;
+    TheHelper->verbose = !TheHelper->verbose;
 }
 
 Parser::IDToValueVec Parser::computeLineIDs(Function* F) {

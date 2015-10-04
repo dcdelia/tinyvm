@@ -433,6 +433,31 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc
     return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
 }
 
+void MCJITHelper::SymListener::NotifyObjectEmitted(const object::ObjectFile &Obj,
+        const RuntimeDyld::LoadedObjectInfo &L) {
+    using namespace llvm::object;
+    OwningBinary<ObjectFile> DebugObjOwner = L.getObjectForDebug(Obj);
+    const ObjectFile &DebugObj = *DebugObjOwner.getBinary();
+
+    for (symbol_iterator it = DebugObj.symbol_begin(),
+            end = DebugObj.symbol_end(); it != end; ++it) {
+        object::SymbolRef::Type SymType;
+        if (it->getType(SymType)) continue;
+        if (SymType == SymbolRef::ST_Function) {
+            StringRef  name;
+            uint64_t   addr;
+            if (it->getName(name)) continue;
+            if (it->getAddress(addr)) continue;
+
+            Table->push_back(AddrSymPair(addr, name));
+            if (*verboseFlagPtr) {
+                std::cerr << "Loading native code for function " << name.str()
+                          << " at address " << (void*)addr << std::endl;
+            }
+        }
+    }
+}
+
 /*
  * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia
  *

@@ -16,9 +16,11 @@
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Object/ObjectFile.h>
 #include <llvm/PassManager.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
@@ -38,8 +40,9 @@ public:
         StateMap*       m;
     } MCJITHelperOSRInfo;
 
-    MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) : Context(C),
-                    trackAsmCode(false), asmFdStream(nullptr), asmFileName("session.asm") {
+    MCJITHelper(LLVMContext &C, std::unique_ptr<Module> InitialModule) :
+            Context(C), verbose(false), trackAsmCode(false),
+            asmFdStream(nullptr), asmFileName("session.asm") {
         if (InitialModule == nullptr) {
             InitialModule = llvm::make_unique<Module>("empty", Context); // TODO we still need it right?
         }
@@ -47,6 +50,7 @@ public:
         Modules.push_back(InitialModule.get());
 
         Listeners.push_back(new StackMapJITEventListener(&StackMaps));
+        Listeners.push_back(new SymListener(&CompiledFunAddrTable, &verbose));
 
         std::unique_ptr<CustomMemoryManager> MemoryManager(new CustomMemoryManager(this));
         MManager = MemoryManager.get();
@@ -67,6 +71,7 @@ public:
     // public members
     ExecutionEngine *JIT;
     LLVMContext     &Context;
+    bool            verbose;
 
     // public methods
     void addModule(std::unique_ptr<Module> M);
@@ -90,20 +95,38 @@ public:
     static std::string prototypeToString(Function& F);
 
 private:
+    typedef std::pair<uint64_t, StringRef> AddrSymPair;
     IRBuilder<>                     *Builder;
     CustomMemoryManager             *MManager;
     std::vector<Module*>            Modules;
     std::vector<StackMap*>          StackMaps;
     std::vector<JITEventListener*>  Listeners;
+
+    std::vector<AddrSymPair>        CompiledFunAddrTable;
     std::map<std::string, Function*>                ActiveFunctions;
     std::map<std::string, std::vector<Function*>>   PrevFunctions;
     std::map<std::string, std::vector<Function*>>   FunctionPrototypes;
     std::vector<std::pair<std::string, std::vector<std::string>>>  Symbols;
+
     bool            trackAsmCode;
     raw_ostream     *asmFdStream;
     const char      *asmFileName;
 
     raw_ostream*    initializeFdStream(const char* fileName);
+
+    // to capture addresses for compiled symbols
+    class SymListener : public llvm::JITEventListener {
+    public:
+        SymListener(std::vector<AddrSymPair>* Table, bool* verboseFlagPtr) :
+        Table(Table), verboseFlagPtr(verboseFlagPtr) {}
+        virtual void NotifyObjectEmitted(const object::ObjectFile &Obj,
+                                const RuntimeDyld::LoadedObjectInfo &L);
+
+    private:
+        std::vector<AddrSymPair> *Table;
+        bool *verboseFlagPtr;
+    };
+
 };
 
 #endif

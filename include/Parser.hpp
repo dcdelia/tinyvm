@@ -16,13 +16,12 @@
 
 class Parser {
 public:
-    Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H), verbose(false) {}
+    Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H) {}
     int start(bool displayHelpMessage = true);
 
 private:
     Lexer       *TheLexer;
     MCJITHelper *TheHelper;
-    bool verbose;
 
     // simple auxiliary methods
     void handleBeginCommand();

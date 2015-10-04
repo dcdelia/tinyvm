@@ -19,6 +19,8 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/Support/raw_os_ostream.h>
 
+#undef NDEBUG
+#include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <string>

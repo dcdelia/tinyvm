@@ -11,6 +11,8 @@
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Object/ObjectFile.h>
 
+#undef NDEBUG
+#include <cassert>
 #include <cstdint>
 
 using namespace llvm;

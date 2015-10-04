@@ -8,6 +8,11 @@
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
 
+#ifdef PROFILE_TIME
+#include "timer.h"
+tinyvm_timer_t   my_timer;
+#endif
+
 #include <llvm/PassManager.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/BasicBlock.h>
@@ -25,13 +30,10 @@
 #include <llvm/Transforms/Utils/SSAUpdater.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
 
+#undef NDEBUG
+#include <cassert>
 #include <iostream>
 #include <vector>
-
-#ifdef PROFILE_TIME
-#include "timer.h"
-tinyvm_timer_t   my_timer;
-#endif
 
 using namespace llvm;
 

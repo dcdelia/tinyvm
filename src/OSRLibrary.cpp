@@ -19,6 +19,7 @@ tinyvm_timer_t   my_timer;
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Instructions.h>
@@ -311,11 +312,14 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         verifyAux(OSRDestFun);
         OSRDestFun->removeFromParent();
     } else {
-        if (config.verbose) {
-            std::cerr << "WARNING: replacement of references to functions and "
-                    << "globals for F2' has not been implemented yet!" << std::endl;
+        config.modForNewF2->getFunctionList().push_back(OSRDestFun);
+        if (config.modForNewF2 != F2.getParent()) {
+            bool changed = fixUsesOfFunctionsAndGlobals(&F2, OSRDestFun);
+            if (changed && config.verbose) {
+                std::cerr << "Uses of functions and globals from F2's parent module have "
+                          << "been replaced with uses of newly created declarations" << std::endl;
+            }
         }
-        config.modForNewF1->getFunctionList().push_back(OSRDestFun);
         verifyAux(OSRDestFun);
     }
 
@@ -342,11 +346,14 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
             verifyAux(newSrcFun);
             newSrcFun->removeFromParent();
         } else {
-            if (config.verbose) {
-                std::cerr << "WARNING: replacement of references to functions and "
-                        << "globals for F1' has not been implemented yet!" << std::endl;
-            }
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
+            if (config.modForNewF1 != parentForSrc) {
+                bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
+                if (changed && config.verbose) {
+                    std::cerr << "Uses of functions and globals from F1's parent module have "
+                              << "been replaced with uses of newly created declarations" << std::endl;
+                }
+            }
             verifyAux(newSrcFun);
         }
     }
@@ -606,13 +613,16 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             stub->removeFromParent();
             src->removeFromParent();
         } else {
-            if (config.verbose) {
-                std::cerr << "WARNING : Replacement of references to functions and "
-                        << "globals for F1' has not been implemented yet!" << std::endl;;
-            }
             config.modForNewF1->getFunctionList().push_back(stub);
             verifyAux(stub);
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
+            if (config.modForNewF1 != parentForSrc) {
+                bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
+                if (changed && config.verbose) {
+                    std::cerr << "Uses of functions and globals from F1's parent module have "
+                              << "been replaced with uses of newly created declarations" << std::endl;
+                }
+            }
             verifyAux(newSrcFun);
         }
     }
@@ -651,9 +661,9 @@ void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F, std::vect
 }
 
 void OSRLibrary::duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap) {
-    // TODO manually clone debug info metadata (LLVM's method is not visible!)
+    // TODO clone debug info metadata
 
-    /** The following block is borrowed from CloneFunctionInto() in CloneFunction.cpp **/
+    /* adapted from LLVM's CloneFunction.cpp **/
     Function *OldFunc = F, *NewFunc = NF;
     const char* NameSuffix = "";
     ClonedCodeInfo *CodeInfo = nullptr;
@@ -943,6 +953,58 @@ void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
         std::cerr <<  v->getName().str() << " ";
     }
     std::cerr << "}" << std::endl;
+}
+
+bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFun) {
+    bool updated = false;
+
+    Module* origModule = origFun->getParent();
+    assert(origModule);
+
+    Module* newModule = newFun->getParent();
+
+    // iterate through globals
+    for (Module::global_iterator gIt = origModule->global_begin(),
+            gEnd = origModule->global_end(); gIt != gEnd; ++gIt) {
+        GlobalVariable &g = *gIt;
+        GlobalVariable *newG = nullptr;
+        for (Value::use_iterator UI = g.use_begin(), UE = g.use_end(); UI != UE; ) {
+            Use &U = *(UI++);
+            if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
+                if (I->getParent()->getParent() != newFun) continue;
+                if (newG == nullptr) {
+                    newG = new GlobalVariable(*newModule, g.getType(), g.isConstant(),
+                            GlobalValue::ExternalLinkage, nullptr);
+                    if (g.hasName()) {
+                        newG->setName(g.getName());
+                    }
+                    updated = true;
+                }
+                U.set(newG);
+            }
+        }
+    }
+
+    // iterate through functions
+    for (Module::iterator fIt = origModule->begin(), fEnd = origModule->end();
+            fIt != fEnd; ++fIt) {
+        Function &F = *fIt;
+        Function* newF = nullptr;
+        for (Value::use_iterator UI = F.use_begin(), UE = F.use_end(); UI != UE; ) {
+            Use &U = *(UI++);
+            if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
+                if (I->getParent()->getParent() != newFun) continue;
+                if (newF == nullptr) {
+                    newF = Function::Create(F.getFunctionType(),
+                            Function::ExternalLinkage, F.getName(), newModule);
+                    updated = true;
+                }
+                U.set(newF);
+            }
+        }
+    }
+
+    return updated;
 }
 
 /*

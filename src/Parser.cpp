@@ -29,6 +29,8 @@
 #include <strings.h> // strcasecmp()
 #include <unistd.h> // access()
 
+#define FIXSYMS 1
+
 using namespace llvm;
 
 int Parser::start(bool displayHelpMsg) {
@@ -319,9 +321,37 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
-    Module* modToUse = src->getParent();
+
+
+    Module *modForNewSrc;
+    Module *modForNewDest;
+    std::unique_ptr<Module> NewModule;
+
+    #if FIXSYMS
+    NewModule = llvm::make_unique<Module>("OSRMod", TheHelper->Context);
+    #endif
+
+    if (update) {
+        modForNewSrc = src->getParent();
+        #if FIXSYMS
+        modForNewDest = NewModule.get();
+        #else
+        modForNewDest = src->getParent();
+        #endif
+    } else {
+        #if FIXSYMS
+        modForNewSrc = NewModule.get();
+        modForNewDest = modForNewSrc;
+        #else
+        modForNewSrc = src->getParent();
+        modForNewDest = src->getParent();
+        #endif
+    }
+
+    modForNewDest->getFunctionList().push_back(dest);
+
     OSRLibrary::OSRPointConfig config(TheHelper->verbose, update, branchTakenProb,
-            F1NewName, modToUse, &F1NewToF1Map, F2NewName, modToUse, &F2NewToF2Map);
+            F1NewName, modForNewSrc, &F1NewToF1Map, F2NewName, modForNewDest, &F2NewToF2Map);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertResolvedOSR(TheHelper->Context, *src, *OSRSrc,
             *dest, *LPad, cond, *M, config);
@@ -333,12 +363,24 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
+    #if FIXSYMS
+    TheHelper->addModule(std::move(NewModule));
+    if (update) TheHelper->trackAsmCodeUtil(modForNewSrc);
+    #else
     if (!update) {
         TheHelper->registerFunction(src_new);
     }
     TheHelper->registerFunction(dest_new);
+    assert(modForNewSrc == modForNewDest);
+    TheHelper->trackAsmCodeUtil(modForNewDest);
+    #endif
 
-    TheHelper->trackAsmCodeUtil(modToUse);
+    dest->removeFromParent();
+
+    //dest->eraseFromParent();
+    //delete M;
+    //delete F1NewToF1Map;
+    //delete F2NewToF2Map;
 }
 
 void Parser::handleInsertOSRCommand() {

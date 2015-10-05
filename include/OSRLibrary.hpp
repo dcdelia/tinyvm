@@ -102,6 +102,9 @@ class OSRLibrary {
                                             const llvm::Instruction* I,
                                             LivenessAnalysis &LA);
 
+        static bool fixUsesOfFunctionsAndGlobals(llvm::Function* origFun,
+                                                 llvm::Function* newFun);
+
     private:
         static void applyAttributesToArguments(llvm::Function* NF, llvm::Function* F,
             std::vector<llvm::Value*> &valuesToPass, bool skipFirst = false);

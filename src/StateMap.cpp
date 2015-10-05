@@ -52,9 +52,7 @@ std::vector<Value*>& StateMap::getValuesToSetAtLPad(Instruction* LPad) {
     return ret.first->second;
 }
 
-std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
-        Instruction* LPad, LivenessAnalysis::LiveValues *liveAtOSRSrc) {
-    // TODO liveAtOSRSrc to be used for build_comp()
+std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc, Instruction* LPad) {
     std::vector<Value*> valuesToFetch;
 
     LocPairInfo* lpInfo = nullptr;
@@ -73,12 +71,8 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
 
     std::vector<Value*>& valuesToSetAtDest = getValuesToSetAtLPad(LPad);
     for (Value* valueToSet: valuesToSetAtDest) {
-        // check for defaultOneToOneMap first
-        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(valueToSet);
-        if (oneToOneIt != defaultOneToOneMap.end()) {
-            valuesToFetch.push_back(oneToOneIt->second);
-            continue;
-        } else if (lpInfo != nullptr) {
+        // check for LocPair-specific info
+        if (lpInfo != nullptr) {
             // check for oneToOneValue or compensation code specific for this pair
             ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(valueToSet);
             if (VIMIt != lpInfo->valueInfoMap.end()) {
@@ -93,6 +87,13 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc,
                 }
                 continue;
             }
+        }
+
+        // fall back to defaultOneToOneMap
+        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(valueToSet);
+        if (oneToOneIt != defaultOneToOneMap.end()) {
+            valuesToFetch.push_back(oneToOneIt->second);
+            continue;
         }
 
         valueToSet->dump();

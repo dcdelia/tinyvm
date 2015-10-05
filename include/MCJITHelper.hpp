@@ -85,7 +85,7 @@ public:
     void trackAsmCodeUtil(Module* M);
     static std::string& LLVMTypeToString(Type* type);
     static std::string prototypeToString(Function& F);
-    std::vector<uint64_t> getCompiledFuncAddr(std::string Name);
+    std::vector<uint64_t> getCompiledFuncAddr(const std::string &Name);
 
     /* Code generation for open OSR transitions */
     typedef struct DynamicInlinerInfo {

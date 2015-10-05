@@ -80,8 +80,7 @@ public:
     // methods for generating OSR functions/stubs
     std::vector<llvm::Value*> getValuesToFetchAtOSRSrc(
                                 llvm::Instruction* OSRSrc,
-                                llvm::Instruction* LPad,
-                                LivenessAnalysis::LiveValues *liveAtOSRSrc);
+                                llvm::Instruction* LPad);
 
     std::vector<llvm::Value*>& getValuesToSetAtLPad(llvm::Instruction* LPad); // cached
 

@@ -460,7 +460,7 @@ void MCJITHelper::SymListener::NotifyObjectEmitted(const object::ObjectFile &Obj
     }
 }
 
-std::vector<uint64_t> MCJITHelper::getCompiledFuncAddr(std::string Name) {
+std::vector<uint64_t> MCJITHelper::getCompiledFuncAddr(const std::string &Name) {
     std::vector<uint64_t> result;
 
     for (AddrSymPair pair: CompiledFunAddrTable) {

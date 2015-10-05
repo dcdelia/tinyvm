@@ -201,11 +201,11 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     // common stuff for the generation of F1' and F2'
     BasicBlock* OSRSrcBlock = OSRSrc.getParent();
 
-    LivenessAnalysis &LA = M.getLivenessResults().first;
-    LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(&OSRSrc, LA);
-    std::vector<Value*> valuesToPass = M.getValuesToFetchAtOSRSrc(&OSRSrc, &LPad, &liveInAtOSRSrc);
+
+    std::vector<Value*> valuesToPass = M.getValuesToFetchAtOSRSrc(&OSRSrc, &LPad);
 
     if (config.verbose) {
+        LivenessAnalysis &LA = M.getLivenessResults().first;
         printLiveVarInfoForDebug(LA.getLiveInValues(OSRSrcBlock), LA.getLiveOutValues(OSRSrcBlock), valuesToPass);
     }
 

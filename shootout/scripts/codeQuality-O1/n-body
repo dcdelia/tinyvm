@@ -1,5 +1,5 @@
 LOAD_IR shootout/n-body/codeQuality-O1.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT B8
+INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B8
 OPT_CFG bench
 bench(50000000)
 REPEAT 10 bench(50000000)

@@ -1,5 +1,5 @@
 LOAD_IR shootout/reverse-complement/finalAlwaysFire.ll
-INSERT_OSR 95 NEVER FINAL UPDATE IN hotLoop AT entry TO hotLoop AT entry AS hotLoop_OSR
+INSERT_OSR 95 NEVER FINAL UPDATE IN hotLoop AT %entry TO hotLoop AT %entry AS hotLoop_OSR
 bench()
 REPEAT 10 bench()
 QUIT

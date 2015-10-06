@@ -1,3 +1,3 @@
 LOAD_IR shootout/binary-trees/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN DeleteTree AT INSTR0
+INSERT_OSR 5 NEVER OPEN UPDATE IN DeleteTree AT %INSTR0
 QUIT

@@ -1,4 +1,4 @@
 LOAD_IR shootout/spectral-norm/codeQuality-O1.ll
-INSERT_OSR 5 NEVER FINAL UPDATE IN eval_A_times_u AT B8 TO eval_A_times_u AT B8 AS eval_A_times_u_OSR
-INSERT_OSR 5 NEVER FINAL UPDATE IN eval_At_times_u AT B8 TO eval_At_times_u AT B8 AS eval_At_times_u_OSR
+INSERT_OSR 5 NEVER FINAL UPDATE IN eval_A_times_u AT %B8 TO eval_A_times_u AT %B8 AS eval_A_times_u_OSR
+INSERT_OSR 5 NEVER FINAL UPDATE IN eval_At_times_u AT %B8 TO eval_At_times_u AT %B8 AS eval_At_times_u_OSR
 QUIT

@@ -1,6 +1,6 @@
 LOAD_IR shootout/binary-trees/finalAlwaysFire-O1.ll
 LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
-INSERT_OSR 95 ALWAYS FINAL UPDATE IN DeleteTree AT INSTR0 TO DeleteTree AT INSTR0 AS DeleteTree_OSR
+INSERT_OSR 95 ALWAYS FINAL UPDATE IN DeleteTree AT %INSTR0 TO DeleteTree AT %INSTR0 AS DeleteTree_OSR
 OPT_CFG DeleteTree
 OPT_CFG DeleteTree_OSR
 bench(20)

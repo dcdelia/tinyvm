@@ -426,6 +426,8 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc
 
     TheHelper->addModule(std::move(modForJIT));
 
+    // delete M;
+
     return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
 }
 
@@ -470,6 +472,19 @@ std::vector<uint64_t> MCJITHelper::getCompiledFuncAddr(const std::string &Name) 
     }
 
     return result;
+}
+
+bool MCJITHelper::canModifyModule(Module* M) {
+    for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
+        Function* F = it;
+        std::vector<uint64_t> addresses = getCompiledFuncAddr(F->getName().str());
+
+        // conservative approach: if the same function symbol has been used in
+        // a different compiled module, this method yields a false positive
+        if (!addresses.empty()) return false;
+    }
+
+    return true;
 }
 
 /*

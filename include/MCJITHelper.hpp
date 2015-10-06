@@ -78,14 +78,16 @@ public:
     void showModules();
     void showFunctions();
     bool loadDynamicLibrary(const std::string &FileName);
-    CmpInst* generateAlwaysTrueCond();
-    CmpInst* generateAlwaysFalseCond();
-    ValueToValueMapTy* generateIdentityMapping(Function* F);
     void registerFunction(Function* F);
     void trackAsmCodeUtil(Module* M);
+    std::vector<uint64_t> getCompiledFuncAddr(const std::string &Name);
+    CmpInst* generateAlwaysTrueCond();
+    CmpInst* generateAlwaysFalseCond();
+    bool canModifyModule(Module* M);
+
+    static ValueToValueMapTy* generateIdentityMapping(Function* F);
     static std::string& LLVMTypeToString(Type* type);
     static std::string prototypeToString(Function& F);
-    std::vector<uint64_t> getCompiledFuncAddr(const std::string &Name);
 
     /* Code generation for open OSR transitions */
     typedef struct DynamicInlinerInfo {

@@ -29,8 +29,6 @@
 #include <strings.h> // strcasecmp()
 #include <unistd.h> // access()
 
-#define FIXSYMS 1
-
 using namespace llvm;
 
 int Parser::start(bool displayHelpMsg) {
@@ -280,7 +278,26 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 
     // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
+
     Module* modToUse = src->getParent();
+    std::unique_ptr<Module> NewModule;
+
+    bool needNewModule = !TheHelper->canModifyModule(modToUse);
+    if (needNewModule) {
+        if (update) {
+            std::cerr << "ERROR: Cannot update a possibly already JIT-ted function!" << std::endl;
+            return;
+        } else {
+            if (TheHelper->verbose) {
+                std::cerr << "Creating a new module as F1 has possibly already been JIT-ted..." << std::endl;
+            }
+            NewModule = llvm::make_unique<Module>("OSRMod", TheHelper->Context);
+            modToUse = NewModule.get();
+        }
+    } else if (TheHelper->verbose) {
+        std::cerr << "Inserting new code in the same module of the source function..." << std::endl;
+    }
+
     OSRLibrary::OSRPointConfig config(TheHelper->verbose, update, branchTakenProb,
             F1NewName, modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
     LivenessAnalysis LA(src);
@@ -295,17 +312,23 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
 
-    if (!update) {
-        TheHelper->registerFunction(src_new);
-    }
-    TheHelper->registerFunction(stub);
 
-    TheHelper->trackAsmCodeUtil(modToUse);
+    if (needNewModule) {
+        TheHelper->addModule(std::move(NewModule));
+    } else {
+        if (!update) {
+            TheHelper->registerFunction(src_new);
+        }
+        TheHelper->registerFunction(stub);
+        TheHelper->trackAsmCodeUtil(modToUse);
+    }
+
+    // delete F1NewToF1Map;
 }
 
 void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
-            std::string* F1NewName, const std::string* F2Name, const std::string* LPadName,
-            std::string* F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
+            std::string* F1NewName, const std::string* LPadName, std::string*
+            F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
 
     std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
     StateMap* M = tmpMapPair.second;
@@ -322,30 +345,33 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
 
-
-    Module *modForNewSrc;
-    Module *modForNewDest;
+    Module *modForNewSrc = src->getParent();
+    Module *modForNewDest = dest->getParent(); // nullptr
     std::unique_ptr<Module> NewModule;
 
-    #if FIXSYMS
-    NewModule = llvm::make_unique<Module>("OSRMod", TheHelper->Context);
-    #endif
+    bool needNewModuleForNewSrc = !TheHelper->canModifyModule(modForNewSrc);
+    if (needNewModuleForNewSrc) {
+        if (update) {
+            std::cerr << "ERROR: Cannot update a possibly already JIT-ted function!" << std::endl;
+            return;
+        } else {
+            if (TheHelper->verbose) {
+                std::cerr << "Creating a new module as F1 has possibly already been JIT-ted..." << std::endl;
+            }
+            NewModule = llvm::make_unique<Module>("OSRMod", TheHelper->Context);
+            modForNewSrc = NewModule.get();
+        }
+    }
 
-    if (update) {
-        modForNewSrc = src->getParent();
-        #if FIXSYMS
+    bool needNewModuleForNewDest = true; // !TheHelper->canModifyModule(modForNewDest)
+    if (needNewModuleForNewDest) {
+        if (!needNewModuleForNewSrc) {
+            if (TheHelper->verbose) {
+                std::cerr << "Creating a new module for the OSR continuation function..." << std::endl;
+            }
+            NewModule = llvm::make_unique<Module>("OSRMod", TheHelper->Context);
+        }
         modForNewDest = NewModule.get();
-        #else
-        modForNewDest = src->getParent();
-        #endif
-    } else {
-        #if FIXSYMS
-        modForNewSrc = NewModule.get();
-        modForNewDest = modForNewSrc;
-        #else
-        modForNewSrc = src->getParent();
-        modForNewDest = src->getParent();
-        #endif
     }
 
     modForNewDest->getFunctionList().push_back(dest);
@@ -363,19 +389,23 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
-    #if FIXSYMS
-    TheHelper->addModule(std::move(NewModule));
-    if (update) TheHelper->trackAsmCodeUtil(modForNewSrc);
-    #else
-    if (!update) {
-        TheHelper->registerFunction(src_new);
-    }
-    TheHelper->registerFunction(dest_new);
-    assert(modForNewSrc == modForNewDest);
-    TheHelper->trackAsmCodeUtil(modForNewDest);
-    #endif
-
     dest->removeFromParent();
+
+    if (needNewModuleForNewSrc) {
+        TheHelper->addModule(std::move(NewModule));
+    } else {
+        if (!update) {
+            TheHelper->registerFunction(src_new);
+        }
+        TheHelper->registerFunction(dest_new);
+        TheHelper->trackAsmCodeUtil(modForNewSrc);
+    }
+
+    if (needNewModuleForNewDest) {
+        if (!needNewModuleForNewSrc) {
+            TheHelper->addModule(std::move(NewModule));
+        }
+    }
 
     //dest->eraseFromParent();
     //delete M;
@@ -487,8 +517,8 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     const std::string F2NewName(token);
 
-    resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &F2Name,
-            &P2Name, const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
+    resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &P2Name,
+            const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
     delete cmdLine;
     #undef getToken

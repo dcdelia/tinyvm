@@ -109,10 +109,6 @@ std::unique_ptr<Module> MCJITHelper::createModuleFromFile(const std::string &Fil
         return nullptr;
     }
 
-    char ModID[256];
-    sprintf(ModID, "IR:%s", FileName.c_str());
-    M->setModuleIdentifier(ModID);
-
     return M;
 }
 

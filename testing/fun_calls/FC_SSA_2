@@ -1,0 +1,5 @@
+VERBOSE
+LOAD_IR testing/IR/fun_calls_SSA.ll
+TRACK_ASM
+fun_calls(1)
+INSERT_OSR 95 ALWAYS SLVD COPY IN fun_calls AT %1 AS fc1 TO fun_calls AT %1 AS fc2

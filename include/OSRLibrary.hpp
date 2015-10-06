@@ -11,6 +11,7 @@
 #include "StateMap.hpp"
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
@@ -102,7 +103,7 @@ class OSRLibrary {
                                             const llvm::Instruction* I,
                                             LivenessAnalysis &LA);
 
-        static bool fixUsesOfExtFunctionsAndGlobals(llvm::Function* origFun,
+        static bool fixUsesOfFunctionsAndGlobals(llvm::Function* origFun,
                                                  llvm::Function* newFun);
 
     private:
@@ -123,6 +124,10 @@ class OSRLibrary {
         static void printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
             LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch);
         static LivenessAnalysis::LiveValues getLiveValsAtInstr(const llvm::Instruction* I, LivenessAnalysis &LA);
+        static bool isConstantUsedInFunction(llvm::Constant* C, llvm::Function* F);
+        static llvm::GlobalVariable* getVisibleDeclaration(llvm::GlobalVariable *G, llvm::Module* M);
+        static void replaceUsesOfConstantExprInFunction(llvm::ConstantExpr* CE,
+            llvm::Constant* oldOp, llvm::Constant* newOp, llvm::Function* F);
 };
 
 #endif

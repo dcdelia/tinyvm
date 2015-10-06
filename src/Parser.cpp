@@ -26,6 +26,7 @@
 #include <string>
 #include <iostream>
 
+#include <libgen.h> // basename()
 #include <strings.h> // strcasecmp()
 #include <unistd.h> // access()
 
@@ -143,11 +144,35 @@ void Parser::handleOptCommand(bool CFGSimplificationOnly) {
 void Parser::handleDumpCommand(bool showLineIDs) {
     #define INVALID() do { std::cerr << "Invalid syntax for a DUMP command!" << std::endl \
             << "Expected command of the form: DUMP <function_name>" << std::endl; \
-            return; } while (0);
+            return; } while (0)
 
-    if (TheLexer->getNextToken() != tok_identifier) INVALID();
+    std::string* tmp = TheLexer->getLine();
+    if (tmp == nullptr) INVALID();
+    else {
+        // strip string first
+        std::string::const_iterator b = tmp->begin(), e = tmp->end();
+        while (std::isspace(*b)) ++b;
+        if (b == e) INVALID();
+        while (std::isspace(*(e-1))) --e;
+        tmp->assign(b, e);
+        if (tmp->size() < 2) INVALID(); // TODO check empty || containing spaces
+    }
+    std::string &Name = *tmp;
+
+    if (TheLexer->getNextToken() != tok_identifier)
     const std::string Name = TheLexer->getIdentifier();
     #undef INVALID
+
+    if (!showLineIDs) {
+        std::vector<Module*> &Modules = TheHelper->getLoadedModules();
+        for (Module* M: Modules) {
+            std::cerr << M->getModuleIdentifier() << std::endl;
+            if (M->getModuleIdentifier() == Name) {
+                M->dump();
+                return;
+            }
+        }
+    }
 
     Function* F = TheHelper->getFunction(Name);
     if (F == nullptr) {
@@ -160,6 +185,8 @@ void Parser::handleDumpCommand(bool showLineIDs) {
     } else {
         F->dump();
     }
+
+    delete tmp;
 }
 
 void Parser::handleFunctionInvocation(int iterations) {
@@ -232,7 +259,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> LOAD_LIB <file_name>" << std::endl << "\tLoads the dynamic library at the given path." << std::endl;
     std::cerr << "--> CFG <function_name>" << std::endl << "\tShows a compact view of the CFG of a given function." << std::endl;
     std::cerr << "--> CFG_FULL <function_name>" << std::endl << "\tShows the full CFG (with instructions) of a given function." << std::endl;
-    std::cerr << "--> DUMP <function_name>" << std::endl << "\tShows the IR code of a given function." << std::endl;
+    std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl << "\tShows the IR code of a given function or module." << std::endl;
     std::cerr << "--> OPT_CFG <function_name>" << std::endl << "\tPerforms a CFG simplification pass over a given function." << std::endl;
     std::cerr << "--> OPT_FULL <function_name>" << std::endl << "\tPerforms several optimization passes over a given function." << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
@@ -376,7 +403,7 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 
     // dirty stuff for dest
     modForNewDest->getFunctionList().push_back(dest);
-    bool usesFixedInDest = OSRLibrary::fixUsesOfExtFunctionsAndGlobals(src, dest);
+    bool usesFixedInDest = OSRLibrary::fixUsesOfFunctionsAndGlobals(src, dest);
     if (usesFixedInDest && TheHelper->verbose) {
         std::cerr << "Creating declarations to update references to globals and functions..." << std::endl;
     }
@@ -540,6 +567,7 @@ void Parser::handleLoadIRCommand() {
     }
     std::cerr << "[LOAD] Opening \"" << fileName << "\" as IR source file..." << std::endl;
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(*FileName);
+    M->setModuleIdentifier(basename(const_cast<char*>(fileName)));
     TheHelper->addModule(std::move(M));
     delete FileName;
 }

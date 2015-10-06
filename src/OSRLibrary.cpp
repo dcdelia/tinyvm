@@ -314,7 +314,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     } else {
         config.modForNewF2->getFunctionList().push_back(OSRDestFun);
         if (config.modForNewF2 != F2.getParent()) {
-            bool changed = fixUsesOfExtFunctionsAndGlobals(&F2, OSRDestFun);
+            bool changed = fixUsesOfFunctionsAndGlobals(&F2, OSRDestFun);
             if (changed && config.verbose) {
                 std::cerr << "Uses of functions and globals from F2's parent module have "
                           << "been replaced with uses of newly created declarations" << std::endl;
@@ -348,7 +348,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         } else {
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
             if (config.modForNewF1 != parentForSrc) {
-                bool changed = fixUsesOfExtFunctionsAndGlobals(src, newSrcFun);
+                bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
                 if (changed && config.verbose) {
                     std::cerr << "Uses of functions and globals from F1's parent module have "
                               << "been replaced with uses of newly created declarations" << std::endl;
@@ -617,7 +617,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             verifyAux(stub);
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
             if (config.modForNewF1 != parentForSrc) {
-                bool changed = fixUsesOfExtFunctionsAndGlobals(src, newSrcFun);
+                bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
                 if (changed && config.verbose) {
                     std::cerr << "Uses of functions and globals from F1's parent module have "
                               << "been replaced with uses of newly created declarations" << std::endl;
@@ -955,7 +955,29 @@ void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
     std::cerr << "}" << std::endl;
 }
 
-bool OSRLibrary::fixUsesOfExtFunctionsAndGlobals(Function* origFun, Function* newFun) {
+GlobalVariable* OSRLibrary::getVisibleDeclaration(GlobalVariable *G, Module* M) {
+    StringRef Name = G->getName();
+
+    if (G->isConstant() && G->hasPrivateLinkage()) {
+        GlobalVariable* ret = M->getGlobalVariable(Name);
+        if (ret == nullptr) {
+            ret = new GlobalVariable(*M, G->getType()->getPointerElementType(),
+                    G->isConstant(), GlobalValue::ExternalLinkage, G->getInitializer());
+            ret->setName(Name);
+        }
+        return ret;
+    }
+
+    // TODO handle this scenario more carefully: code might have been JIT-ted!
+    if (G->hasPrivateLinkage()) {
+        G->setLinkage(GlobalValue::LinkageTypes::ExternalLinkage);
+    }
+
+    return cast<GlobalVariable>(M->getOrInsertGlobal(Name,
+            G->getType()->getPointerElementType()));
+}
+
+bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFun) {
     bool updated = false;
 
     Module* origModule = origFun->getParent();
@@ -970,18 +992,20 @@ bool OSRLibrary::fixUsesOfExtFunctionsAndGlobals(Function* origFun, Function* ne
         GlobalVariable *newG = nullptr;
         for (Value::use_iterator UI = g.use_begin(), UE = g.use_end(); UI != UE; ) {
             Use &U = *(UI++);
-            if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
+            User* user = U.getUser();
+            if (Instruction* I = dyn_cast<Instruction>(user)) {
                 if (I->getParent()->getParent() != newFun) continue;
-                if (newG == nullptr) {
-                    // we need the type of the pointee (globals are pointers)
-                    newG = new GlobalVariable(*newModule, g.getType()->getPointerElementType(),
-                            g.isConstant(), GlobalValue::ExternalLinkage, nullptr);
-                    if (g.hasName()) {
-                        newG->setName(g.getName());
-                    }
+                if (newG == nullptr) newG = getVisibleDeclaration(&g, newModule);
+                U.set(newG);
+                updated = true;
+            } else if (ConstantExpr* CE = dyn_cast<ConstantExpr>(user)) {
+                if (isConstantUsedInFunction(CE, newFun)) {
+                    if (newG == nullptr) newG = getVisibleDeclaration(&g, newModule);
+                    replaceUsesOfConstantExprInFunction(CE, &g, newG, newFun);
                     updated = true;
                 }
-                U.set(newG);
+            } else {
+                assert(false);
             }
         }
     }
@@ -990,14 +1014,15 @@ bool OSRLibrary::fixUsesOfExtFunctionsAndGlobals(Function* origFun, Function* ne
     for (Module::iterator fIt = origModule->begin(), fEnd = origModule->end();
             fIt != fEnd; ++fIt) {
         Function &F = *fIt;
-        Function* newF = nullptr;
+        Constant* newF = nullptr;
         for (Value::use_iterator UI = F.use_begin(), UE = F.use_end(); UI != UE; ) {
             Use &U = *(UI++);
             if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
                 if (I->getParent()->getParent() != newFun) continue;
                 if (newF == nullptr) {
-                    newF = Function::Create(F.getFunctionType(),
-                            Function::ExternalLinkage, F.getName(), newModule);
+                    newF = newModule->getOrInsertFunction(F.getName(),
+                            F.getFunctionType(), F.getAttributes());
+                    // TODO visibility
                     updated = true;
                 }
                 U.set(newF);
@@ -1006,6 +1031,49 @@ bool OSRLibrary::fixUsesOfExtFunctionsAndGlobals(Function* origFun, Function* ne
     }
 
     return updated;
+}
+
+bool OSRLibrary::isConstantUsedInFunction(Constant* C, Function* F) {
+    for (Constant::use_iterator UI = C->use_begin(), UE = C->use_end(); UI != UE; ) {
+        Use &U = *(UI++);
+        User* user = U.getUser();
+        if (Instruction* I = dyn_cast<Instruction>(user)) {
+            if (I->getParent()->getParent() == F) return true;
+        } else if (Constant* CC = dyn_cast<Constant>(user)) {
+            if (isConstantUsedInFunction(CC, F)) return true;
+        }
+    }
+
+    return false;
+}
+
+void OSRLibrary::replaceUsesOfConstantExprInFunction(ConstantExpr* CE,
+        Constant* oldOp, Constant* newOp, Function* F) {
+    SmallVector<Constant*, 8> NewOps;
+    for (int i = 0, e = CE->getNumOperands(); i < e; ++i) {
+        Constant *Op = CE->getOperand(i);
+        if (Op == oldOp) {
+            NewOps.push_back(newOp);
+        } else {
+            NewOps.push_back(Op);
+        }
+    }
+
+    Constant* newCE = CE->getWithOperands(NewOps, CE->getType(), false);
+
+    for (ConstantExpr::use_iterator UI = CE->use_begin(), UE = CE->use_end(); UI != UE; ) {
+        Use &U = *(UI++);
+        User* user = U.getUser();
+        if (Instruction* I = dyn_cast<Instruction>(user)) {
+            if (I->getParent()->getParent() == F) {
+                user->replaceUsesOfWith(CE, newCE);
+            }
+        } else if (ConstantExpr* CCE = dyn_cast<ConstantExpr>(user)) {
+            replaceUsesOfConstantExprInFunction(CCE, oldOp, newOp, F);
+        } else {
+            assert(false);
+        }
+    }
 }
 
 /*

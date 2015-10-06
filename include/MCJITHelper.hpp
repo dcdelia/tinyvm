@@ -84,6 +84,7 @@ public:
     CmpInst* generateAlwaysTrueCond();
     CmpInst* generateAlwaysFalseCond();
     bool canModifyModule(Module* M);
+    std::vector<Module*>& getLoadedModules() { return Modules; };
 
     static ValueToValueMapTy* generateIdentityMapping(Function* F);
     static std::string& LLVMTypeToString(Type* type);

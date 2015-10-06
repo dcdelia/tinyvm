@@ -102,7 +102,7 @@ class OSRLibrary {
                                             const llvm::Instruction* I,
                                             LivenessAnalysis &LA);
 
-        static bool fixUsesOfFunctionsAndGlobals(llvm::Function* origFun,
+        static bool fixUsesOfExtFunctionsAndGlobals(llvm::Function* origFun,
                                                  llvm::Function* newFun);
 
     private:

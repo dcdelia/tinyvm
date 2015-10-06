@@ -314,7 +314,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     } else {
         config.modForNewF2->getFunctionList().push_back(OSRDestFun);
         if (config.modForNewF2 != F2.getParent()) {
-            bool changed = fixUsesOfFunctionsAndGlobals(&F2, OSRDestFun);
+            bool changed = fixUsesOfExtFunctionsAndGlobals(&F2, OSRDestFun);
             if (changed && config.verbose) {
                 std::cerr << "Uses of functions and globals from F2's parent module have "
                           << "been replaced with uses of newly created declarations" << std::endl;
@@ -348,7 +348,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         } else {
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
             if (config.modForNewF1 != parentForSrc) {
-                bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
+                bool changed = fixUsesOfExtFunctionsAndGlobals(src, newSrcFun);
                 if (changed && config.verbose) {
                     std::cerr << "Uses of functions and globals from F1's parent module have "
                               << "been replaced with uses of newly created declarations" << std::endl;
@@ -617,7 +617,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             verifyAux(stub);
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
             if (config.modForNewF1 != parentForSrc) {
-                bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
+                bool changed = fixUsesOfExtFunctionsAndGlobals(src, newSrcFun);
                 if (changed && config.verbose) {
                     std::cerr << "Uses of functions and globals from F1's parent module have "
                               << "been replaced with uses of newly created declarations" << std::endl;
@@ -955,7 +955,7 @@ void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
     std::cerr << "}" << std::endl;
 }
 
-bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFun) {
+bool OSRLibrary::fixUsesOfExtFunctionsAndGlobals(Function* origFun, Function* newFun) {
     bool updated = false;
 
     Module* origModule = origFun->getParent();
@@ -973,8 +973,9 @@ bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFu
             if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
                 if (I->getParent()->getParent() != newFun) continue;
                 if (newG == nullptr) {
-                    newG = new GlobalVariable(*newModule, g.getType(), g.isConstant(),
-                            GlobalValue::ExternalLinkage, nullptr);
+                    // we need the type of the pointee (globals are pointers)
+                    newG = new GlobalVariable(*newModule, g.getType()->getPointerElementType(),
+                            g.isConstant(), GlobalValue::ExternalLinkage, nullptr);
                     if (g.hasName()) {
                         newG->setName(g.getName());
                     }

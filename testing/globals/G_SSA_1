@@ -1,0 +1,4 @@
+VERBOSE
+LOAD_IR testing/IR/globals_SSA.ll
+TRACK_ASM
+INSERT_OSR 95 ALWAYS SLVD COPY IN iterate AT %1 AS it1 TO iterate AT %1 AS it2

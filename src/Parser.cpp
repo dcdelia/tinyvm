@@ -374,7 +374,12 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         modForNewDest = NewModule.get();
     }
 
+    // dirty stuff for dest
     modForNewDest->getFunctionList().push_back(dest);
+    bool usesFixedInDest = OSRLibrary::fixUsesOfExtFunctionsAndGlobals(src, dest);
+    if (usesFixedInDest && TheHelper->verbose) {
+        std::cerr << "Creating declarations to update references to globals and functions..." << std::endl;
+    }
 
     OSRLibrary::OSRPointConfig config(TheHelper->verbose, update, branchTakenProb,
             F1NewName, modForNewSrc, &F1NewToF1Map, F2NewName, modForNewDest, &F2NewToF2Map);

@@ -1,5 +1,5 @@
 LOAD_IR shootout/fasta/finalAlwaysFire-O1.ll
-INSERT_OSR 95 ALWAYS FINAL UPDATE IN selectRandom AT %entry TO selectRandom AT %entry AS selectRandom_OSR
+INSERT_OSR 95 ALWAYS SLVD UPDATE IN selectRandom AT %entry TO selectRandom AT %entry AS selectRandom_OSR
 OPT_CFG selectRandom
 OPT_CFG selectRandom_OSR
 bench(50000000)

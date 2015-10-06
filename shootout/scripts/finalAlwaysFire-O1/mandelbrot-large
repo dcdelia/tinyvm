@@ -1,5 +1,5 @@
 LOAD_IR shootout/mandelbrot/finalAlwaysFire-O1.ll
-INSERT_OSR 95 ALWAYS FINAL UPDATE IN hotLoop AT %entry TO hotLoop AT %entry AS hotLoop_OSR
+INSERT_OSR 95 ALWAYS SLVD UPDATE IN hotLoop AT %entry TO hotLoop AT %entry AS hotLoop_OSR
 OPT_CFG hotLoop
 OPT_CFG hotLoop_OSR
 bench(32000)

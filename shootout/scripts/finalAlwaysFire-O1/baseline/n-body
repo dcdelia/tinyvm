@@ -1,5 +1,5 @@
 LOAD_IR shootout/n-body/finalAlwaysFire-O1.ll
-INSERT_OSR 95 NEVER FINAL UPDATE IN advance AT %entry TO advance AT %entry AS advance_OSR
+INSERT_OSR 95 NEVER SLVD UPDATE IN advance AT %entry TO advance AT %entry AS advance_OSR
 OPT_CFG advance
 OPT_CFG advance_OSR
 bench(50000000)

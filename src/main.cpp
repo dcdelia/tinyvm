@@ -32,7 +32,11 @@ int getCharFromHistory() {
 void intHandler(int signum) {
     restore_term(&cmd_history);
     fprintf(stderr, "Exiting...\n");
-    exit(0);
+    if (signum == SIGINT) {
+        exit(0);
+    } else {
+        exit(1);
+    }
 }
 #endif
 
@@ -60,7 +64,7 @@ int main(int argc, char* argv[]) {
             }
             TheLexer = new Lexer(inputFile);
 
-            Parser parser(TheLexer, TheHelper);
+            Parser parser(TheLexer, TheHelper, nullptr);
             code = parser.start(false); // do not display help message
 
             delete TheLexer;
@@ -75,14 +79,16 @@ int main(int argc, char* argv[]) {
     memset(&act, 0, sizeof(act));
     act.sa_handler = &intHandler;
     sigaction(SIGINT, &act, NULL);
+    sigaction(SIGABRT, &act, NULL);
 
     init_history(&cmd_history, "TinyVM> ");
     TheLexer = new Lexer(getCharFromHistory);
+    Parser parser(TheLexer, TheHelper, &cmd_history);
     #else
     TheLexer = new Lexer(getchar);
+    Parser parser(TheLexer, TheHelper, nullptr);
     #endif
 
-    Parser parser(TheLexer, TheHelper);
     code = parser.start();
     if (code == -1) code = 0; // -1 means CTRL-D or EOF
 

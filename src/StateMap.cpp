@@ -128,7 +128,7 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
     BasicBlock* lastCreatedBB = entryPoint;
 
     // process global compensation code
-    if (lpInfo->globalCompCode != nullptr) {
+    if (lpInfo != nullptr && lpInfo->globalCompCode != nullptr) {
         assert(lpInfo->globalCompCode->value == nullptr &&
                 "value should be null for global compensation code");
         lastCreatedBB = addGlobalCompensationCode(lastCreatedBB,
@@ -191,7 +191,7 @@ void StateMap::updateRefsToArgs(StateMap::CompCode* compCode, ValueToValueMapTy 
     }
 }
 
-BasicBlock* StateMap::addGlobalCompensationCode(llvm::BasicBlock* curBlock,
+BasicBlock* StateMap::addGlobalCompensationCode(BasicBlock* curBlock,
         StateMap::CompCode* compCode, ValueToValueMapTy &fetchedValuesToNewDestArgs) {
     updateRefsToArgs(compCode, fetchedValuesToNewDestArgs);
 

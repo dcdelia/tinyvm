@@ -24,25 +24,25 @@ void init_history(history_t* history, const char* prefix) {
     history->eof = 0;
     history->prefix = prefix;
 
-    /* Hack current terminal to disable cooked buffered stdin. Credits:
-     * http://stackoverflow.com/questions/1798511/how-to-avoid-press-enter-with-any-getchar
-     * http://www.gnu.org/software/libc/manual/html_node/Noncanon-Example.html */
     if (tcgetattr(STDIN_FILENO, &history->old_term_settings) == -1) {
         perror("Cannot fetch current parameters for the terminal");
         exit(EXIT_FAILURE);
     }
-    struct termios new_term_settings = history->old_term_settings;
+
+    /* Hack current terminal to disable cooked buffered stdin. Credits:
+     * http://stackoverflow.com/questions/1798511/how-to-avoid-press-enter-with-any-getchar
+     * http://www.gnu.org/software/libc/manual/html_node/Noncanon-Example.html */
+
+    history->new_term_settings = history->old_term_settings;
 
     /* We will disable two options:
      * - ICANON (takes care that one line at a time will be processed)
      * - ECHO (automatically echoes the input back to the terminal) */
-    new_term_settings.c_lflag &= ~(ICANON | ECHO);
-    new_term_settings.c_cc[VMIN] = 1;
-    new_term_settings.c_cc[VTIME] = 0;
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_term_settings) == -1) { // was: TCSANOW
-        perror("Cannot change current parameters for the terminal");
-        exit(EXIT_FAILURE);
-    }
+    history->new_term_settings.c_lflag &= ~(ICANON | ECHO);
+    history->new_term_settings.c_cc[VMIN] = 1;
+    history->new_term_settings.c_cc[VTIME] = 0;
+
+    set_term(history);
 }
 
 static void handle_arrow(history_t* h) {
@@ -176,6 +176,13 @@ int get_input_char(history_t* history) {
 
 void restore_term(history_t* history) {
     if (tcsetattr(STDIN_FILENO, TCSANOW, &history->old_term_settings) == -1) {
+        perror("Cannot change current parameters for the terminal");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void set_term(history_t* history) {
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &history->new_term_settings) == -1) { // was: TCSANOW
         perror("Cannot change current parameters for the terminal");
         exit(EXIT_FAILURE);
     }

@@ -10,18 +10,21 @@
 
 #include "Lexer.hpp"
 #include "MCJITHelper.hpp"
+#include "history.h"
 
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Value.h>
 
 class Parser {
 public:
-    Parser(Lexer* L, MCJITHelper* H) : TheLexer(L), TheHelper(H) {}
+    Parser(Lexer* L, MCJITHelper* MH, history_t* H) :
+            TheLexer(L), TheHelper(MH), TheHistory(H) {}
     int start(bool displayHelpMessage = true);
 
 private:
     Lexer       *TheLexer;
     MCJITHelper *TheHelper;
+    history_t   *TheHistory;
 
     // simple auxiliary methods
     void handleBeginCommand();

@@ -9,6 +9,7 @@
 #include "MCJITHelper.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
+#include "history.h"
 #include "timer.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -40,6 +41,7 @@ int Parser::start(bool displayHelpMsg) {
     while (1) {
         fprintf(stderr, "TinyVM> ");
         int token = TheLexer->getNextToken();
+        if (TheHistory != nullptr) restore_term(TheHistory);
         switch (token) {
             case tok_newline:       fprintf(stderr, "\r"); break; // dirty trick :-)
             case tok_help:          handleHelpCommand(); break;
@@ -65,6 +67,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return -1;
             default:                std::cerr << "Unexpected token. Exiting..." << std::endl;; return 1;
         }
+        if (TheHistory != nullptr) set_term(TheHistory);
     }
 }
 

@@ -26,6 +26,7 @@ typedef struct history_s {
     int is_typing;
     int last_retrieved;
     int eof;
+    struct termios new_term_settings;
     struct termios old_term_settings;
     const char* prefix;
 } history_t;
@@ -36,6 +37,7 @@ extern "C" {
     void init_history(history_t* history, const char* prefix);
     int get_input_char(history_t* history);
     void restore_term(history_t* history);
+    void set_term(history_t* history);
 #ifdef __cplusplus
 }
 #endif

@@ -38,25 +38,7 @@ tinyvm_timer_t   my_timer;
 
 using namespace llvm;
 
-/**
- * Global TODO list
- * - use better aliases for types?
- * - use const references more?
- * - fix names in OSRDestFun
- * - what would happen to a reassigned Argument??
- * - helper method to generate prototypes of called functions and update references when a new Module is used
- * - general attributes of the Function? (http://llvm.org/docs/HowToUseAttributes.html)
- */
-
-/**
- * Helper methods
- */
-static inline void verifyAux(Function* F) {
-    if (llvm::verifyFunction(*F, &llvm::outs())) {
-        F->dump();
-        llvm::report_fatal_error("ill-formed function!");
-    }
-}
+#define VERIFYFUN(F)    assert(!verifyFunction(*F, &llvm::outs()) && "ill-formed function!")
 
 /**
  * Public methods
@@ -168,10 +150,10 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
             Value* OSRDest_v = it->second;
             Value* dest_v = const_cast<Value*>(it->first);
             (*ptrForF2NewToF2Map)->registerOneToOneValue(OSRDest_v, dest_v, false);
-            if (Instruction* anOSRSrc = llvm::dyn_cast<Instruction>(OSRDest_v)) {
-                if (!isa<llvm::PHINode>(anOSRSrc)) {
+            if (Instruction* anOSRSrc = dyn_cast<Instruction>(OSRDest_v)) {
+                if (!isa<PHINode>(anOSRSrc)) {
                     (*ptrForF2NewToF2Map)->registerLandingPad(anOSRSrc,
-                            llvm::cast<Instruction>(dest_v), false);
+                            cast<Instruction>(dest_v), false);
                 }
             }
         }
@@ -213,27 +195,22 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
-    Function* OSRDestFun = genContinuationFunc(Context, F1, F2, OSRSrc, LPad,
+    Function* OSRContFun = genContinuationFunc(Context, F1, F2, OSRSrc, LPad,
             valuesToPass, M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
 
     #ifdef PROFILE_TIME
     timer_start(&my_timer);
     #endif
 
-    Function* OSRDestFunProt;
+    Function* OSRContFunDecl;
     if (config.modForNewF2 != config.modForNewF1) {
-        if (config.modForNewF1 == nullptr) {
-            llvm::report_fatal_error("Cannot generate F2' and F1' for different modules if no module is provided for F1'");
-        }
-        if (config.verbose) {
-            std::cerr << "Generating prototype for calling F2' from F1' as they might be in different modules" << std::endl;
-        }
-        OSRDestFunProt = llvm::Function::Create(OSRDestFun->getFunctionType(),
-                                                llvm::Function::ExternalLinkage,
-                                                OSRDestFun->getName().str(),
-                                                config.modForNewF1);
+        // we must insert the prototype of OSRCont in the module of F1'
+        assert(config.modForNewF1 != nullptr &&
+                "module for F1' cannot be null when a module for F2' is specified");
+        OSRContFunDecl = Function::Create(OSRContFun->getFunctionType(),
+                Function::ExternalLinkage, OSRContFun->getName(), config.modForNewF1);
     } else {
-        OSRDestFunProt = OSRDestFun;
+        OSRContFunDecl = OSRContFun;
     }
 
     /* [Prepare F1' aka newSrc] Workflow:
@@ -284,7 +261,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         newOSRSrc = &OSRSrc;
     }
 
-    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRDestFunProt, valuesToPass); // (3)
+    BasicBlock* OSR_B = generateTriggerOSRBlock(Context, OSRContFunDecl, valuesToPass); // (3)
     OSR_B->insertInto(newSrcFun);
 
     insertOSRCond(Context, newSrcFun, newOSRSrc, OSR_B, *ptrToOSRCond,
@@ -308,19 +285,19 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
             std::cerr << "WARNING: No LLVM Module supplied for F2'!" << std::endl;
         }
         Module tmpMod("OSRtmpMod", Context);
-        tmpMod.getFunctionList().push_back(OSRDestFun);
-        verifyAux(OSRDestFun);
-        OSRDestFun->removeFromParent();
+        tmpMod.getFunctionList().push_back(OSRContFun);
+        VERIFYFUN(OSRContFun);
+        OSRContFun->removeFromParent();
     } else {
-        config.modForNewF2->getFunctionList().push_back(OSRDestFun);
+        config.modForNewF2->getFunctionList().push_back(OSRContFun);
         if (config.modForNewF2 != F2.getParent()) {
-            bool changed = fixUsesOfFunctionsAndGlobals(&F2, OSRDestFun);
+            bool changed = fixUsesOfFunctionsAndGlobals(&F2, OSRContFun);
             if (changed && config.verbose) {
                 std::cerr << "Uses of functions and globals from F2's parent module have "
                           << "been replaced with uses of newly created declarations" << std::endl;
             }
         }
-        verifyAux(OSRDestFun);
+        VERIFYFUN(OSRContFun);
     }
 
     // verify newSrcFun and add it to the proper module
@@ -331,10 +308,10 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
             }
             Module tmpMod("OSRtmpMod", Context);
             tmpMod.getFunctionList().push_back(src);
-            verifyAux(src);
+            VERIFYFUN(src);
             src->removeFromParent();
         } else {
-            verifyAux(src);
+            VERIFYFUN(src);
         }
     } else {
         if (config.modForNewF1 == nullptr) {
@@ -343,7 +320,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
             }
             Module tmpMod("OSRtmpMod", Context);
             tmpMod.getFunctionList().push_back(newSrcFun);
-            verifyAux(newSrcFun);
+            VERIFYFUN(newSrcFun);
             newSrcFun->removeFromParent();
         } else {
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
@@ -354,7 +331,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
                               << "been replaced with uses of newly created declarations" << std::endl;
                 }
             }
-            verifyAux(newSrcFun);
+            VERIFYFUN(newSrcFun);
         }
     }
 
@@ -364,7 +341,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     fprintf(stderr, "Time spent in IR verification: %.9f seconds\n", elapsed);
     #endif
 
-    return OSRPair(newSrcFun, OSRDestFun);
+    return OSRPair(newSrcFun, OSRContFun);
 }
 
 OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
@@ -544,10 +521,11 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     // step (2)
     Value* newProfDataVal;
     if (profDataVal != nullptr) {
-        newProfDataVal = (!config.updateF1) ? cast<Value>(srcToNewSrcVMap[profDataVal]) : profDataVal; // TODO check cast
+        newProfDataVal = (config.updateF1) ? profDataVal : cast<Value>(srcToNewSrcVMap[profDataVal]);
         if (!newProfDataVal->getType()->isPointerTy()) {
-            // TODO
-            llvm::report_fatal_error("Sorry, I don't know yet how to pass non-pointer profiling values!");
+            // TODO: we might cast most scalars to i8* and GEP for structs,
+            //       but a better solution is needed (spill+GEP at OSR block?)
+            assert(false && "non-pointer profiling values are not supported at the moment");
         }
     } else {
         newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy); // we pass 0 as NULL value
@@ -590,15 +568,15 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             }
             Module tmpMod("OSRtmpMod", Context);
             tmpMod.getFunctionList().push_back(stub);
-            verifyAux(stub);
+            VERIFYFUN(stub);
             tmpMod.getFunctionList().push_back(src);
-            verifyAux(src);
+            VERIFYFUN(src);
             stub->removeFromParent();
             src->removeFromParent();
         } else {
             parentForSrc->getFunctionList().push_back(stub);
-            verifyAux(stub);
-            verifyAux(src);
+            VERIFYFUN(stub);
+            VERIFYFUN(src);
         }
     } else {
         if (config.modForNewF1 == nullptr) {
@@ -607,14 +585,14 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             }
             Module tmpMod("OSRtmpMod", Context);
             tmpMod.getFunctionList().push_back(stub);
-            verifyAux(stub);
+            VERIFYFUN(stub);
             tmpMod.getFunctionList().push_back(src);
-            verifyAux(src);
+            VERIFYFUN(src);
             stub->removeFromParent();
             src->removeFromParent();
         } else {
             config.modForNewF1->getFunctionList().push_back(stub);
-            verifyAux(stub);
+            VERIFYFUN(stub);
             config.modForNewF1->getFunctionList().push_back(newSrcFun);
             if (config.modForNewF1 != parentForSrc) {
                 bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
@@ -623,7 +601,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
                               << "been replaced with uses of newly created declarations" << std::endl;
                 }
             }
-            verifyAux(newSrcFun);
+            VERIFYFUN(newSrcFun);
         }
     }
 
@@ -864,7 +842,7 @@ OSRLibrary::OSRCond OSRLibrary::regenerateOSRCond(OSRLibrary::OSRCond &cond, Val
     return newCond;
 }
 
-BasicBlock* OSRLibrary::generateTriggerOSRBlock(llvm::LLVMContext &Context, Function* OSRDest,
+BasicBlock* OSRLibrary::generateTriggerOSRBlock(LLVMContext &Context, Function* OSRDest,
         std::vector<Value*> &valuesToPass) {
     Type* retTy = OSRDest->getReturnType();
 
@@ -922,7 +900,7 @@ BasicBlock* OSRLibrary::insertOSRCond(LLVMContext &Context, Function* F,
     return contBlock;
 }
 
-std::vector<llvm::Value*>* OSRLibrary::getLiveValsVecAtInstr(const Instruction* I, LivenessAnalysis &LA) {
+std::vector<Value*>* OSRLibrary::getLiveValsVecAtInstr(const Instruction* I, LivenessAnalysis &LA) {
     std::vector<Value*>* vec = new std::vector<Value*>();
 
     LivenessAnalysis::LiveValues liveInAtOSRSrc = getLiveValsAtInstr(I, LA);
@@ -942,7 +920,7 @@ LivenessAnalysis::LiveValues OSRLibrary::getLiveValsAtInstr(const Instruction* I
 }
 
 void OSRLibrary::printLiveVarInfoForDebug(LivenessAnalysis::LiveValues &liveIn,
-        LivenessAnalysis::LiveValues &liveOut, std::vector<llvm::Value*> &valuesToFetch) {
+        LivenessAnalysis::LiveValues &liveOut, std::vector<Value*> &valuesToFetch) {
     std::cerr << "LIVE_IN at block: (" << liveIn.size() << ")   ";
     std::cerr << liveIn << std::endl;
     std::cerr << "LIVE_OUT at block: (" << liveOut.size() << ")  ";

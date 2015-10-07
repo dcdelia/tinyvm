@@ -16,6 +16,8 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 
+#undef NDEBUG
+#include <cassert>
 
 using namespace llvm;
 
@@ -121,10 +123,7 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
     LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
     if (LPIMIt != locPairInfoMap.end()) {
         lpInfo = &(LPIMIt->second);
-
-        if (lpInfo->globalCompCode != nullptr) {
-            llvm::report_fatal_error("Sorry, global compensation code hasn't been fully implemented yet!"); // TODO
-        }
+        assert(lpInfo->globalCompCode == nullptr && "global compensation code not implemented yet");
     }
 
        // process values to set
@@ -184,14 +183,12 @@ BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest
                 }
             }
         }
-        // TODO after the transformation code can't be reused anymore!
+        // TODO right now the transformation code can't be reused anymore!
     }
 
     for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
         Value* curVal = *it;
-        if (isa<BasicBlock>(curVal)) {
-            llvm::report_fatal_error("Sorry, local compensation code with multiple BBs hasn't been implemented yet!"); // TODO
-        }
+        assert(!isa<BasicBlock>(curVal) && "multiple blocks for compensation code are not supported yet");
         Instruction* curInst = cast<Instruction>(curVal);
         curBlock->getInstList().push_back(curInst);
     }
@@ -209,7 +206,7 @@ Value* StateMap::getCorrespondingOneToOneValue(Value *v) {
     return nullptr;
 }
 
-Instruction* StateMap::getLandingPad(llvm::Instruction* OSRSrc) {
+Instruction* StateMap::getLandingPad(Instruction* OSRSrc) {
     LocMap::iterator it = landingPadMap.find(OSRSrc);
     if (it != landingPadMap.end()) {
         return it->second;

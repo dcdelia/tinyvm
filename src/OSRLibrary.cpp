@@ -28,6 +28,7 @@ tinyvm_timer_t   my_timer;
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Utils/Cloning.h>
+#include <llvm/Transforms/Utils/Local.h>
 #include <llvm/Transforms/Utils/SSAUpdater.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
 
@@ -38,7 +39,7 @@ tinyvm_timer_t   my_timer;
 
 using namespace llvm;
 
-#define VERIFYFUN(F)    assert(!verifyFunction(*F, &llvm::outs()) && "ill-formed function!")
+#define VERIFYFUN(F)    assert(!verifyFunction(*F, &outs()) && "ill-formed function!")
 
 /**
  * Public methods
@@ -519,13 +520,20 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     }
 
     // step (2)
+    bool insertNewProfDataVal = false;
     Value* newProfDataVal;
     if (profDataVal != nullptr) {
         newProfDataVal = (config.updateF1) ? profDataVal : cast<Value>(srcToNewSrcVMap[profDataVal]);
-        if (!newProfDataVal->getType()->isPointerTy()) {
+        Type* profDataValTy = newProfDataVal->getType();
+        if (!profDataValTy->isPointerTy()) {
             // TODO: we might cast most scalars to i8* and GEP for structs,
             //       but a better solution is needed (spill+GEP at OSR block?)
             assert(false && "non-pointer profiling values are not supported at the moment");
+        } else {
+            if (profDataValTy != i8PointerTy) {
+                insertNewProfDataVal = true;
+                newProfDataVal = CastInst::CreatePointerCast(newProfDataVal, i8PointerTy, "OSRCast");
+            }
         }
     } else {
         newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy); // we pass 0 as NULL value
@@ -541,6 +549,10 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
     // step (3)
     BasicBlock* OSR_B = generateTriggerOSRBlock(Context, stub, newValuesToPass);
+    if (insertNewProfDataVal) {
+        // cast<> as redundant sanity check (account for future extensions)
+        OSR_B->getInstList().push_front(cast<Instruction>(newProfDataVal));
+    }
     OSR_B->insertInto(newSrcFun);
 
     // step (4)
@@ -1053,6 +1065,42 @@ void OSRLibrary::replaceUsesOfConstantExprInFunction(ConstantExpr* CE,
         } else {
             assert(false);
         }
+    }
+}
+
+bool OSRLibrary::removeOSRPoint(Instruction &OSRSrc) {
+    Instruction* splitInst = &OSRSrc;
+    BasicBlock* splitBB = splitInst->getParent();
+    if (splitInst != &splitBB->getInstList().front()) return false;
+    BasicBlock* predBB = splitBB->getSinglePredecessor();
+    if (predBB == nullptr) return false;
+    TerminatorInst *TI = predBB->getTerminator();
+
+    if (BranchInst* BI = dyn_cast<BranchInst>(TI)) {
+        if (BI->getNumSuccessors() != 2) return false;
+        BasicBlock* FireOSRBlock = BI->getSuccessor(0);
+        assert(splitBB == BI->getSuccessor(1) && "split block in wrong order");
+        FireOSRBlock->eraseFromParent();
+        TI->eraseFromParent();
+        BranchInst* brToSplitBB = BranchInst::Create(splitBB);
+        predBB->getInstList().push_back(brToSplitBB);
+
+        // DCE to remove OSR condition (might remove also other dead code!)
+        for (BasicBlock::reverse_iterator revIt = ++(predBB->rbegin()),
+                revEnd = predBB->rend(); revIt != revEnd; ) {
+            Instruction *I = &*revIt;
+            assert(I != nullptr && "reverse iterator returned nullptr");
+            if (isInstructionTriviallyDead(I, nullptr)) {
+                I->eraseFromParent();
+                // I don't increment revIt: update revEnd instead!
+                revEnd = predBB->rend();
+            } else {
+                break;
+            }
+        }
+        return true;
+    } else {
+        return false;
     }
 }
 

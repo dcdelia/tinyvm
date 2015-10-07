@@ -220,7 +220,8 @@ void MCJITHelper::registerFunction(Function* F) {
 
 std::string MCJITHelper::prototypeToString(Function& F) {
     std::string sym_str;
-    if (F.isDeclaration()) {
+    bool isExtern = F.isDeclaration();
+    if (isExtern) {
         sym_str.append("extern ");
     }
 
@@ -232,10 +233,12 @@ std::string MCJITHelper::prototypeToString(Function& F) {
             Argument &arg = *it;
             sym_str.append(LLVMTypeToString(arg.getType()));
             if (arg.hasName()) {
-                sym_str.append(" " + arg.getName().str());
+                sym_str.append(" %" + arg.getName().str());
+            } else if (!isExtern) {
+                sym_str.append(" %" + std::to_string(slotID++));
             }
             if (++it != end) {
-                sym_str.append(" %" + std::to_string(++slotID) + ", ");
+                sym_str.append(", ");
             } else {
                 break;
             }
@@ -247,9 +250,6 @@ std::string MCJITHelper::prototypeToString(Function& F) {
 }
 
 void MCJITHelper::showModules() {
-    std::string type_str;
-    raw_string_ostream type_rso(type_str);
-
     for (Module* M: Modules) {
         std::cerr << "[Module: " << M->getModuleIdentifier() << "]" << std::endl;
         if (M->empty() && M->global_empty()) {
@@ -257,7 +257,14 @@ void MCJITHelper::showModules() {
             continue;
         }
 
-        // TODO globals
+        raw_os_ostream errStream(std::cerr);
+
+        for (Module::global_iterator gIt = M->global_begin(), gEnd = M->global_end();
+                gIt != gEnd; ++gIt) {
+            GlobalVariable &g = *gIt;
+            g.print(errStream);
+            std::cerr << std::endl;
+        }
 
         for (Module::iterator it = M->begin(), end = M->end(); it != end; ++it) {
             std::cerr << prototypeToString(*it) << std::endl;

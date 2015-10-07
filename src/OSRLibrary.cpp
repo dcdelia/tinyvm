@@ -964,6 +964,8 @@ GlobalVariable* OSRLibrary::getVisibleDeclaration(GlobalVariable *G, Module* M) 
             ret = new GlobalVariable(*M, G->getType()->getPointerElementType(),
                     G->isConstant(), GlobalValue::ExternalLinkage, G->getInitializer());
             ret->setName(Name);
+            ret->setLinkage(GlobalVariable::LinkageTypes::PrivateLinkage);
+            ret->copyAttributesFrom(G);
         }
         return ret;
     }

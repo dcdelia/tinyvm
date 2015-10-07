@@ -19,25 +19,24 @@
 #define USE_CMD_HISTORY 1
 
 #if USE_CMD_HISTORY
+    #include "history.h"
+    #include <signal.h>
 
-#include "history.h"
-#include <signal.h>
+    history_t cmd_history;
 
-history_t cmd_history;
-
-int getCharFromHistory() {
-    return get_input_char(&cmd_history);
-}
-
-void intHandler(int signum) {
-    restore_term(&cmd_history);
-    fprintf(stderr, "Exiting...\n");
-    if (signum == SIGINT) {
-        exit(0);
-    } else {
-        exit(1);
+    int getCharFromHistory() {
+        return get_input_char(&cmd_history);
     }
-}
+
+    void intHandler(int signum) {
+        restore_term(&cmd_history);
+        fprintf(stderr, "Exiting...\n");
+        if (signum == SIGINT) {
+            exit(0);
+        } else {
+            exit(1);
+        }
+    }
 #endif
 
 using namespace llvm;
@@ -74,19 +73,18 @@ int main(int argc, char* argv[]) {
     }
 
     #if USE_CMD_HISTORY
-    // terminal would be broken after a CTRL-C if we do not restore it
-    struct sigaction act;
-    memset(&act, 0, sizeof(act));
-    act.sa_handler = &intHandler;
-    sigaction(SIGINT, &act, NULL);
-    sigaction(SIGABRT, &act, NULL);
+        // terminal would be broken after a CTRL-C if we do not restore it
+        struct sigaction act;
+        memset(&act, 0, sizeof(act));
+        act.sa_handler = &intHandler;
+        sigaction(SIGINT, &act, NULL);
 
-    init_history(&cmd_history, "TinyVM> ");
-    TheLexer = new Lexer(getCharFromHistory);
-    Parser parser(TheLexer, TheHelper, &cmd_history);
+        init_history(&cmd_history, "TinyVM> ");
+        TheLexer = new Lexer(getCharFromHistory);
+        Parser parser(TheLexer, TheHelper, &cmd_history);
     #else
-    TheLexer = new Lexer(getchar);
-    Parser parser(TheLexer, TheHelper, nullptr);
+        TheLexer = new Lexer(getchar);
+        Parser parser(TheLexer, TheHelper, nullptr);
     #endif
 
     code = parser.start();
@@ -96,7 +94,7 @@ int main(int argc, char* argv[]) {
     delete TheHelper;
 
     #if USE_CMD_HISTORY
-    restore_term(&cmd_history);
+        restore_term(&cmd_history);
     #endif
 
     exit(code);

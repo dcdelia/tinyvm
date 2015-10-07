@@ -193,7 +193,8 @@ void Parser::handleDumpCommand(bool showLineIDs) {
 }
 
 void Parser::handleFunctionInvocation(int iterations) {
-    #define INVALID() do { std::cerr << "Invalid syntax for a function invocation!" << std::endl; return; } while (0);
+    // unknown commands are treated as function identifiers
+    #define INVALID() do { std::cerr << "Invalid syntax for a function invocation or unknown command!" << std::endl; return; } while (0);
     const std::string &FunctionName = TheLexer->getIdentifier();
 
     int token = TheLexer->getNextToken();

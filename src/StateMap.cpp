@@ -123,11 +123,19 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
     LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
     if (LPIMIt != locPairInfoMap.end()) {
         lpInfo = &(LPIMIt->second);
-        assert(lpInfo->globalCompCode == nullptr && "global compensation code not implemented yet");
     }
 
-       // process values to set
     BasicBlock* lastCreatedBB = entryPoint;
+
+    // process global compensation code
+    if (lpInfo->globalCompCode != nullptr) {
+        assert(lpInfo->globalCompCode->value == nullptr &&
+                "value should be null for global compensation code");
+        lastCreatedBB = addGlobalCompensationCode(lastCreatedBB,
+                lpInfo->globalCompCode, fetchedValuesToOSRContArgs);
+    }
+
+    // process values to set
     for (Value* dest_v: valuesToSetAtOSRCont) {
         OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(dest_v);
         if (oneToOneIt != defaultOneToOneMap.end()) {
@@ -162,29 +170,45 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
     return std::pair<BasicBlock*, ValueToValueMapTy*>(lastCreatedBB, updatedValuesToUse);
 }
 
-BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest_v, StateMap::ValueInfo* valInfo,
-        ValueToValueMapTy* updatedValuesToUse, ValueToValueMapTy& fetchedValuesToNewDestArgs) {
-    CompCode* compCode = valInfo->compCode;
-    if (compCode->args != nullptr) {
-        // we should replace each value in args with the corresponding argument for the function
-        for (CompCodeArgs::iterator argIt = compCode->args->begin(),
-                argEnd = compCode->args->end(); argIt != argEnd; ++argIt) {
-            Value* srcVal = *argIt;
-            Value* newVal = fetchedValuesToNewDestArgs[srcVal];
-            for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
-                // perform replacement of operands when required
-                if (Instruction* ins = dyn_cast<Instruction>(*it)) {
-                    for (User::op_iterator opIt = ins->op_begin(), opEnd = ins->op_end(); opIt != opEnd; ++opIt) {
-                        if (*opIt == srcVal) {
-                            *opIt = newVal;
-                            // don't break here! operand can be repeated
-                        }
+void StateMap::updateRefsToArgs(StateMap::CompCode* compCode, ValueToValueMapTy &VMap) {
+    if (compCode->args == nullptr) return;
+    for (CompCodeArgs::iterator argIt = compCode->args->begin(),
+            argEnd = compCode->args->end(); argIt != argEnd; ++argIt) {
+        Value* srcVal = *argIt;
+        Value* newVal = VMap[srcVal];
+        for (CodeSequence::iterator it = compCode->code->begin(),
+                end = compCode->code->end(); it != end; ++it) {
+            // perform replacement of operands when required
+            if (Instruction* ins = dyn_cast<Instruction>(*it)) {
+                for (User::op_iterator opIt = ins->op_begin(), opEnd = ins->op_end(); opIt != opEnd; ++opIt) {
+                    if (*opIt == srcVal) {
+                        *opIt = newVal;
+                        // don't break here! operand can be repeated
                     }
                 }
             }
         }
-        // TODO right now the transformation code can't be reused anymore!
     }
+}
+
+BasicBlock* StateMap::addGlobalCompensationCode(llvm::BasicBlock* curBlock,
+        StateMap::CompCode* compCode, ValueToValueMapTy &fetchedValuesToNewDestArgs) {
+    updateRefsToArgs(compCode, fetchedValuesToNewDestArgs);
+
+    for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
+        Value* curVal = *it;
+        assert(!isa<BasicBlock>(curVal) && "multiple blocks for compensation code are not supported yet");
+        Instruction* curInst = cast<Instruction>(curVal);
+        curBlock->getInstList().push_back(curInst);
+    }
+
+    return curBlock;
+}
+
+BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest_v, StateMap::ValueInfo* valInfo,
+        ValueToValueMapTy* updatedValuesToUse, ValueToValueMapTy& fetchedValuesToNewDestArgs) {
+    CompCode* compCode = valInfo->compCode;
+    updateRefsToArgs(compCode, fetchedValuesToNewDestArgs);
 
     for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
         Value* curVal = *it;

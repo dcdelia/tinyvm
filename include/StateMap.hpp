@@ -120,8 +120,12 @@ private:
     ValuesToSetCache    valuesToSetAtLPadCache;
 
     // helper methods
+    static void updateRefsToArgs(CompCode* compCode, llvm::ValueToValueMapTy &VMap);
     llvm::BasicBlock* addLocalCompensationCode(llvm::BasicBlock* curBlock, llvm::Value* dest_v, ValueInfo* valInfo,
         llvm::ValueToValueMapTy* updatedValuesToUse, llvm::ValueToValueMapTy &fetchedValuesToNewDestArgs);
+    llvm::BasicBlock* addGlobalCompensationCode(llvm::BasicBlock* curBlock,
+        CompCode* compCode, llvm::ValueToValueMapTy &fetchedValuesToNewDestArgs);
+
 
 };
 

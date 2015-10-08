@@ -57,11 +57,14 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
      * (2)  Generate OSRDest function and set argument names
      * (3)  Duplicate the body of F2 inside OSRDest
      * (4)  Apply attributes to fetched Argument values
-     * (5)  Ask the StateMap to generate the new entrypoint and retrieve mapping for [reconstructed] live values
-     * (6)  Replace dead arguments with a default null value and match live arguments
+     * (5)  Ask the StateMap to generate the new entrypoint and retrieve
+     *      mapping for [reconstructed] live values
+     * (6)  Replace dead arguments with a default null value and match
+     *      live arguments
      * (7)  Fix operand references using destToOSRDestVMap
      * (8)  Insert new entrypoint
-     * (9)  Replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
+     * (9)  Replace each updated Use in updatesForDestToOSRDestVMap and insert
+     *      PHI nodes where needed
      */
     ValueToValueMapTy fetchedValuesToOSRContArgs;
     ValueToValueMapTy F2ToOSRContVMap;
@@ -79,9 +82,11 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
 
     // step (2): generate OSRDest function and set argument names
     if (F2NewName == nullptr) {
-        OSRContFun = Function::Create(OSRContFTy, F2.getLinkage(), Twine("OSRCont_", F2.getName()));
+        OSRContFun = Function::Create(OSRContFTy, F2.getLinkage(),
+                Twine("OSRCont_", F2.getName()));
     } else {
-        OSRContFun = Function::Create(OSRContFTy, F2.getLinkage(), Twine(*F2NewName));
+        OSRContFun = Function::Create(OSRContFTy, F2.getLinkage(),
+                Twine(*F2NewName));
     }
     Function::arg_iterator OSRDestArgIt = OSRContFun->arg_begin();
     for (Value* src_v: valuesToPass) {
@@ -163,7 +168,8 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     // step (9): replace each updated Use in updatesForDestToOSRDestVMap and insert PHI nodes where needed
     SmallVector<PHINode*, 8> insertedPHINodes;
     replaceUsesAndFixSSA(OSRContFun, OSRContLPad, valuesToSetAtLPad,
-            F2ToOSRContVMap, *changesForF2toOSRContVMap, &insertedPHINodes, verbose, ptrForF2NewToF2Map);
+            F2ToOSRContVMap, *changesForF2toOSRContVMap, &insertedPHINodes,
+            verbose, ptrForF2NewToF2Map);
     if (verbose) {
         std::cerr << "Inserted PHI nodes: " << insertedPHINodes.size() << std::endl;
     }
@@ -173,15 +179,17 @@ Function* OSRLibrary::genContinuationFunc(LLVMContext &Context, Function &F1, Fu
     #ifdef PROFILE_TIME
     timer_end(&my_timer);
     double elapsed = timer_get_elapsed(&my_timer);
-    fprintf(stderr, "Time spent in creating continuation function: %.9f seconds\n", elapsed);
+    fprintf(stderr, "Time spent in creating continuation function: %.9f seconds\n",
+            elapsed);
     #endif
 
     return OSRContFun;
 
 }
 
-OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function &F1, Instruction &OSRSrc, Function &F2,
-                        Instruction &LPad, OSRLibrary::OSRCond &cond, StateMap &M, OSRLibrary::OSRPointConfig &config) {
+OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function &F1,
+        Instruction &OSRSrc, Function &F2, Instruction &LPad, OSRLibrary::OSRCond &cond,
+        StateMap &M, OSRLibrary::OSRPointConfig &config) {
     // common stuff for the generation of F1' and F2'
     BasicBlock* OSRSrcBlock = OSRSrc.getParent();
 
@@ -190,14 +198,16 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
 
     if (config.verbose) {
         LivenessAnalysis &LA = M.getLivenessResults().first;
-        printLiveVarInfoForDebug(LA.getLiveInValues(OSRSrcBlock), LA.getLiveOutValues(OSRSrcBlock), valuesToPass);
+        printLiveVarInfoForDebug(LA.getLiveInValues(OSRSrcBlock),
+                LA.getLiveOutValues(OSRSrcBlock), valuesToPass);
     }
 
     assert(F1.getReturnType() == F2.getReturnType());
 
     /* Prepare F2' aka OSRDestFun */
     Function* OSRContFun = genContinuationFunc(Context, F1, F2, OSRSrc, LPad,
-            valuesToPass, M, config.nameForNewF2, config.verbose, config.ptrForF2NewToF2Map);
+            valuesToPass, M, config.nameForNewF2, config.verbose,
+            config.ptrForF2NewToF2Map);
 
     #ifdef PROFILE_TIME
     timer_start(&my_timer);
@@ -237,14 +247,17 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
 
     if (!config.updateF1) {
         if (config.nameForNewF1 == nullptr) {
-            newSrcFun = duplicateFunction(src, Twine(src->getName(), "WithOSR"), srcToNewSrcVMap); // (1)
+            newSrcFun = duplicateFunction(src, Twine(src->getName(), "WithOSR"),
+                    srcToNewSrcVMap); // (1)
         } else {
-            newSrcFun = duplicateFunction(src, Twine(*config.nameForNewF1), srcToNewSrcVMap); // (1)
+            newSrcFun = duplicateFunction(src, Twine(*config.nameForNewF1),
+                    srcToNewSrcVMap); // (1)
         }
 
         // generate state mapping between src and newSrcFun
         if (config.ptrForF1NewToF1Map != nullptr) {
-            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, &srcToNewSrcVMap, true); // bidirectional mapping
+            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src,
+                    &srcToNewSrcVMap, true); // bidirectional mapping
         }
 
         // I have to regenerate valuesToPass as well!
@@ -266,7 +279,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     OSR_B->insertInto(newSrcFun);
 
     insertOSRCond(Context, newSrcFun, newOSRSrc, OSR_B, *ptrToOSRCond,
-            Twine("OSR_split"), config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
+            Twine("OSR_split"), config.branchTakenProb);
 
     #ifdef PROFILE_TIME
     timer_end(&my_timer);
@@ -294,8 +307,9 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
         if (config.modForNewF2 != F2.getParent()) {
             bool changed = fixUsesOfFunctionsAndGlobals(&F2, OSRContFun);
             if (changed && config.verbose) {
-                std::cerr << "Uses of functions and globals from F2's parent module have "
-                          << "been replaced with uses of newly created declarations" << std::endl;
+                std::cerr << "Uses of functions and globals from F2's parent "
+                              << "module have been replaced with uses of newly "
+                              << "created declarations" << std::endl;
             }
         }
         VERIFYFUN(OSRContFun);
@@ -305,7 +319,7 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
     if (config.updateF1) {
         if (parentForSrc == nullptr) {
             if (config.verbose) {
-                std::cerr << "WARNING: supplied F1 does not belong to any LLVM Module!" << std::endl;
+                std::cerr << "WARNING: F1 is not contained in a module!" << std::endl;
             }
             Module tmpMod("OSRtmpMod", Context);
             tmpMod.getFunctionList().push_back(src);
@@ -328,8 +342,9 @@ OSRLibrary::OSRPair OSRLibrary::insertResolvedOSR(LLVMContext &Context, Function
             if (config.modForNewF1 != parentForSrc) {
                 bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
                 if (changed && config.verbose) {
-                    std::cerr << "Uses of functions and globals from F1's parent module have "
-                              << "been replaced with uses of newly created declarations" << std::endl;
+                    std::cerr << "Uses of functions and globals from F1's parent "
+                              << "module have been replaced with uses of newly "
+                              << "created declarations" << std::endl;
                 }
             }
             VERIFYFUN(newSrcFun);
@@ -381,7 +396,8 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     if (valuesToTransfer == nullptr) {
         valuesToPassTmp = getLiveValsVecAtInstr(&OSRSrc, *LA);
         if (config.verbose) {
-            printLiveVarInfoForDebug(LA->getLiveInValues(srcBlock), LA->getLiveOutValues(srcBlock), *valuesToPassTmp);
+            printLiveVarInfoForDebug(LA->getLiveInValues(srcBlock),
+                    LA->getLiveOutValues(srcBlock), *valuesToPassTmp);
         }
     }
     std::vector<Value*> &valuesToPass = *valuesToPassTmp;
@@ -395,16 +411,19 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
     // step (2)
 
-    // TODO: check why allocating a local Twine variable leads to a segfault in McVM
+    // NOTE: instantiating a local Twine variable led to a segfault in McVM
     if (config.nameForNewF2 == nullptr) {
-        stub = Function::Create(stubFTy, src->getLinkage(), Twine(newFunName, "_stub")); // TODO provide name as argument
+        stub = Function::Create(stubFTy, src->getLinkage(),
+                Twine(newFunName, "_stub")); // TODO provide name as argument
     } else {
-        stub = Function::Create(stubFTy, src->getLinkage(), Twine(*config.nameForNewF2));
+        stub = Function::Create(stubFTy, src->getLinkage(),
+                Twine(*config.nameForNewF2));
     }
 
     Function::arg_iterator stubArgIt = stub->arg_begin();
     (stubArgIt++)->setName("profDataAddr");
-    for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
+    for (std::vector<Value*>::iterator it = valuesToPass.begin(),
+            end = valuesToPass.end(); it != end; ++it) {
         if ((*it)->hasName()) {
             (stubArgIt++)->setName(Twine((*it)->getName(), "_osr"));
         } else {
@@ -412,7 +431,8 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
         }
     }
 
-    applyAttributesToArguments(stub, src, valuesToPass, true); // skip first argument!
+     // skip first argument
+    applyAttributesToArguments(stub, src, valuesToPass, true);
 
     // we don't want the stub to be visible or inlined
     stub->addFnAttr(Attribute::NoInline);
@@ -423,11 +443,13 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     // step (3)
     std::vector<Type*> argTypesForFunToGenerate;
     std::vector<Value*> argsForFunToGenerate;
-    for (Function::arg_iterator it = ++(stub->arg_begin()), end = stub->arg_end(); it != end; ++it) {
+    for (Function::arg_iterator it = ++(stub->arg_begin()),
+            end = stub->arg_end(); it != end; ++it) {
         argsForFunToGenerate.push_back(it);
         argTypesForFunToGenerate.push_back(it->getType());
     }
-    FunctionType* funToGenerateTy = FunctionType::get(retTy, argTypesForFunToGenerate, false);
+    FunctionType* funToGenerateTy = FunctionType::get(retTy,
+            argTypesForFunToGenerate, false);
 
     PointerType* pointerToFunToGenerateTy = PointerType::getUnqual(funToGenerateTy);
 
@@ -436,15 +458,20 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     destFunGenArgTypes[1] = i8PointerTy;
     destFunGenArgTypes[2] = i8PointerTy;
     destFunGenArgTypes[3] = i8PointerTy;
-    FunctionType* destFunGeneratorTy = FunctionType::get(pointerToFunToGenerateTy, destFunGenArgTypes, false);
+    FunctionType* destFunGeneratorTy = FunctionType::get(pointerToFunToGenerateTy,
+            destFunGenArgTypes, false);
 
     // generate inttoptr instructions for hard-wired parameters passed to the generator
     IntegerType* int64Ty = Type::getInt64Ty(Context);
-    Constant* f1PtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)src), i8PointerTy);
-    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)&OSRSrc), i8PointerTy);
-    Constant* extraPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)extraInfo), i8PointerTy);
-    Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, (uintptr_t)destFunGenerator),
-                                PointerType::getUnqual(destFunGeneratorTy)); // I need a pointer to function!
+    Constant* f1PtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty,
+            (uintptr_t)src), i8PointerTy);
+    Constant* OSRSrcPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty,
+            (uintptr_t)&OSRSrc), i8PointerTy);
+    Constant* extraPtrVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty,
+            (uintptr_t)extraInfo), i8PointerTy);
+    // we do not use i8PointerTy here as we need a pointer to function!
+    Constant* destFunGenVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty,
+            (uintptr_t)destFunGenerator), PointerType::getUnqual(destFunGeneratorTy));
 
     Value* destFunGenArgs[4];
     destFunGenArgs[0] = f1PtrVal;
@@ -452,14 +479,18 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     destFunGenArgs[2] = extraPtrVal;
     destFunGenArgs[3] = stub->arg_begin();
 
-    CallInst* destFunGeneratorCall = CallInst::Create(destFunGenVal, destFunGenArgs, "destFunGenCall", stubEntryPoint); // direct call to absolute address
+    // direct call to absolute address
+    CallInst* destFunGeneratorCall = CallInst::Create(destFunGenVal,
+            destFunGenArgs, "destFunGenCall", stubEntryPoint);
 
     // step (4)
     CallInst* generatedFunCall;
     if (retTy->isVoidTy()) {
-        generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate);
+        generatedFunCall = CallInst::Create(destFunGeneratorCall,
+                argsForFunToGenerate);
     } else {
-        generatedFunCall = CallInst::Create(destFunGeneratorCall, argsForFunToGenerate, "generatedFunCall");
+        generatedFunCall = CallInst::Create(destFunGeneratorCall,
+                argsForFunToGenerate, "generatedFunCall");
     }
 
     stubEntryPoint->getInstList().push_back(generatedFunCall);
@@ -510,7 +541,8 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
         // generate state mapping between src and newSrcFun
         if (config.ptrForF1NewToF1Map != nullptr) {
-            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src, &srcToNewSrcVMap, true); // bidirectional mapping
+            *(config.ptrForF1NewToF1Map) = new StateMap(newSrcFun, src,
+                    &srcToNewSrcVMap, true); // bidirectional mapping
         }
 
         newCond = regenerateOSRCond(cond, srcToNewSrcVMap);
@@ -527,23 +559,27 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
     bool insertNewProfDataVal = false;
     Value* newProfDataVal;
     if (profDataVal != nullptr) {
-        newProfDataVal = (config.updateF1) ? profDataVal : cast<Value>(srcToNewSrcVMap[profDataVal]);
+        newProfDataVal = (config.updateF1) ? profDataVal :
+                cast<Value>(srcToNewSrcVMap[profDataVal]);
         Type* profDataValTy = newProfDataVal->getType();
         if (!profDataValTy->isPointerTy()) {
             // TODO: we might cast most scalars to i8* and GEP for structs,
             //       but a better solution is needed (spill+GEP at OSR block?)
-            assert(false && "non-pointer profiling values are not supported at the moment");
+            assert(false && "non-pointer profiling values unsupported at the moment");
         } else {
             if (profDataValTy != i8PointerTy) {
                 insertNewProfDataVal = true;
-                newProfDataVal = CastInst::CreatePointerCast(newProfDataVal, i8PointerTy, "OSRCast");
+                newProfDataVal = CastInst::CreatePointerCast(newProfDataVal,
+                        i8PointerTy, "OSRCast");
             }
         }
     } else {
-        newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0), i8PointerTy); // we pass 0 as NULL value
+        newProfDataVal = ConstantExpr::getIntToPtr(ConstantInt::get(int64Ty, 0),
+                i8PointerTy); // we pass 0 as NULL value
     }
     newValuesToPass.push_back(newProfDataVal);
-    for (std::vector<Value*>::iterator it = valuesToPass.begin(), end = valuesToPass.end(); it != end; ++it) {
+    for (std::vector<Value*>::iterator it = valuesToPass.begin(),
+            end = valuesToPass.end(); it != end; ++it) {
         if (!config.updateF1) {
             newValuesToPass.push_back(srcToNewSrcVMap[*it]);
         } else {
@@ -561,7 +597,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
     // step (4)
     insertOSRCond(Context, newSrcFun, newOSRSrc, OSR_B, *ptrToOSRCond,
-            Twine("OSR_split"), config.branchTakenProb); /* BasicBlock* splittedBlock = ... */
+            Twine("OSR_split"), config.branchTakenProb);
 
     #ifdef PROFILE_TIME
     timer_end(&my_timer);
@@ -580,7 +616,7 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
         // newSrcFun == src here
         if (parentForSrc == nullptr) {
             if (config.verbose) {
-                std::cerr << "WARNING: Supplied F1 does not belong to any LLVM Module!" << std::endl;
+                std::cerr << "WARNING: F1 is not contained in a module!" << std::endl;
             }
             Module tmpMod("OSRtmpMod", Context);
             tmpMod.getFunctionList().push_back(stub);
@@ -613,8 +649,9 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
             if (config.modForNewF1 != parentForSrc) {
                 bool changed = fixUsesOfFunctionsAndGlobals(src, newSrcFun);
                 if (changed && config.verbose) {
-                    std::cerr << "Uses of functions and globals from F1's parent module have "
-                              << "been replaced with uses of newly created declarations" << std::endl;
+                    std::cerr << "Uses of functions and globals from F1's parent "
+                              << "module have been replaced with uses of newly "
+                              << "created declarations" << std::endl;
                 }
             }
             VERIFYFUN(newSrcFun);
@@ -638,14 +675,16 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 /**
  * Auxiliary methods
  */
-void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F, std::vector<Value*> &valuesToPass, bool skipFirst) {
+void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F,
+        std::vector<Value*> &valuesToPass, bool skipFirst) {
     AttributeSet srcFunAttrs = F->getAttributes();
     Function::arg_iterator argIt = NF->arg_begin(), argEnd = NF->arg_end();
     if (skipFirst) argIt++;
     for (Value* src_v: valuesToPass) {
         Argument *arg = argIt++;
         if (Argument* src_arg = dyn_cast<Argument>(src_v)) {
-            AttributeSet attrs = srcFunAttrs.getParamAttributes(src_arg->getArgNo() + 1); // 0 is for the function
+            // slot 0 is for the function
+            AttributeSet attrs = srcFunAttrs.getParamAttributes(src_arg->getArgNo() + 1);
             if (attrs.getNumSlots() > 0) {
                 arg->addAttr(attrs);
             }
@@ -654,10 +693,11 @@ void OSRLibrary::applyAttributesToArguments(Function* NF, Function* F, std::vect
     assert(argIt == argEnd);
 }
 
-void OSRLibrary::duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueToValueMapTy& VMap) {
-    // TODO clone debug info metadata
+void OSRLibrary::duplicateBodyIntoNewFunction(Function* F, Function *NF,
+        ValueToValueMapTy& VMap) {
+    // TODO clone also debug info metadata
 
-    /* adapted from LLVM's CloneFunction.cpp **/
+    // adapted from CloneFunction.cpp
     Function *OldFunc = F, *NewFunc = NF;
     const char* NameSuffix = "";
     ClonedCodeInfo *CodeInfo = nullptr;
@@ -695,16 +735,19 @@ void OSRLibrary::duplicateBodyIntoNewFunction(Function* F, Function *NF, ValueTo
      * you still have to fix all the uses of values through a VMap! */
 }
 
-void OSRLibrary::fixOperandReferencesFromVMap(Function* NF, Function* F, ValueToValueMapTy &VMap) {
-    // Credits: CloneFunctionInto() from CloneFunction.cpp
+void OSRLibrary::fixOperandReferencesFromVMap(Function* NF, Function* F,
+        ValueToValueMapTy &VMap) {
+    // adapted from CloneFunctionInto() in CloneFunction.cpp
     bool ModuleLevelChanges = false;
 
     // Loop over all of the instructions in the function, fixing up operand
     // references as we go.  This uses VMap to do all the hard work.
-    for (Function::iterator BB = cast<BasicBlock>(VMap[F->begin()]), BE = NF->end(); BB != BE; ++BB) {
+    for (Function::iterator BB = cast<BasicBlock>(VMap[F->begin()]),
+            BE = NF->end(); BB != BE; ++BB) {
         // Loop over all instructions, fixing each one as we find it...
         for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
-            RemapInstruction(II, VMap, ModuleLevelChanges ? RF_None : RF_NoModuleLevelChanges);
+            RemapInstruction(II, VMap, ModuleLevelChanges ? RF_None :
+                RF_NoModuleLevelChanges);
         }
     }
 }
@@ -744,7 +787,8 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
                 if (PHINode* node = dyn_cast<PHINode>(oldInst)) {
                     if (verbose) {
                         if (node->hasName()) {
-                            std::cerr << "Processing PHI node %" << node->getName().str() << std::endl;
+                            std::cerr << "Processing PHI node %"
+                                      << node->getName().str() << std::endl;
                         } else {
                             std::cerr << "Processing PHI node "; node->dump();
                         }
@@ -778,12 +822,14 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
         PHINode* lastInserted = nullptr;
 
         // split OSRContLPadBlock block at OSRContLPad
-        BasicBlock* splitBlock = OSRContLPadBlock->splitBasicBlock(OSRContLPad, "OSRCont_split");
+        BasicBlock* splitBlock = OSRContLPadBlock->splitBasicBlock(OSRContLPad,
+                "OSRCont_split");
 
         for (Value* origValue: SSAUpdaterWorklist) {
             if (verbose) {
                 if (origValue->hasName()) {
-                    std::cerr << "Processing value %" << origValue->getName().str() << std::endl;
+                    std::cerr << "Processing value %" << origValue->getName().str()
+                              << std::endl;
                 } else {
                     std::cerr << "Processing value ";
                     origValue->dump();
@@ -796,15 +842,18 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
             Value* newValue = updatesForVMap[origValue];
 
             if (oldValue->hasName()) {
-                updateSSA.Initialize(oldValue->getType(), StringRef(Twine(oldValue->getName(), "_fixSSA").str()));
+                updateSSA.Initialize(oldValue->getType(),
+                        StringRef(Twine(oldValue->getName(), "_fixSSA").str()));
             } else {
-                updateSSA.Initialize(oldValue->getType(), StringRef("anon_fixSSA"));
+                updateSSA.Initialize(oldValue->getType(),
+                        StringRef("anon_fixSSA"));
             }
 
             updateSSA.AddAvailableValue(oldInst->getParent(), oldValue);
             updateSSA.AddAvailableValue(entryPoint, newValue);
 
-            for (Value::use_iterator UI = oldValue->use_begin(), UE = oldValue->use_end(); UI != UE; ) {
+            for (Value::use_iterator UI = oldValue->use_begin(),
+                    UE = oldValue->use_end(); UI != UE; ) {
                 Use &U = *(UI++);
                 updateSSA.RewriteUse(U);
             }
@@ -815,7 +864,8 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
             if (ptrForF2NewToF2Map != nullptr && !insertedPHINodes->empty()) {
                 PHINode* tmp = insertedPHINodes->back();
                 if (tmp != lastInserted) {
-                    lastInserted = tmp; // TODO check if at most one PHI node can be inserted
+                    // TODO check if it is true that at most one node can be inserted
+                    lastInserted = tmp;
                     (*ptrForF2NewToF2Map)->registerOneToOneValue(lastInserted, origValue, false);
                 }
             }
@@ -825,7 +875,8 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
         if (isLPadFirstNonPHI) {
             splitBlock->replaceAllUsesWith(OSRContLPadBlock);
             OSRContLPadBlock->getInstList().back().eraseFromParent();
-            OSRContLPadBlock->getInstList().splice(OSRContLPadBlock->end(), splitBlock->getInstList());
+            OSRContLPadBlock->getInstList().splice(OSRContLPadBlock->end(),
+                                                   splitBlock->getInstList());
             splitBlock->eraseFromParent();
         }
     }
@@ -833,13 +884,15 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
     assert(replacedUses + updatedNodes == updatesForVMap.size());
 }
 
-Function* OSRLibrary::duplicateFunction(Function* F, const Twine &Name, ValueToValueMapTy &VMap) {
+Function* OSRLibrary::duplicateFunction(Function* F, const Twine &Name,
+        ValueToValueMapTy &VMap) {
     Function* dup = CloneFunction(F, VMap, false, nullptr); // TODO moduleLevelChanges true?
     dup->setName(Name);
     return dup;
 }
 
-OSRLibrary::OSRCond OSRLibrary::regenerateOSRCond(OSRLibrary::OSRCond &cond, ValueToValueMapTy &VMap) {
+OSRLibrary::OSRCond OSRLibrary::regenerateOSRCond(OSRLibrary::OSRCond &cond,
+        ValueToValueMapTy &VMap) {
     OSRCond newCond;
 
     // clone instructions

@@ -99,7 +99,8 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc, Inst
         }
 
         valueToSet->dump();
-        llvm::report_fatal_error("[getValuesToFetchFromSrcFunction] could not find mapping information for the Value above");
+        llvm::report_fatal_error("[getValuesToFetchFromSrcFunction] could not "
+                "find mapping information for the Value above");
     }
 
     // we expect a few duplicates at most, so a vector is fine
@@ -160,7 +161,8 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
         }
 
         dest_v->dump();
-        llvm::report_fatal_error("[genContinuationFunctionEntryPoint] missing mapping information for the Value shown above");
+        llvm::report_fatal_error("[genContinuationFunctionEntryPoint] missing "
+                "mapping information for the Value shown above");
     }
 
     // add branch instruction
@@ -180,10 +182,11 @@ void StateMap::updateRefsToArgs(StateMap::CompCode* compCode, ValueToValueMapTy 
                 end = compCode->code->end(); it != end; ++it) {
             // perform replacement of operands when required
             if (Instruction* ins = dyn_cast<Instruction>(*it)) {
-                for (User::op_iterator opIt = ins->op_begin(), opEnd = ins->op_end(); opIt != opEnd; ++opIt) {
+                for (User::op_iterator opIt = ins->op_begin(), opEnd = ins->op_end();
+                        opIt != opEnd; ++opIt) {
                     if (*opIt == srcVal) {
-                        *opIt = newVal;
                         // don't break here! operand can be repeated
+                        *opIt = newVal;
                     }
                 }
             }
@@ -195,9 +198,11 @@ BasicBlock* StateMap::addGlobalCompensationCode(BasicBlock* curBlock,
         StateMap::CompCode* compCode, ValueToValueMapTy &fetchedValuesToNewDestArgs) {
     updateRefsToArgs(compCode, fetchedValuesToNewDestArgs);
 
-    for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
+    for(CodeSequence::iterator it = compCode->code->begin(),
+            end = compCode->code->end(); it != end; ++it) {
         Value* curVal = *it;
-        assert(!isa<BasicBlock>(curVal) && "multiple blocks for compensation code are not supported yet");
+        assert(!isa<BasicBlock>(curVal) && "multiple blocks for compensation "
+                "code are not supported yet");
         Instruction* curInst = cast<Instruction>(curVal);
         curBlock->getInstList().push_back(curInst);
     }
@@ -205,14 +210,17 @@ BasicBlock* StateMap::addGlobalCompensationCode(BasicBlock* curBlock,
     return curBlock;
 }
 
-BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest_v, StateMap::ValueInfo* valInfo,
-        ValueToValueMapTy* updatedValuesToUse, ValueToValueMapTy& fetchedValuesToNewDestArgs) {
+BasicBlock* StateMap::addLocalCompensationCode(BasicBlock* curBlock, Value* dest_v,
+        StateMap::ValueInfo* valInfo, ValueToValueMapTy* updatedValuesToUse,
+        ValueToValueMapTy& fetchedValuesToNewDestArgs) {
     CompCode* compCode = valInfo->compCode;
     updateRefsToArgs(compCode, fetchedValuesToNewDestArgs);
 
-    for(CodeSequence::iterator it = compCode->code->begin(), end = compCode->code->end(); it != end; ++it) {
+    for(CodeSequence::iterator it = compCode->code->begin(),
+            end = compCode->code->end(); it != end; ++it) {
         Value* curVal = *it;
-        assert(!isa<BasicBlock>(curVal) && "multiple blocks for compensation code are not supported yet");
+        assert(!isa<BasicBlock>(curVal) && "multiple blocks for compensation "
+                "code are not supported yet");
         Instruction* curInst = cast<Instruction>(curVal);
         curBlock->getInstList().push_back(curInst);
     }

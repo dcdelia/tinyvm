@@ -12,7 +12,7 @@ LLVM_LDFLAGS	= $(shell llvm-config --ldflags --system-libs --libs core ipo irrea
 
 all: TinyVM
 
-TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o $(BUILD)/timer.o $(BUILD)/history.o
+TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/LocMapper.o
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
@@ -50,6 +50,9 @@ $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h
 
 $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 	$(CC) $(CFLAGS) -c $(SRC)/timer.c $(LLVM_CFLAGS) -o $(BUILD)/timer.o
+
+$(BUILD)/LocMapper.o: $(SRC)/LocMapper.cpp $(INCLUDE)/LocMapper.hpp $(INCLUDE)/StateMap.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/LocMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/LocMapper.o
 
 clean:
 	rm -f $(BUILD)/*.o

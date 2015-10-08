@@ -24,7 +24,9 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/FormattedStream.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
 
 #undef NDEBUG
@@ -395,6 +397,8 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc
     MCJITHelper* TheHelper = (MCJITHelper*) extra;
     bool verbose = TheHelper->verbose;
 
+    assert(OSRSrc->getParent()->getParent() == F1 && "MCJIT messed up the objects");
+
     if (verbose) {
         std::cerr << "Value for F1 is " << F1 << std::endl;
         std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
@@ -418,7 +422,7 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc
     std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(OSRSrc, LA);
     std::string OSRDestFunName = (F2->getName().str()).append("OSRCont");
     Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
-            *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName);
+            *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName, verbose);
     delete valuesToPass;
     delete F2;
     delete M;
@@ -447,6 +451,8 @@ void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, v
     MCJITHelper* TheHelper = inlineInfo->TheHelper;
     bool verbose = TheHelper->verbose;
 
+    assert(OSRSrc->getParent()->getParent() == F1 && "MCJIT messed up the objects");
+
     if (verbose) {
         std::cerr << "Value for F1 is " << F1 << std::endl;
         std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
@@ -459,8 +465,7 @@ void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, v
     Function* F2 = identityPair.first;
     StateMap* M = identityPair.second;
 
-    F1->dump();
-    OSRSrc->dump();
+    Value* valToInlineInF2 = M->getCorrespondingOneToOneValue(inlineInfo->valToInline);
 
     Instruction* OSRSrcInF2 = cast<Instruction>(M->getCorrespondingOneToOneValue(OSRSrc));
     assert (OSRSrcInF2 != nullptr && "TODO cannot find corresponding OSRSrc in temporary F2");
@@ -470,14 +475,20 @@ void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, v
 
     Instruction* LPad = M->getLandingPad(OSRSrc);
 
+    StateMap* M_F2toOSRContFun;
     LivenessAnalysis LA(F1);
     std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(OSRSrc, LA);
     std::string OSRDestFunName = (F2->getName().str()).append("OSRCont");
-    Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
-            *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName);
+    Function* OSRContFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
+            *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName, verbose, &M_F2toOSRContFun);
+
+    Value* valToInline = M_F2toOSRContFun->getCorrespondingOneToOneValue(valToInlineInF2);
+    assert (valToInline != nullptr && "broken state map for continuation function");
+
     delete valuesToPass;
     delete F2;
     delete M;
+    delete M_F2toOSRContFun;
 
     // create a module for generated code
     std::string modForJITName = "OpenOSRDynInline";
@@ -489,17 +500,56 @@ void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, v
     uint64_t calledFun = (uint64_t)profDataAddr;
 
     std::cerr << "Address of invoked function: " << calledFun << std::endl;
+    Function* funToInline = nullptr;
+    for (AddrSymPair &pair: TheHelper->CompiledFunAddrTable) {
+        if (pair.first == calledFun) {
+            std::string &FunName = pair.second;
+            funToInline = TheHelper->getFunction(FunName);
+            break;
+        }
+    }
 
-    // TODO
+    Function* myFunToInline = nullptr;
+    if (funToInline == nullptr) {
+        std::cerr << "Sorry, I could not determine which function was called!" << std::endl;
+    } else {
+        std::cerr << "Function being inlined: " << funToInline->getName().str() << std::endl;
+        ValueToValueMapTy VMap;
+        myFunToInline = CloneFunction(funToInline, VMap, false, nullptr);
+        myFunToInline->addFnAttr(Attribute::AlwaysInline);
+        myFunToInline->setLinkage(Function::LinkageTypes::PrivateLinkage);
+        modForJIT_ptr->getFunctionList().push_back(myFunToInline);
+        OSRLibrary::fixUsesOfFunctionsAndGlobals(funToInline, myFunToInline);
+        for (Value::use_iterator UI = valToInline->use_begin(),
+                UE = valToInline->use_end(); UI != UE; ) {
+            Use &U = *(UI++);
+            if (CallInst* CI = dyn_cast<CallInst>(U.getUser())) {
+                if (CI->getParent()->getParent() != OSRContFun) continue;
+                if (verbose) {
+                    raw_os_ostream errStream(std::cerr);
+                    std::cerr << "Updating instruction ";
+                    CI->print(errStream);
+                    std::cerr << std::endl;
+                }
+                U.set(myFunToInline);
+            }
+        }
+    }
 
-    modForJIT_ptr->getFunctionList().push_back(OSRDestFun);
-    verifyFunction(*OSRDestFun, &outs());
+    modForJIT_ptr->getFunctionList().push_back(OSRContFun);
+    verifyFunction(*OSRContFun, &outs());
 
-    // remove dead code
+    // remove dead code & inline when possible
     FunctionPassManager FPM(modForJIT_ptr);
     FPM.add(createCFGSimplificationPass());
     FPM.doInitialization();
-    FPM.run(*OSRDestFun);
+    FPM.run(*OSRContFun);
+
+    if (funToInline != nullptr) {
+        PassManager PM;
+        PM.add(llvm::createAlwaysInlinerPass());
+        PM.run(*modForJIT_ptr);
+    }
 
     // compile code
     TheHelper->addModule(std::move(modForJIT));

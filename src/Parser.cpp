@@ -366,7 +366,6 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << stub->getName().str() << std::endl;
 
-
     if (needNewModule) {
         TheHelper->addModule(std::move(NewModule));
     } else {
@@ -377,7 +376,7 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         TheHelper->trackAsmCodeUtil(modToUse);
     }
 
-    // delete F1NewToF1Map;
+    if (!update) delete F1NewToF1Map;
 }
 
 void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
@@ -448,7 +447,7 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
-    dest->removeFromParent();
+    dest->eraseFromParent();
 
     if (needNewModuleForNewSrc) {
         TheHelper->addModule(std::move(NewModule));
@@ -466,10 +465,9 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         }
     }
 
-    //dest->eraseFromParent();
-    //delete M;
-    //delete F1NewToF1Map;
-    //delete F2NewToF2Map;
+    delete M;
+    if (!update) delete F1NewToF1Map;
+    delete F2NewToF2Map;
 }
 
 void Parser::handleInsertOSRCommand() {

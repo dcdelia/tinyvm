@@ -1,5 +1,5 @@
 LOAD_IR shootout/fasta/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN makeRandomFasta AT B12
+INSERT_OSR 5 NEVER OPEN UPDATE IN makeRandomFasta AT %B12 CLONE
 bench(50000000)
 REPEAT 10 bench(50000000)
 QUIT

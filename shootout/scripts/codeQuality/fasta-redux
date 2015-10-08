@@ -1,5 +1,5 @@
 LOAD_IR shootout/fasta-redux/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN randomize AT B14
+INSERT_OSR 5 NEVER OPEN UPDATE IN randomize AT %B14 CLONE
 bench(50000000)
 REPEAT 10 bench(50000000)
 QUIT

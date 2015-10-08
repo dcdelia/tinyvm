@@ -1,3 +1,3 @@
 LOAD_IR shootout/fannkuch-redux/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN tk AT %B28
+INSERT_OSR 5 NEVER OPEN UPDATE IN tk AT %B28 CLONE
 QUIT

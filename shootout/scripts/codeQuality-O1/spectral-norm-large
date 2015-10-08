@@ -1,7 +1,7 @@
 LOAD_IR shootout/spectral-norm/codeQuality-O1.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN eval_A_times_u AT %B8
+INSERT_OSR 5 NEVER OPEN UPDATE IN eval_A_times_u AT %B8 CLONE
 OPT_CFG eval_A_times_u
-INSERT_OSR 5 NEVER OPEN UPDATE IN eval_At_times_u AT %B8
+INSERT_OSR 5 NEVER OPEN UPDATE IN eval_At_times_u AT %B8 CLONE
 OPT_CFG eval_At_times_u
 LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
 bench(22000)

@@ -1,3 +1,3 @@
 LOAD_IR shootout/fasta-redux/codeQuality-O1.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN randomize AT %B14
+INSERT_OSR 5 NEVER OPEN UPDATE IN randomize AT %B14 CLONE
 QUIT

@@ -1,5 +1,5 @@
 LOAD_IR shootout/mandelbrot/codeQuality-O1.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B13.lr.ph
+INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B13.lr.ph CLONE
 OPT_CFG bench
 bench(16000)
 REPEAT 10 bench(16000)

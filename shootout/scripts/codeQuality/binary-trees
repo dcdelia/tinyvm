@@ -1,6 +1,6 @@
 LOAD_IR shootout/binary-trees/codeQuality.ll
 LOAD_LIB /lib/x86_64-linux-gnu/libm.so.6
-INSERT_OSR 5 NEVER OPEN UPDATE IN DeleteTree AT INSTR0
+INSERT_OSR 5 NEVER OPEN UPDATE IN DeleteTree AT %INSTR0 CLONE
 bench(20)
 REPEAT 10 bench(20)
 QUIT

@@ -1,5 +1,5 @@
 LOAD_IR shootout/reverse-complement/codeQuality-O1.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B36.loopexit
+INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B36.loopexit CLONE
 OPT_CFG bench
 bench()
 REPEAT 10 bench()

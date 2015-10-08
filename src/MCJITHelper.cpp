@@ -143,12 +143,19 @@ Function* MCJITHelper::getFunction(const std::string &Name) {
     }
 }
 
-int (*MCJITHelper::createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))() {
+int (*MCJITHelper::createAnonFunctionForCall(const std::string &FunctionName,
+        std::vector<int> &Arguments))() {
     static int i = 1;
     char buf[256];
 
     sprintf(buf, "M-anonymous%s%d", FunctionName.c_str(), i);
     std::unique_ptr<Module> M = llvm::make_unique<Module>(buf, Context);
+
+    // look up function symbol first
+    if (getFunction(FunctionName) == nullptr) {
+        std::cerr << "ERROR: invalid function symbol for the call" << std::endl;
+        return nullptr;
+    }
 
     // create a prototype for the callee
     std::vector<Type*> CalleeProtoArgs(Arguments.size(), Type::getInt32Ty(Context));

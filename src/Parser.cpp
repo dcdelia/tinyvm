@@ -35,7 +35,8 @@ using namespace llvm;
 
 int Parser::start(bool displayHelpMsg) {
     if (displayHelpMsg) {
-        std::cerr << "Welcome! Enter 'HELP' to show the list of available commands." << std::endl;
+        std::cerr << "Welcome! Enter 'HELP' to show the list of available commands."
+                  << std::endl;
     }
 
     while (1) {
@@ -93,11 +94,13 @@ void Parser::handleBeginCommand() {
 
     FILE* out = fopen(fileName, "w+");
     if (out == nullptr) {
-        std::cerr << "[ERROR] Fatal error when creating IR source file \"" << fileName << "\"." << std::endl;
+        std::cerr << "[ERROR] Fatal error when creating IR source file \""
+                  << fileName << "\"." << std::endl;
         exit(1);
     }
 
-    std::cerr << "[MODULE] Press CTRL+D when you've entered all the code." << std::endl;
+    std::cerr << "[MODULE] Press CTRL+D when you've entered all the code."
+              << std::endl;
 
     std::string *curLine;
 
@@ -113,7 +116,8 @@ void Parser::handleBeginCommand() {
 
     TheLexer->getNextToken(); // eats the EOF in the Lexer
     //delete curLine;
-    std::cerr << "[MODULE] Module parsed and stored into \"" << fileName << "\"." << std::endl,
+    std::cerr << "[MODULE] Module parsed and stored into \"" << fileName
+              << "\"." << std::endl,
     fclose(out);
 
     std::unique_ptr<Module> M = TheHelper->createModuleFromFile(std::string(fileName));
@@ -125,7 +129,8 @@ void Parser::handleOptCommand(bool CFGSimplificationOnly) {
     if (TheLexer->getNextToken() != tok_identifier) {
         const std::string cmdName = (CFGSimplificationOnly) ? "OPT_FULL" : "OPT_CFG";
         std::cerr << "Invalid syntax for a " << cmdName << "command!" << std::endl
-                << "Expected command of the form: " << cmdName<< " <function_name" << std::endl;
+                  << "Expected command of the form: " << cmdName  << " <function_name"
+                  << std::endl;
         return;
     }
     const std::string Name = TheLexer->getIdentifier();
@@ -145,9 +150,9 @@ void Parser::handleOptCommand(bool CFGSimplificationOnly) {
 }
 
 void Parser::handleDumpCommand(bool showLineIDs) {
-    #define INVALID() do { std::cerr << "Invalid syntax for a DUMP command!" << std::endl \
-            << "Expected command of the form: DUMP <function_name>" << std::endl; \
-            return; } while (0)
+    #define INVALID() do { std::cerr << "Invalid syntax for a DUMP command!" \
+            << std::endl << "Expected command of the form: DUMP <function_name>" \
+            << std::endl; return; } while (0)
 
     std::string* tmp = TheLexer->getLine();
     if (tmp == nullptr) INVALID();
@@ -194,7 +199,9 @@ void Parser::handleDumpCommand(bool showLineIDs) {
 
 void Parser::handleFunctionInvocation(int iterations) {
     // unknown commands are treated as function identifiers
-    #define INVALID() do { std::cerr << "Invalid syntax for a function invocation or unknown command!" << std::endl; return; } while (0);
+    #define INVALID() do { std::cerr << \
+        "Invalid syntax for a function invocation or unknown command!" \
+        << std::endl; return; } while (0);
     const std::string &FunctionName = TheLexer->getIdentifier();
 
     int token = TheLexer->getNextToken();
@@ -222,7 +229,8 @@ void Parser::handleFunctionInvocation(int iterations) {
     #undef INVALID
 
 
-    int (*fun)() = TheHelper->createAnonymousFunctionForCall(FunctionName, Arguments);
+    int (*fun)() = TheHelper->createAnonFunctionForCall(FunctionName, Arguments);
+    if (fun == nullptr) return;
 
     // run anonymous function and show elapsed time
     tinyvm_timer_t timer;

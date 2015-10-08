@@ -72,7 +72,7 @@ public:
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);
     FunctionPassManager createFPM(Module* M, bool CFGSimplificationOnly = false);
-    int (*createAnonymousFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
+    int (*createAnonFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
     bool toggleTrackAsm();
     void showTrackedAsm();
     void showModules();

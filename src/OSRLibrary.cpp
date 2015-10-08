@@ -414,6 +414,10 @@ OSRLibrary::OSRPair OSRLibrary::insertOpenOSR(LLVMContext& Context, Function &F,
 
     applyAttributesToArguments(stub, src, valuesToPass, true); // skip first argument!
 
+    // we don't want the stub to be visible or inlined
+    stub->addFnAttr(Attribute::NoInline);
+    stub->setLinkage(Function::LinkageTypes::PrivateLinkage);
+
     BasicBlock* stubEntryPoint = BasicBlock::Create(Context, "entry", stub);
 
     // step (3)

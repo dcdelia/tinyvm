@@ -36,3 +36,19 @@ void LocMapper::removeLocMapper(Function& F) {
     assert (it != globalMap.end() && "no LocMapper to remove");
     globalMap.erase(it);
 }
+
+void LocMapper::addInstruction(Instruction* I) {
+    operations.push_back(new AddInst(I));
+}
+
+void LocMapper::deleteInstruction(Instruction* I) {
+    operations.push_back(new DeleteInst(I));
+}
+
+void LocMapper::moveInstruction(Instruction* I, Instruction* insertBefore) {
+    operations.push_back(new MoveInst(I, insertBefore));
+}
+
+void LocMapper::replaceInstruction(Instruction* oldI, Instruction* newI) {
+    operations.push_back(new ReplaceInst(oldI, newI));
+}

@@ -1,12 +1,12 @@
 /* ===============================================================
- * Location mapper component for the OSR library.
+ * Code mapper component for the OSR library.
  *
  * Author:      (C) 2015 Daniele Cono D'Elia
  * License:     See the end of this file for license information
  * =============================================================== */
 
-#ifndef TINYVM_LOCMAPPER_HPP
-#define	TINYVM_LOCMAPPER_HPP
+#ifndef TINYVM_CODEMAPPER_HPP
+#define	TINYVM_CODEMAPPER_HPP
 
 #include "StateMap.hpp"
 
@@ -15,22 +15,22 @@
 #include <llvm/Support/Casting.h>
 #include <map>
 
-class LocMapper {
+class CodeMapper {
 private:
     // Classes to encode IR manipulations
-    class LMAction;
+    class CMAction;
     class AddInst;
     class DeleteInst;
     class MoveInst;
     class ReplaceInst;
 
 public:
-    LocMapper() {}
+    CodeMapper() {}
 
-    static LocMapper* getLocMapper(llvm::Function &F);
-    static LocMapper* createLocMapper(llvm::Function &F);
-    static bool hasLocMapper(llvm::Function &F);
-    static void removeLocMapper(llvm::Function &F);
+    static CodeMapper* getCodeMapper(llvm::Function &F);
+    static CodeMapper* createCodeMapper(llvm::Function &F);
+    static bool hasCodeMapper(llvm::Function &F);
+    static void removeCodeMapper(llvm::Function &F);
 
     void addInstruction(llvm::Instruction* I);
     void deleteInstruction(llvm::Instruction* I);
@@ -42,64 +42,68 @@ public:
 private:
     // Metadata attached to function have been introduced only since LLVM 3.7.0,
     // thus for the time being we rely on a simple static map object.
-    typedef std::map<llvm::Function*, LocMapper*> GlobalMap;
+    typedef std::map<llvm::Function*, CodeMapper*> GlobalMap;
     static GlobalMap globalMap;
-    std::vector<LMAction*> operations;
+    std::vector<CMAction*> operations;
 };
 
-/* LMAction's derived classes implement LLVM's lightweight RTTI */
-class LocMapper::LMAction {
+/* CMAction's derived classes implement LLVM's lightweight RTTI */
+class CodeMapper::CMAction {
 public:
-    enum LMActionKind {
-        LMAK_AddInst, LMAK_DeleteInst, LMAK_MoveInst, LMAK_ReplaceInst
+    enum CMActionKind {
+        CMAK_AddInst, CMAK_DeleteInst, CMAK_MoveInst, CMAK_ReplaceInst
     };
-    LMActionKind getKind() const { return Kind; }
-    LMAction(LMActionKind K) : Kind(K) {}
+    CMActionKind getKind() const { return Kind; }
+    CMAction(CMActionKind K) : Kind(K) {}
     virtual void apply(StateMap *M) {}
 
+    static llvm::Instruction* findSuccessor(llvm::Instruction* I);
+
 private:
-    const LMActionKind Kind;
+    const CMActionKind Kind;
 };
 
-class LocMapper::AddInst : public LocMapper::LMAction {
+class CodeMapper::AddInst : public CodeMapper::CMAction {
 public:
-    AddInst(llvm::Instruction* I): LMAction(LMAK_AddInst), AI(I) {}
+    AddInst(llvm::Instruction* I): CMAction(CMAK_AddInst), AI(I) {}
 
-    static bool classof(const LMAction* LMA) {
-        return LMA->getKind() == LMAK_AddInst;
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_AddInst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M) { } // nothing to do
 
     llvm::Instruction* AI;
 private:
 
 };
 
-class LocMapper::DeleteInst : public LocMapper::LMAction {
+class CodeMapper::DeleteInst : public CodeMapper::CMAction {
 public:
-    DeleteInst(llvm::Instruction* I): LMAction(LMAK_DeleteInst), DI(I) {}
+    DeleteInst(llvm::Instruction* I): CMAction(CMAK_DeleteInst), DeletedI(I),
+            SuccI(findSuccessor(I)) { }
 
-    static bool classof(const LMAction* LMA) {
-        return LMA->getKind() == LMAK_DeleteInst;
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_DeleteInst;
     }
 
     void apply(StateMap *M) { } // TODO
 
-    llvm::Instruction* DI;
+    llvm::Instruction* DeletedI;
+    llvm::Instruction* SuccI;
 private:
 };
 
 
-class LocMapper::MoveInst : public LocMapper::LMAction {
+class CodeMapper::MoveInst : public CodeMapper::CMAction {
 public:
     MoveInst(llvm::Instruction* I, llvm::Instruction* insertBefore):
-            LMAction(LMAK_MoveInst), MI(I), BI(insertBefore) {
+            CMAction(CMAK_MoveInst), MI(I), BI(insertBefore) {
             // TODO
             }
 
-    static bool classof(const LMAction* LMA) {
-        return LMA->getKind() == LMAK_MoveInst;
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_MoveInst;
     }
 
     void apply(StateMap *M) { } // TODO
@@ -109,13 +113,13 @@ public:
 private:
 };
 
-class LocMapper::ReplaceInst : public LocMapper::LMAction {
+class CodeMapper::ReplaceInst : public CodeMapper::CMAction {
 public:
     ReplaceInst(llvm::Instruction* oldI, llvm::Instruction* newI):
-            LMAction(LMAK_ReplaceInst), OI(oldI), NI(newI) {}
+            CMAction(CMAK_ReplaceInst), OI(oldI), NI(newI) {}
 
-    static bool classof(const LMAction* LMA) {
-        return LMA->getKind() == LMAK_ReplaceInst;
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_ReplaceInst;
     }
 
     void apply(StateMap *M) { } // TODO

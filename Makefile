@@ -12,23 +12,32 @@ LLVM_LDFLAGS	= $(shell llvm-config --ldflags --system-libs --libs core ipo irrea
 
 all: TinyVM
 
-TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/LocMapper.o
+TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o \
+	    $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o \
+	    $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o \
+	    $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/CodeMapper.o
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/main.o: $(SRC)/main.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/Parser.hpp $(INCLUDE)/history.h
+$(BUILD)/main.o: $(SRC)/main.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp \
+	    $(INCLUDE)/Parser.hpp $(INCLUDE)/history.h
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/main.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/main.o
 
 $(BUILD)/Lexer.o: $(SRC)/Lexer.cpp $(INCLUDE)/Lexer.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Lexer.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Lexer.o
 
-$(BUILD)/MCJITHelper.o: $(SRC)/MCJITHelper.cpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Liveness.hpp
-	$(CXX) $(CXX_FLAGS) -c $(SRC)/MCJITHelper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/MCJITHelper.o
+$(BUILD)/MCJITHelper.o: $(SRC)/MCJITHelper.cpp $(INCLUDE)/MCJITHelper.hpp \
+	    $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/OSRLibrary.hpp \
+	    $(INCLUDE)/StateMap.hpp $(INCLUDE)/Liveness.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/MCJITHelper.cpp $(LLVM_CXXFLAGS) \
+	    -o $(BUILD)/MCJITHelper.o
 
-$(BUILD)/CustomMemoryManager.o: $(SRC)/CustomMemoryManager.cpp $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/MCJITHelper.hpp
-	$(CXX) $(CXX_FLAGS) -c $(SRC)/CustomMemoryManager.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CustomMemoryManager.o
+$(BUILD)/CustomMemoryManager.o: $(SRC)/CustomMemoryManager.cpp \
+	    $(INCLUDE)/CustomMemoryManager.hpp $(INCLUDE)/MCJITHelper.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/CustomMemoryManager.cpp $(LLVM_CXXFLAGS) \
+	    -o $(BUILD)/CustomMemoryManager.o
 
 $(BUILD)/StackMap.o: $(SRC)/StackMap.cpp $(INCLUDE)/StackMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/StackMap.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/StackMap.o
@@ -39,10 +48,13 @@ $(BUILD)/Liveness.o: $(SRC)/Liveness.cpp $(INCLUDE)/Liveness.hpp
 $(BUILD)/StateMap.o: $(SRC)/StateMap.cpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/StateMap.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/StateMap.o
 
-$(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h  $(INCLUDE)/Liveness.hpp
+$(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp \
+	    $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h  $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/OSRLibrary.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSRLibrary.o
 
-$(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h $(INCLUDE)/Liveness.hpp
+$(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp \
+	    $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h \
+	    $(INCLUDE)/Liveness.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Parser.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Parser.o
 
 $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h
@@ -51,8 +63,8 @@ $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h
 $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 	$(CC) $(CFLAGS) -c $(SRC)/timer.c $(LLVM_CFLAGS) -o $(BUILD)/timer.o
 
-$(BUILD)/LocMapper.o: $(SRC)/LocMapper.cpp $(INCLUDE)/LocMapper.hpp $(INCLUDE)/StateMap.hpp
-	$(CXX) $(CXX_FLAGS) -c $(SRC)/LocMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/LocMapper.o
+$(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/StateMap.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
 
 clean:
 	rm -f $(BUILD)/*.o

@@ -3,6 +3,7 @@ CC		= clang
 CXX		= clang++
 BUILD		= build
 SRC		= src
+PASSES_SRC	= src/OptPasses
 INCLUDE		= include
 CFLAGS		= -O0 -g -Wall -I$(INCLUDE)
 CXX_FLAGS	= -O0 -g -Wall -I$(INCLUDE) -DPROFILE_TIME
@@ -10,12 +11,12 @@ LLVM_CFLAGS	= # we do not use LLVM C API
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
 LLVM_LDFLAGS	= $(shell llvm-config --ldflags --system-libs --libs core ipo irreader mcjit native)
 
-all: TinyVM
+all: tinyvm
 
-TinyVM: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o \
+tinyvm: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o \
 	    $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o \
 	    $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o \
-	    $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/CodeMapper.o
+	    $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/CodeMapper.o OptPasses
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
@@ -65,6 +66,16 @@ $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 
 $(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
+
+.PHONY: clean OptPasses
+
+OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o
+
+$(BUILD)/ADCE.o: $(PASSES_SRC)/ADCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
+	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ADCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ADCE.o
+
+$(BUILD)/DCE.o: $(PASSES_SRC)/DCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
+	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/DCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/DCE.o
 
 clean:
 	rm -f $(BUILD)/*.o

@@ -15,6 +15,7 @@
 llvm::FunctionPass* OSR_createAggressiveDCEPass();
 llvm::FunctionPass* OSR_createDeadCodeEliminationPass();
 llvm::FunctionPass* OSR_createConstantPropagationPass();
+llvm::FunctionPass* OSR_createSinkingPass();
 
 /* Adaptation of LLVM's internal macros*/
 #define OSR_INITIALIZE_PASS(passName, arg, name, cfg, analysis) \
@@ -30,6 +31,7 @@ llvm::FunctionPass* OSR_createConstantPropagationPass();
 
 #define OSR_INITIALIZE_PASS_BEGIN       INITIALIZE_PASS_BEGIN
 #define OSR_INITIALIZE_PASS_DEPENDENCY  INITIALIZE_PASS_DEPENDENCY
+#define OSR_INITIALIZE_AG_DEPENDENCY    INITIALIZE_AG_DEPENDENCY
 
 #define OSR_INITIALIZE_PASS_END(passName, arg, name, cfg, analysis) \
     PassInfo *PI = new PassInfo(name, arg, & passName ::ID, \

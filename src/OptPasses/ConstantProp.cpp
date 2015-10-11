@@ -21,7 +21,7 @@ using namespace llvm;
 
 STATISTIC(NumInstKilled, "Number of instructions killed");
 
-void initializeOSR_ConstantPropagationPass(PassRegistry&); /* OSR */
+void initializeOSR_ConstantPropagationPass(PassRegistry&);
 
 namespace {
   struct OSR_ConstantPropagation : public FunctionPass {

@@ -69,7 +69,8 @@ $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 $(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
 
-OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o
+
+OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o $(BUILD)/Sink.o
 
 $(BUILD)/ADCE.o: $(PASSES_SRC)/ADCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ADCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ADCE.o
@@ -79,6 +80,9 @@ $(BUILD)/DCE.o: $(PASSES_SRC)/DCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMa
 
 $(BUILD)/ConstantProp.o: $(PASSES_SRC)/ConstantProp.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ConstantProp.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ConstantProp.o
+
+$(BUILD)/Sink.o: $(PASSES_SRC)/Sink.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
+	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/Sink.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Sink.o
 
 
 clean:

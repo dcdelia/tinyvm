@@ -19,25 +19,82 @@
 
 #include <map>
 
+/// \brief Manipulate OSR machinery for functions
+///
+/// This class is the core of the OSRKit library. It provides primitives to
+/// insert an open or resolved OSR point in a function, to generate an OSR
+/// continuation function, and to remove an OSR point from a function.
+
 class OSRLibrary {
     public:
+        /// \brief Condition to evaluate when to take an OSR decision
+        ///
+        /// An OSR condition can be expressed as a sequence of instructions. The
+        /// library will use the last Instruction in the sequence as condition
+        /// for a BranchInst (when the condition is satisfied, an OSR is fired).
         typedef std::vector<llvm::Instruction*> OSRCond;
+
+        /// \brief A pair of LLVM Function objects
         typedef std::pair<llvm::Function*, llvm::Function*> OSRPair;
 
+        /// \brief Data structure to encode settings for an OSR point
         typedef struct OSRPointConfig {
+            /// \brief See constructor
             bool verbose;
+            /// \brief See constructor
             bool updateF1;
+            /// \brief See constructor
             int branchTakenProb;
 
+            /// \brief See constructor
             const std::string* nameForNewF1;
+            /// \brief See constructor
             llvm::Module* modForNewF1;
+            /// \brief See constructor
             StateMap** ptrForF1NewToF1Map;
 
-            // resolved OSR only
+            /// \brief See constructor
             const std::string* nameForNewF2;
+
+            // resolved OSR only
+            /// \brief See constructor
             llvm::Module* modForNewF2;
+            /// \brief See constructor
             StateMap** ptrForF2NewToF2Map;
 
+            /// \brief Generate a configuration object for an OSR point
+            ///
+            /// \param verbose Display details while OSRKit is working.
+            /// \param updateF1 Modify the source function (when \c false,
+            /// OSRKit creates a clone of it and inserts the OSR point in the
+            /// cloned function).
+            /// \param branchTakenProb Hints the code generator that the OSR is
+            /// fired with the given probability (an integer between \c 0 and
+            /// \c 100); when \c -1 is used, no hint is given.
+            /// \param nameForNewF1 When \a updateF1 is \c false, specifies a
+            /// name for the modified clone of the source function; with \c
+            /// nullptr, a new name is generated automatically.
+            /// \param modForNewF1 When \a updateF1 is \c false, specifies the
+            /// Module where to insert the modified cloned function; \c nullptr
+            /// can be used when the source function does not reference any
+            /// global variable or other function.
+            /// \param ptrForF1NewToF1Map When \a updateF1 is \c false,
+            /// specifies the pointer to a StateMap* variable where to store the
+            /// address of the StateMap object between the source function and
+            /// its modified clone. With \c nullptr, no StateMap is generated.
+            /// \param nameForNewF2 Specifies a name for (resolved OSR) the
+            /// continuation function or (open OSR with \a updateF1 being \c
+            /// false) the stub; with \c nullptr, a name is generated
+            /// automatically.
+            /// \param modForNewF2 For resolved OSR points only, specifies the
+            /// Module where to insert the continuation function; \c nullptr
+            /// can be used when the destination function does not reference any
+            /// global variable or other function.
+            /// \param ptrForF1NewToF2Map For resolved OSR points only,
+            /// specifies the pointer to a StateMap* variable where to store the
+            /// address of the unidirectional StateMap object from the
+            /// continuation function to the destination function; with \c
+            /// nullptr, no StateMap is generated.
             OSRPointConfig(bool verbose = false, bool updateF1 = true,
                     int branchTakenProb = -1,
                     const std::string* nameForNewF1 = nullptr,
@@ -58,13 +115,30 @@ class OSRLibrary {
             };
         } OSRPointConfig;
 
-
+        /// \brief Signature of a code generator for open OSR points
+        ///
+        /// A code generator for open OSR transitions takes four parameters: the
+        /// Function \a F1 in which the OSR point was inserted, the instruction
+        /// \a OSRSrc for which an OSR decision was taken, the address \a extra
+        /// of the additional data structure passed by the front-end for the OSR
+        /// point, and the run-time address \a profDataAddr of the location with
+        /// the content of the profiled Value.
         typedef void* (*DestFunGenerator)(
                                     llvm::Function* F1,
                                     llvm::Instruction* OSRSrc,
                                     void* extra,
                                     void* profDataAddr);
 
+        /// \brief Insert a resolved OSR point in a function.
+        ///
+        /// \param Context LLVM Context to use for OSRKit.
+        /// \param F1 Source function where to insert the OSR point.
+        /// \param OSRSrc Instruction in F1 where to take an OSR decision.
+        /// \param F2 Destination function for the OSR transition.
+        /// \param LPad Landing pad in F2 where to resume the execution at.
+        /// \param Cond Condition to evaluate for taking an OSR decision.
+        /// \param M StateMap object between F1 and F2.
+        /// \param config Additional parameters for the OSR point.
         static OSRPair insertResolvedOSR(
                                     llvm::LLVMContext &Context,
                                     llvm::Function& F1,

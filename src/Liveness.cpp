@@ -156,7 +156,7 @@ LivenessAnalysis::LiveValues& LivenessAnalysis::getLiveOutValues(const BasicBloc
     return blockMap[B].second;
 }
 
-void LivenessAnalysis::updateLiveValues(const llvm::BasicBlock* B,
+void LivenessAnalysis::updateLiveValuesForBlock(const llvm::BasicBlock* B,
         LivenessAnalysis::LiveValues &&liveIn, LivenessAnalysis::LiveValues &&liveOut) {
     blockMap[B] = std::pair<LiveValues, LiveValues>(std::move(liveIn), std::move(liveOut));
 }

@@ -20,6 +20,7 @@
 
 #include "Liveness.hpp"
 
+/// \brief StateMap
 class StateMap {
 public:
     typedef llvm::SmallVectorImpl<llvm::Value*> CompCodeArgs;

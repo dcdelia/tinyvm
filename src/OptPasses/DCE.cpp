@@ -18,6 +18,9 @@ using namespace llvm;
 
 STATISTIC(DCEEliminated, "Number of insts removed");
 
+
+void initializeOSR_DCEPass(PassRegistry&); /* OSR */
+
 namespace {
   //===--------------------------------------------------------------------===//
   // DeadCodeElimination pass implementation
@@ -26,7 +29,7 @@ namespace {
     static char ID; // Pass identification, replacement for typeid
     CodeMapper* OSR_CM; /* OSR */
     OSR_DCE() : FunctionPass(ID) {
-      initializeDCEPass(*PassRegistry::getPassRegistry());
+      initializeOSR_DCEPass(*PassRegistry::getPassRegistry());
     }
 
     bool runOnFunction(Function &F) override;

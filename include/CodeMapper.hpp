@@ -23,6 +23,7 @@ private:
     class DeleteInst;
     class MoveInst;
     class ReplaceInst;
+    class ReplaceInstWithConst;
 
 public:
     CodeMapper() {}
@@ -36,6 +37,7 @@ public:
     void deleteInstruction(llvm::Instruction* I);
     void moveInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
     void replaceInstruction(llvm::Instruction* oldI, llvm::Instruction* newI);
+    void replaceInstruction(llvm::Instruction* I, llvm::Constant* C);
 
     void updateStateMapping(StateMap* M) {}
 
@@ -51,7 +53,8 @@ private:
 class CodeMapper::CMAction {
 public:
     enum CMActionKind {
-        CMAK_AddInst, CMAK_DeleteInst, CMAK_MoveInst, CMAK_ReplaceInst
+        CMAK_AddInst, CMAK_DeleteInst, CMAK_MoveInst, CMAK_ReplaceInst,
+        CMAK_ReplaceInstWithConst
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
@@ -125,6 +128,22 @@ public:
     void apply(StateMap *M) { } // TODO
 
     llvm::Instruction *OI, *NI;
+private:
+};
+
+class CodeMapper::ReplaceInstWithConst : public CodeMapper::CMAction {
+public:
+    ReplaceInstWithConst(llvm::Instruction* I, llvm::Constant* C):
+            CMAction(CMAK_ReplaceInstWithConst), I(I), C(C) {}
+
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_ReplaceInstWithConst;
+    }
+
+    void apply(StateMap *M) { } // TODO
+
+    llvm::Instruction* I;
+    llvm::Constant* C;
 private:
 };
 

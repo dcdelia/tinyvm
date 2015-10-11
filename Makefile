@@ -11,6 +11,8 @@ LLVM_CFLAGS	= # we do not use LLVM C API
 LLVM_CXXFLAGS	= $(shell llvm-config --cxxflags)
 LLVM_LDFLAGS	= $(shell llvm-config --ldflags --system-libs --libs core ipo irreader mcjit native)
 
+.PHONY: clean OptPasses
+
 all: tinyvm
 
 tinyvm: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o \
@@ -67,15 +69,17 @@ $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 $(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
 
-.PHONY: clean OptPasses
-
-OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o
+OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o
 
 $(BUILD)/ADCE.o: $(PASSES_SRC)/ADCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ADCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ADCE.o
 
 $(BUILD)/DCE.o: $(PASSES_SRC)/DCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/DCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/DCE.o
+
+$(BUILD)/ConstantProp.o: $(PASSES_SRC)/ConstantProp.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
+	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ConstantProp.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ConstantProp.o
+
 
 clean:
 	rm -f $(BUILD)/*.o

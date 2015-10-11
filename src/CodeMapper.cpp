@@ -59,6 +59,10 @@ void CodeMapper::replaceInstruction(Instruction* oldI, Instruction* newI) {
     operations.push_back(new ReplaceInst(oldI, newI));
 }
 
+void CodeMapper::replaceInstruction(Instruction* I, Constant* C) {
+    operations.push_back(new ReplaceInstWithConst(I, C));
+}
+
 Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {
     if (isa<TerminatorInst>(I)) return nullptr;
 

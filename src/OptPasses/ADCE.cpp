@@ -22,7 +22,7 @@ using namespace llvm;
 
 STATISTIC(NumRemoved, "Number of instructions removed");
 
-void initializeOSR_ADCEPass(PassRegistry&);
+void initializeOSR_ADCEPass(PassRegistry&); /* OSR */
 
 namespace {
   struct OSR_ADCE : public FunctionPass {

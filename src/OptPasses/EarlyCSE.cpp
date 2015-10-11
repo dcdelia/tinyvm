@@ -4,22 +4,22 @@
 #include "CodeMapper.hpp"
 #include "OptPasses.hpp"
 
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/ADT/Hashing.h"
-#include "llvm/ADT/ScopedHashTable.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/AssumptionCache.h"
-#include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/PatternMatch.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/RecyclingAllocator.h"
-#include "llvm/Target/TargetLibraryInfo.h"
-#include "llvm/Transforms/Utils/Local.h"
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/ADT/Hashing.h>
+#include <llvm/ADT/ScopedHashTable.h>
+#include <llvm/ADT/Statistic.h>
+#include <llvm/Analysis/AssumptionCache.h>
+#include <llvm/Analysis/InstructionSimplify.h>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/Dominators.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/IntrinsicInst.h>
+#include <llvm/IR/PatternMatch.h>
+#include <llvm/Pass.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/RecyclingAllocator.h>
+#include <llvm/Target/TargetLibraryInfo.h>
+#include <llvm/Transforms/Utils/Local.h>
 #include <deque>
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -604,6 +604,8 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
 bool OSR_EarlyCSE::runOnFunction(Function &F) {
   if (skipOptnoneFunction(F))
     return false;
+
+  OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
 
   // Note, deque is being used here because there is significant performance gains
   // over vector when the container becomes very large due to the specific access

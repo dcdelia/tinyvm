@@ -15,7 +15,6 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/Pass.h>
-
 using namespace llvm;
 
 #define DEBUG_TYPE "OSR_adce"

@@ -55,12 +55,12 @@ void CodeMapper::moveInstruction(Instruction* I, Instruction* insertBefore) {
     operations.push_back(new MoveInst(I, insertBefore));
 }
 
-void CodeMapper::replaceInstruction(Instruction* oldI, Instruction* newI) {
-    operations.push_back(new ReplaceInst(oldI, newI));
+void CodeMapper::replaceAllUsesWith(Instruction* oldI, Instruction* newI) {
+    operations.push_back(new RAUWInstWithInst(oldI, newI));
 }
 
-void CodeMapper::replaceInstruction(Instruction* I, Constant* C) {
-    operations.push_back(new ReplaceInstWithConst(I, C));
+void CodeMapper::replaceAllUsesWith(Instruction* I, Constant* C) {
+    operations.push_back(new RAUWInstWithConst(I, C));
 }
 
 Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {

@@ -70,7 +70,8 @@ $(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
 
 
-OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o $(BUILD)/Sink.o
+OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o $(BUILD)/Sink.o \
+	   $(BUILD)/EarlyCSE.o
 
 $(BUILD)/ADCE.o: $(PASSES_SRC)/ADCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ADCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ADCE.o
@@ -84,6 +85,8 @@ $(BUILD)/ConstantProp.o: $(PASSES_SRC)/ConstantProp.cpp $(INCLUDE)/OptPasses.hpp
 $(BUILD)/Sink.o: $(PASSES_SRC)/Sink.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/Sink.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Sink.o
 
+$(BUILD)/EarlyCSE.o: $(PASSES_SRC)/EarlyCSE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
+	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/EarlyCSE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/EarlyCSE.o
 
 clean:
 	rm -f $(BUILD)/*.o

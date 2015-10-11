@@ -15,7 +15,6 @@
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
-
 using namespace llvm;
 
 #define DEBUG_TYPE "OSR_sink"
@@ -270,10 +269,10 @@ bool OSR_Sinking::SinkInstruction(Instruction *Inst,
         dbgs() << ")\n");
 
   // Move the instruction.
-  /* OSR - was: Inst->moveBefore(SuccToSinkTo->getFirstInsertionPt()); */
-  Instruction* moveBeforeTmp = SuccToSinkTo->getFirstInsertionPt();
-  if (OSR_CM) OSR_CM->moveInstruction(Inst, moveBeforeTmp);
-  Inst->moveBefore(moveBeforeTmp);
+  /* [OSR] Inst->moveBefore(SuccToSinkTo->getFirstInsertionPt()); */
+  Instruction* tmpMoveBefore = SuccToSinkTo->getFirstInsertionPt();
+  if (OSR_CM) OSR_CM->moveInstruction(Inst, tmpMoveBefore);
+  Inst->moveBefore(tmpMoveBefore);
 
   return true;
 }

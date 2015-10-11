@@ -14,7 +14,6 @@
 #include <llvm/Pass.h>
 #include <llvm/Target/TargetLibraryInfo.h>
 #include <set>
-
 using namespace llvm;
 
 #define DEBUG_TYPE "OSR_constprop"
@@ -76,7 +75,7 @@ bool OSR_ConstantPropagation::runOnFunction(Function &F) {
           WorkList.insert(cast<Instruction>(U));
 
         // Replace all of the uses of a variable with uses of the constant.
-        if (OSR_CM) OSR_CM->replaceInstruction(I, C); /* OSR */
+        if (OSR_CM) OSR_CM->replaceAllUsesWith(I, C); /* OSR */
         I->replaceAllUsesWith(C);
 
         // Remove the dead instruction.

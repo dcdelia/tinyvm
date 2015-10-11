@@ -22,8 +22,8 @@ private:
     class AddInst;
     class DeleteInst;
     class MoveInst;
-    class ReplaceInst;
-    class ReplaceInstWithConst;
+    class RAUWInstWithInst;
+    class RAUWInstWithConst;
 
 public:
     CodeMapper() {}
@@ -36,8 +36,8 @@ public:
     void addInstruction(llvm::Instruction* I);
     void deleteInstruction(llvm::Instruction* I);
     void moveInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
-    void replaceInstruction(llvm::Instruction* oldI, llvm::Instruction* newI);
-    void replaceInstruction(llvm::Instruction* I, llvm::Constant* C);
+    void replaceAllUsesWith(llvm::Instruction* oldI, llvm::Instruction* newI);
+    void replaceAllUsesWith(llvm::Instruction* I, llvm::Constant* C);
 
     void updateStateMapping(StateMap* M) {}
 
@@ -52,9 +52,10 @@ private:
 /* CMAction's derived classes implement LLVM's lightweight RTTI */
 class CodeMapper::CMAction {
 public:
+    // types are explicitly encoded as I might later delete a pointed object!
     enum CMActionKind {
-        CMAK_AddInst, CMAK_DeleteInst, CMAK_MoveInst, CMAK_ReplaceInst,
-        CMAK_ReplaceInstWithConst
+        CMAK_AddInst, CMAK_DeleteInst, CMAK_MoveInst, CMAK_RAUWInstWithInst,
+        CMAK_RAUWInstWithConst
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
@@ -116,13 +117,13 @@ public:
 private:
 };
 
-class CodeMapper::ReplaceInst : public CodeMapper::CMAction {
+class CodeMapper::RAUWInstWithInst : public CodeMapper::CMAction {
 public:
-    ReplaceInst(llvm::Instruction* oldI, llvm::Instruction* newI):
-            CMAction(CMAK_ReplaceInst), OI(oldI), NI(newI) {}
+    RAUWInstWithInst(llvm::Instruction* oldI, llvm::Instruction* newI):
+            CMAction(CMAK_RAUWInstWithInst), OI(oldI), NI(newI) {}
 
     static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_ReplaceInst;
+        return CMA->getKind() == CMAK_RAUWInstWithInst;
     }
 
     void apply(StateMap *M) { } // TODO
@@ -131,13 +132,13 @@ public:
 private:
 };
 
-class CodeMapper::ReplaceInstWithConst : public CodeMapper::CMAction {
+class CodeMapper::RAUWInstWithConst : public CodeMapper::CMAction {
 public:
-    ReplaceInstWithConst(llvm::Instruction* I, llvm::Constant* C):
-            CMAction(CMAK_ReplaceInstWithConst), I(I), C(C) {}
+    RAUWInstWithConst(llvm::Instruction* I, llvm::Constant* C):
+            CMAction(CMAK_RAUWInstWithConst), I(I), C(C) {}
 
     static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_ReplaceInstWithConst;
+        return CMA->getKind() == CMAK_RAUWInstWithConst;
     }
 
     void apply(StateMap *M) { } // TODO

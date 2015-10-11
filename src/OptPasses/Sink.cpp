@@ -273,7 +273,7 @@ bool OSR_Sinking::SinkInstruction(Instruction *Inst,
   // Move the instruction.
   /* [OSR] Inst->moveBefore(SuccToSinkTo->getFirstInsertionPt()); */
   Instruction* tmpMoveBefore = SuccToSinkTo->getFirstInsertionPt();
-  if (OSR_CM) OSR_CM->moveInstruction(Inst, tmpMoveBefore);
+  if (OSR_CM) OSR_CM->sinkInstruction(Inst, tmpMoveBefore);
   Inst->moveBefore(tmpMoveBefore);
 
   return true;

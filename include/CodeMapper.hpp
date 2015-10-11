@@ -21,7 +21,8 @@ private:
     class CMAction;
     class AddInst;
     class DeleteInst;
-    class MoveInst;
+    class HoistInst;
+    class SinkInst;
     class RAUWInstWithInst;
     class RAUWInstWithConst;
 
@@ -35,7 +36,8 @@ public:
 
     void addInstruction(llvm::Instruction* I);
     void deleteInstruction(llvm::Instruction* I);
-    void moveInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
+    void hoistInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
+    void sinkInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
     void replaceAllUsesWith(llvm::Instruction* oldI, llvm::Instruction* newI);
     void replaceAllUsesWith(llvm::Instruction* I, llvm::Constant* C);
 
@@ -54,8 +56,8 @@ class CodeMapper::CMAction {
 public:
     // types are explicitly encoded as I might later delete a pointed object!
     enum CMActionKind {
-        CMAK_AddInst, CMAK_DeleteInst, CMAK_MoveInst, CMAK_RAUWInstWithInst,
-        CMAK_RAUWInstWithConst
+        CMAK_AddInst, CMAK_DeleteInst, CMAK_HoistInst, CMAK_SinkInst,
+        CMAK_RAUWInstWithInst, CMAK_RAUWInstWithConst
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
@@ -99,15 +101,34 @@ private:
 };
 
 
-class CodeMapper::MoveInst : public CodeMapper::CMAction {
+class CodeMapper::HoistInst : public CodeMapper::CMAction {
 public:
-    MoveInst(llvm::Instruction* I, llvm::Instruction* insertBefore):
-            CMAction(CMAK_MoveInst), MI(I), BI(insertBefore) {
+    HoistInst(llvm::Instruction* I, llvm::Instruction* insertBefore):
+            CMAction(CMAK_HoistInst), MI(I), BI(insertBefore) {
             // TODO
             }
 
     static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_MoveInst;
+        return CMA->getKind() == CMAK_HoistInst;
+    }
+
+    void apply(StateMap *M) { } // TODO
+
+    llvm::Instruction *MI, *BI;
+
+private:
+};
+
+
+class CodeMapper::SinkInst : public CodeMapper::CMAction {
+public:
+    SinkInst(llvm::Instruction* I, llvm::Instruction* insertBefore):
+            CMAction(CMAK_SinkInst), MI(I), BI(insertBefore) {
+            // TODO
+            }
+
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_SinkInst;
     }
 
     void apply(StateMap *M) { } // TODO

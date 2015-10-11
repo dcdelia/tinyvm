@@ -51,8 +51,12 @@ void CodeMapper::deleteInstruction(Instruction* I) {
     operations.push_back(new DeleteInst(I));
 }
 
-void CodeMapper::moveInstruction(Instruction* I, Instruction* insertBefore) {
-    operations.push_back(new MoveInst(I, insertBefore));
+void CodeMapper::hoistInstruction(Instruction* I, Instruction* insertBefore) {
+    operations.push_back(new HoistInst(I, insertBefore));
+}
+
+void CodeMapper::sinkInstruction(Instruction* I, Instruction* insertBefore) {
+    operations.push_back(new SinkInst(I, insertBefore));
 }
 
 void CodeMapper::replaceAllUsesWith(Instruction* oldI, Instruction* newI) {

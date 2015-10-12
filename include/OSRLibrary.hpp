@@ -21,17 +21,17 @@
 
 /// \brief Manipulate OSR machinery for functions
 ///
-/// This class is the core of the OSRKit library. It provides primitives to
-/// insert an open or resolved OSR point in a function, to generate an OSR
-/// continuation function, and to remove an OSR point from a function.
+/// This class is the core of the OSRKit library. It essentially provides
+/// primitives to usert an open or resolved OSR point in a function, to generate
+/// an OSR continuation function, and to remove an OSR point from a function.
 
 class OSRLibrary {
     public:
-        /// \brief Condition to evaluate when to take an OSR decision
+        /// \brief Condition to evaluate for taking an OSR decision
         ///
-        /// An OSR condition can be expressed as a sequence of instructions. The
-        /// library will use the last Instruction in the sequence as condition
-        /// for a BranchInst (when the condition is satisfied, an OSR is fired).
+        /// An OSR condition can be expressed as a sequence of instructions.
+        /// OSRKit will use the last Instruction in the sequence as condition
+        /// for a BranchInst: when the condition is satisfied, an OSR is fired.
         typedef std::vector<llvm::Instruction*> OSRCond;
 
         /// \brief A pair of LLVM Function objects
@@ -90,7 +90,7 @@ class OSRLibrary {
             /// Module where to insert the continuation function; \c nullptr
             /// can be used when the destination function does not reference any
             /// global variable or other function.
-            /// \param ptrForF1NewToF2Map For resolved OSR points only,
+            /// \param ptrForF2NewToF2Map For resolved OSR points only,
             /// specifies the pointer to a StateMap* variable where to store the
             /// address of the unidirectional StateMap object from the
             /// continuation function to the destination function; with \c
@@ -133,11 +133,11 @@ class OSRLibrary {
         ///
         /// \param Context LLVM Context to use for OSRKit.
         /// \param F1 Source function where to insert the OSR point.
-        /// \param OSRSrc Instruction in F1 where to take an OSR decision.
+        /// \param OSRSrc Instruction in \a F1 where to take an OSR decision.
         /// \param F2 Destination function for the OSR transition.
-        /// \param LPad Landing pad in F2 where to resume the execution at.
-        /// \param Cond Condition to evaluate for taking an OSR decision.
-        /// \param M StateMap object between F1 and F2.
+        /// \param LPad Landing pad in \a F2 where to resume the execution at.
+        /// \param cond Condition to evaluate for taking an OSR decision.
+        /// \param M StateMap object between \a F1 and \a F2.
         /// \param config Additional parameters for the OSR point.
         static OSRPair insertResolvedOSR(
                                     llvm::LLVMContext &Context,
@@ -149,6 +149,20 @@ class OSRLibrary {
                                     StateMap& M,
                                     OSRPointConfig &config);
 
+        /// \brief Insert an open OSR point in a function.
+        ///
+        /// \param Context LLVM Context to use for OSRKit.
+        /// \param F Source function where to insert the OSR point.
+        /// \param OSRSrc Instruction in \a F where to take an OSR decision.
+        /// \param extraInfo Address of the auxiliary data structure to pass to
+        /// the code generator.
+        /// \param cond Condition to evaluate for taking an OSR decision.
+        /// \param profDataVal Value to profile at the OSR point.
+        /// \param destFunGenerator Code generator to use when the OSR is fired.
+        /// \param valuesToTransfer Custom set of values to transfer at the OSR.
+        /// point (with \c nullptr, only live values are transferred).
+        /// \param LA LivenessAnalysis results computed for \a F.
+        /// \param config Additional parameters for the OSR point.
         static OSRPair insertOpenOSR(
                                 llvm::LLVMContext &Context,
                                 llvm::Function &F,
@@ -161,6 +175,26 @@ class OSRLibrary {
                                 LivenessAnalysis *LA,
                                 OSRPointConfig &config);
 
+        /// \brief Generate an OSR continuation function.
+        ///
+        /// This method is used by code generators and internally by
+        /// insertResolvedOSR().
+        ///
+        /// \param Context LLVM Context to use for OSRKit.
+        /// \param F1 Source function for the OSR transition.
+        /// \param OSRSrc Instruction in \a F1 for which an OSR decision was
+        /// taken.
+        /// \param F2 Destination function for the OSR transition.
+        /// \param LPad Landing pad in \a F2 where to resume the execution at.
+        /// \param valuesToPass Set of values passed at the OSR point.
+        /// \param M StateMap object between \a F1 and \a F2.
+        /// \param F2NewName Name for the continuation funtion; with \c nullptr,
+        /// a name is generated automatically.
+        /// \param verbose Display details while OSRKit is working.
+        /// \param ptrForF2NewToF2Map Pointer to a StateMap* variable where to
+        /// store the address of the unidirectional StateMap object from the
+        /// continuation function to \a F2; with \c nullptr, no StateMap is
+        /// generated.
         static llvm::Function* genContinuationFunc(
                                     llvm::LLVMContext &Context,
                                     llvm::Function &F1,
@@ -173,13 +207,37 @@ class OSRLibrary {
                                     bool verbose = false,
                                     StateMap** ptrForF2NewToF2Map = nullptr);
 
+        /// \brief Get the set of live values at a program point as a vector.
+        ///
+        /// \param I Instruction at the program point.
+        /// \param LA LivenessAnalysis results for the enclosing function.
         static std::vector<llvm::Value*>* getLiveValsVecAtInstr(
                                             const llvm::Instruction* I,
                                             LivenessAnalysis &LA);
 
+        /// \brief Add declarations and replace uses for any reference to
+        /// globals and other functions.
+        ///
+        /// When a cloned function is inserted in a new module, any reference to
+        /// global variables and other functions should be replaced with a
+        /// reference to the declaration in the new module of the global or
+        /// function. This method adds declarations and fixes uses where needed.
+        ///
+        /// \param origFun Function from which \a newFun was cloned.
+        /// \param newFun Cloned function to manipulate.
+        /// \return Returns \c true when \a newFun and its enclosing module have
+        /// been modified, otherwise returns \c false.
         static bool fixUsesOfFunctionsAndGlobals(llvm::Function* origFun,
                                                  llvm::Function* newFun);
 
+        /// \brief Remove an OSR point from a function.
+        ///
+        /// Note that this method might also remove trivially dead instructions
+        /// in the basic block where the OSR decision is supposed to be taken.
+        ///
+        /// \param OSRSrc Location used for the OSR point insertion.
+        /// \return Returns \c true when an OSR point was found and removed, \c
+        /// false otherwise.
         static bool removeOSRPoint(llvm::Instruction &OSRSrc);
 
     private:

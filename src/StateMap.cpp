@@ -76,7 +76,7 @@ std::vector<Value*> StateMap::getValuesToFetchAtOSRSrc(Instruction* OSRSrc, Inst
         // check for LocPair-specific info
         if (lpInfo != nullptr) {
             // check for oneToOneValue or compensation code specific for this pair
-            ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(valueToSet);
+            LocPairInfo::ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(valueToSet);
             if (VIMIt != lpInfo->valueInfoMap.end()) {
                 ValueInfo* VI = VIMIt->second;
                 if (VI->isOneToOneValue()) {
@@ -145,7 +145,7 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
             continue;
         } else if (lpInfo != nullptr) {
             // check for oneToOneValue or compensation code specific for this pair
-            ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(dest_v);
+            LocPairInfo::ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(dest_v);
             if (VIMIt != lpInfo->valueInfoMap.end()) {
                 ValueInfo* VI = VIMIt->second;
                 if (VI->isOneToOneValue()) {
@@ -250,7 +250,7 @@ StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::LocPair &pair) {
     LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
     if (LPIMIt != locPairInfoMap.end()) {
         LocPairInfo& lpInfo = LPIMIt->second;
-        ValueInfoMap::iterator VIMIt = lpInfo.valueInfoMap.find(v);
+        LocPairInfo::ValueInfoMap::iterator VIMIt = lpInfo.valueInfoMap.find(v);
         if (VIMIt != lpInfo.valueInfoMap.end()) {
             return VIMIt->second;
         }

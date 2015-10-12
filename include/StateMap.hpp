@@ -20,10 +20,19 @@
 
 #include "Liveness.hpp"
 
-/// \brief StateMap
+/// \brief Track correlation between program points and values of two functions.
+///
+/// This class is an essential component of the OSRKit library. It is used by
+/// a front-end to track the correlation between Value objects and between
+/// program points (represented by Instructions) of two functions. OSRLibrary
+/// relies on StateMap for generating the entry block in the continuation
+/// function exploiting information provided by the front-end.
 class StateMap {
 public:
+    // \brief Set of values from the source function used in compensation code.
     typedef llvm::SmallVectorImpl<llvm::Value*> CompCodeArgs;
+
+    /// \brief Sequence of instructions for compensation code.
     typedef llvm::SmallVectorImpl<llvm::Value*> CodeSequence;
 
     typedef struct CompCode {
@@ -43,17 +52,23 @@ public:
         bool needsCompCode()    { return oneToOneValue == nullptr; }
     } ValueInfo;
 
-    typedef std::map<llvm::Value*, ValueInfo*> ValueInfoMap;
 
-    typedef struct LocPairInfo { // rename into LocPairInfo
+    /// \brief Compensation code information for a specific LocPair.
+    typedef struct LocPairInfo {
+        typedef std::map<llvm::Value*, ValueInfo*> ValueInfoMap;
+
         ValueInfoMap        valueInfoMap;
         CompCode*           globalCompCode; // value field == nullptr
     } LocPairInfo;
 
 
-    // locations are LLVM instructions
+    /// \brief Pair of (corresponding) program locations.
+    ///
+    /// Program locations are expressed as LLVM Instruction objects.
     typedef std::pair<llvm::Instruction*, llvm::Instruction*> LocPair;
-    typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
+
+    /// \brief Map between pairs of locations and corresponding compensation
+    /// code information.
     typedef std::map<LocPair, LocPairInfo> LocPairInfoMap;
 
     // constructor
@@ -74,16 +89,40 @@ public:
         }
     }
 
-    /* Public methods */
+    /// \brief Get the two functions in the StateMap.
+    ///
+    /// \return Returns a pair with the current first and second function.
     std::pair<llvm::Function*, llvm::Function*> getFunctions();
+
+    /// \brief Get LivenessAnalysis information for the mapped functions.
+    ///
+    /// \return Returns a pair where the first and second element are the
+    /// LivenessAnalysis information for the first and second function,
+    /// respectively.
     std::pair<LivenessAnalysis&, LivenessAnalysis&> getLivenessResults();
 
-    // methods for generating OSR functions/stubs
+    /* Methods for generating OSR functions/stubs */
+
+    /// \brief Compute the values to transfer for an OSR transition.
+    ///
+    /// Values in the sequence typically belong to the liveIn set at \a OSRSrc.
+    /// However, it is possible that compensation code specific to the pair (\a
+    /// OSRSrc, \a LPad) might require Value objects not live at \a OSRSrc.
+    ///
+    /// \param OSRSrc Location for OSR point insertion in the source function.
+    /// \param LPad Landing pad in the target function for the OSR transition.
+    /// \return Sequence of Value objects to transfer at the OSR point.
     std::vector<llvm::Value*> getValuesToFetchAtOSRSrc(
                                 llvm::Instruction* OSRSrc,
                                 llvm::Instruction* LPad);
 
-    std::vector<llvm::Value*>& getValuesToSetAtLPad(llvm::Instruction* LPad); // cached
+    /// \brief Compute values to set at an OSR landing pad.
+    ///
+    /// A reference is returned as results are cached.
+    ///
+    /// \param LPad Landing pad in the target function for the OSR transition.
+    /// \return Sequence of Value objects to set at the OSR landing pad.
+    std::vector<llvm::Value*>& getValuesToSetAtLPad(llvm::Instruction* LPad);
 
     std::pair<llvm::BasicBlock*, llvm::ValueToValueMapTy*> genContinuationFunctionEntryPoint(
                                                                 llvm::LLVMContext &Context,
@@ -93,7 +132,7 @@ public:
                                                                 std::vector<llvm::Value*>& valuesToSetAtOSRCont,
                                                                 llvm::ValueToValueMapTy& fetchedValuesToOSRContArgs);
 
-    // methods for registering mapping information
+    /* Methods for registering mapping information */
     void    registerOneToOneValue(llvm::Value* src_v, llvm::Value* dest_v, bool bidirectional = false);
     void    registerLandingPad(llvm::Instruction* OSRSrc, llvm::Instruction* LPad, bool bidirectional = false);
 
@@ -102,14 +141,19 @@ public:
 
     ValueInfo*  getValueInfo(llvm::Value* v, LocPair &pair); // TODO LocPairInfo as arg?
 
-    // methods for querying
+    /* methods for querying */
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
     llvm::Instruction* getLandingPad(llvm::Instruction* OSRSrc);
 
-    // clone a function and generate a direct 1:1 mapping
+    /// \brief Clone a function and generate a StateMap accordingly.
+    ///
+    /// \param F Function to clone.
+    /// \return Returns a pair where the first element is the cloned function,
+    /// and the second element is a StateMap between \a F and its clone.
     static std::pair<llvm::Function*, StateMap*> generateIdentityMapping(llvm::Function *F);
 
 private:
+    typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
     typedef std::map<llvm::Instruction*, std::vector<llvm::Value*>> ValuesToSetCache;
     typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap; // avoid clash with llvm::ValueMap
 

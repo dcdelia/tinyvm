@@ -61,7 +61,7 @@ public:
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
-    virtual void apply(StateMap *M) {}
+    virtual void apply(StateMap *M) = 0;
 
     static llvm::Instruction* findSuccessor(llvm::Instruction* I);
 

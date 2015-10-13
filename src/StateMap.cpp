@@ -273,9 +273,14 @@ void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool b
     }
 }
 
-StateMap::LocPairInfo& StateMap::getOrCreateMapBlockPairInfo(StateMap::LocPair &pair) {
+StateMap::LocPairInfo& StateMap::getLocPairInfo(StateMap::LocPair &pair) {
     LocPairInfoMap::iterator it = locPairInfoMap.find(pair);
+    assert (it != locPairInfoMap.end() && "LocPairInfo does not exist");
     if (it != locPairInfoMap.end()) return it->second;
+}
+
+StateMap::LocPairInfo& StateMap::createLocPairInfo(StateMap::LocPair &pair) {
+    assert (locPairInfoMap.count(pair) == 0 && "LocPairInfo already exists");
 
     std::pair<LocPairInfoMap::iterator, bool> ret = locPairInfoMap.
         insert(std::pair<LocPair, LocPairInfo>(pair, LocPairInfo()));

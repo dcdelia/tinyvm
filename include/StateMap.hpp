@@ -27,6 +27,7 @@
 /// program points (represented by Instructions) of two functions. OSRLibrary
 /// relies on StateMap for generating the entry block in the continuation
 /// function exploiting information provided by the front-end.
+///
 class StateMap {
 public:
     // \brief Set of values from the source function used in compensation code.
@@ -35,20 +36,62 @@ public:
     /// \brief Sequence of instructions for compensation code.
     typedef llvm::SmallVectorImpl<llvm::Value*> CodeSequence;
 
+    /// \brief Compensation code object
+    ///
+    /// This object can be used to encode local (i.e., to reconstruct a specific
+    /// Value) or global (i.e., to execute at the beginning of the continuation
+    /// function, for instance to manipulate the heap) compensation code.
+    ///
+    /// Compensation code can be seen as a lambda function taking as arguments
+    /// a subset of the live values transferred at an OSR point.
     typedef struct CompCode {
+        /// \brief Arguments for the compensation code sequence.
+        ///
+        /// Arguments are pointers to Value objects from the source function
+        /// for the OSR transitions.
         CompCodeArgs*   args;
+        /// \brief
         CodeSequence*   code;
+        /// \brief Value computed by the compensation code
+        ///
+        /// For local compensation code only, it should correspond to the last
+        /// instruction in \a code. Use \c nullptr for global compensation code.
         llvm::Value*    value;
     } CompCode;
 
+    /// \brief Express LocPair-dependent mapping information for a Value
+    ///
+    /// Union-like data structure to express mapping information for a Value to
+    /// set in the OSR target function. It is specific to a LocPair and encodes
+    /// either a compensation code or a Value from the OSR source function that
+    /// can be used to set this Value.
     typedef struct ValueInfo {
+        /// \brief Value from the source function to use
         llvm::Value*    oneToOneValue;
+
+        /// \brief Compensation code to reconstruct the value
         CompCode*       compCode;
 
+        /// \brief Constructor for a Value from the source function.
+        ///
+        /// \param v Value from the OSR source function to use.
         ValueInfo(llvm::Value* v)   : oneToOneValue(v), compCode(nullptr) {}
+
+        /// \brief Constructor for a CompCode.
+        ///
+        /// \param c Pointer to the CompCode object to use.
         ValueInfo(CompCode* c)      : oneToOneValue(nullptr), compCode(c) {}
 
+        /// \brief Check if the object holds a Value from the source function
+        ///
+        /// \return Returns \c true when the object holds in \a oneToOneValue a
+        /// Value from the OSR source function, \c false otherwise.
         bool isOneToOneValue()  { return compCode == nullptr; }
+
+        /// \brief Check if the objects holds a compensation code
+        ///
+        /// \return Returns \c true when the object holds in \a compCode a
+        /// CompCode object to reconstruct the value, \c false otherwise.
         bool needsCompCode()    { return oneToOneValue == nullptr; }
     } ValueInfo;
 
@@ -71,7 +114,39 @@ public:
     /// code information.
     typedef std::map<LocPair, LocPairInfo> LocPairInfoMap;
 
-    // constructor
+    /// \brief Construct a StateMap object
+    ///
+    /// The constructed StateMap object can be either empty, or initialized
+    /// using a ValueToValueMapTy (generated for instance when cloning \a F2
+    /// from \a F1).
+    ///
+    /// For each entry (\c k, \c v) in \a VMap, OSRKit assumes that \c k is a
+    /// pointer to a Value in F1 and \c v is the corresponding Value in \a F2.
+    /// This implies that when a continuation function is generated for an OSR
+    /// from \a F1 to \a F2, each use of \c v in \a F2 can be replaced with the
+    /// transferred value for \c k; we refer to this property as a 1:1 mapping,
+    /// as the value to transfer from \a F1 to set \a v is the same for all the
+    /// feasible pairs of OSR source locations and landing pads.
+    ///
+    /// Typically, a 1:1 mapping is also \c bidirectional: that is, when
+    /// generating a continuation function for an OSR transition from \a F2 to
+    /// \a F1, each use of \c k can be replaced with the transferred value for
+    /// \c v.
+    ///
+    /// For each entry (\c k, \c v) in \a VMap, if both \c k and \c v point to
+    /// Instruction objects, OSRKit assumes that \c v is the landing pad for an
+    /// OSR transition to \a F2 originated at \c k in \a F2. For bidirectional
+    /// mappings, \c k becomes the landing pad for an OSR originated at \c v.
+    ///
+    /// Information for values for which there is no 1:1 corresponding value can
+    /// later be set using createLocPairInfo() and registerLandingPad().
+    ///
+    /// \param F1 First function for the mapping.
+    /// \param F2 Second function for the mapping.
+    /// \param VMap Map from Value objects in \a F1 to Value objects in \a F2;
+    /// use \c nullptr when such a map is not available.
+    /// \param bidirectional Flag that specifies whether the passed \a VMap is
+    /// bidirectional.
     StateMap(llvm::Function* F1, llvm::Function* F2, llvm::ValueToValueMapTy *VMap = nullptr,
             bool bidirectional = false) : F1(F1), F2(F2), F1_LA(LivenessAnalysis(F1)),
             F2_LA(LivenessAnalysis(F2)) {
@@ -137,7 +212,10 @@ public:
     void    registerLandingPad(llvm::Instruction* OSRSrc, llvm::Instruction* LPad, bool bidirectional = false);
 
     // TODO: methods for registering ValueInfo and LocPairInfo
-    LocPairInfo& getOrCreateMapBlockPairInfo(LocPair &pair); // TODO separate methods??
+    LocPairInfo& getLocPairInfo(LocPair &pair); // TODO separate methods??
+
+    /// \brief catacok
+    LocPairInfo& createLocPairInfo(LocPair &pair); // TODO separate methods??
 
     ValueInfo*  getValueInfo(llvm::Value* v, LocPair &pair); // TODO LocPairInfo as arg?
 

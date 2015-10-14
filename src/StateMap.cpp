@@ -138,12 +138,7 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
 
     // process values to set
     for (Value* dest_v: valuesToSetAtOSRCont) {
-        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(dest_v);
-        if (oneToOneIt != defaultOneToOneMap.end()) {
-            Value* src_v = oneToOneIt->second;
-            (*updatedValuesToUse)[dest_v] = fetchedValuesToOSRContArgs[src_v];
-            continue;
-        } else if (lpInfo != nullptr) {
+        if (lpInfo != nullptr) {
             // check for oneToOneValue or compensation code specific for this pair
             LocPairInfo::ValueInfoMap::iterator VIMIt = lpInfo->valueInfoMap.find(dest_v);
             if (VIMIt != lpInfo->valueInfoMap.end()) {
@@ -159,7 +154,14 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
                 continue;
             }
         }
-
+        // fall back to defaultOneToOneMap
+        OneToOneValueMap::iterator oneToOneIt = defaultOneToOneMap.find(dest_v);
+        if (oneToOneIt != defaultOneToOneMap.end()) {
+            Value* src_v = oneToOneIt->second;
+            (*updatedValuesToUse)[dest_v] = fetchedValuesToOSRContArgs[src_v];
+            continue;
+        }
+        
         dest_v->dump();
         llvm::report_fatal_error("[genContinuationFunctionEntryPoint] missing "
                 "mapping information for the Value shown above");
@@ -246,18 +248,15 @@ Instruction* StateMap::getLandingPad(Instruction* OSRSrc) {
     return nullptr;
 }
 
-StateMap::ValueInfo* StateMap::getValueInfo(Value* v, StateMap::LocPair &pair) {
-    LocPairInfoMap::iterator LPIMIt = locPairInfoMap.find(pair);
-    if (LPIMIt != locPairInfoMap.end()) {
-        LocPairInfo& lpInfo = LPIMIt->second;
-        LocPairInfo::ValueInfoMap::iterator VIMIt = lpInfo.valueInfoMap.find(v);
-        if (VIMIt != lpInfo.valueInfoMap.end()) {
-            return VIMIt->second;
-        }
-    }
-    return nullptr;
+StateMap::ValueInfo* StateMap::LocPairInfo::getValueInfo(Value* v) {
+    LocPairInfo::ValueInfoMap::iterator it = valueInfoMap.find(v);
+    if (it == valueInfoMap.end()) return nullptr;
+    return it->second;
 }
 
+void StateMap::LocPairInfo::setValueInfo(Value* v, ValueInfo* VI) {
+    valueInfoMap[v] = VI;
+}
 
 void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirectional) {
     defaultOneToOneMap[dest_v] = src_v;
@@ -273,19 +272,20 @@ void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool b
     }
 }
 
-StateMap::LocPairInfo& StateMap::getLocPairInfo(StateMap::LocPair &pair) {
+StateMap::LocPairInfo* StateMap::getLocPairInfo(StateMap::LocPair &pair) {
     LocPairInfoMap::iterator it = locPairInfoMap.find(pair);
-    assert (it != locPairInfoMap.end() && "LocPairInfo does not exist");
-    if (it != locPairInfoMap.end()) return it->second;
+    if (it == locPairInfoMap.end()) return nullptr;
+    return &it->second;
+
 }
 
-StateMap::LocPairInfo& StateMap::createLocPairInfo(StateMap::LocPair &pair) {
+StateMap::LocPairInfo* StateMap::createLocPairInfo(StateMap::LocPair &pair) {
     assert (locPairInfoMap.count(pair) == 0 && "LocPairInfo already exists");
 
     std::pair<LocPairInfoMap::iterator, bool> ret = locPairInfoMap.
         insert(std::pair<LocPair, LocPairInfo>(pair, LocPairInfo()));
 
-    return ret.first->second;
+    return &ret.first->second;
 }
 
 /*

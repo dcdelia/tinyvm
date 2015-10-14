@@ -18,6 +18,7 @@ llvm::FunctionPass* OSR_createConstantPropagationPass();
 llvm::FunctionPass* OSR_createSinkingPass();
 llvm::FunctionPass* OSR_createEarlyCSEPass();
 llvm::FunctionPass* OSR_createSCCPPass();
+llvm::Pass* OSR_createLICMPass(); // LoopPass
 
 /* Adaptation of LLVM's internal macros*/
 #define OSR_INITIALIZE_PASS(passName, arg, name, cfg, analysis) \

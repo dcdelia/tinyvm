@@ -245,7 +245,7 @@ class OSRLibrary {
         ///
         /// \param I Instruction corresponding to the program point.
         /// \param LA LivenessAnalysis results for the enclosing function.
-        /// \return Vector of \a liveIn values at \a I.
+        /// \return A vector containing the \a liveIn values at \a I.
         /// \sa LivenessAnalysis::analyzeLiveInForSeq()
         static std::vector<llvm::Value*>* getLiveValsVecAtInstr(
                                             const llvm::Instruction* I,
@@ -273,8 +273,8 @@ class OSRLibrary {
         /// basic block where the OSR decision is taken.
         ///
         /// \param OSRSrc Instruction for which an OSR decision is taken.
-        /// \return Returns \c true when an OSR point was found and removed, \c
-        /// false otherwise.
+        /// \return \c true when an OSR point was found and removed, \c false
+        /// otherwise.
         static bool removeOSRPoint(llvm::Instruction &OSRSrc);
 
     private:

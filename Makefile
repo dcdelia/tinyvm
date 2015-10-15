@@ -18,7 +18,8 @@ all: tinyvm
 tinyvm: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o \
 	    $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o \
 	    $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o \
-	    $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/CodeMapper.o OptPasses
+	    $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/CodeMapper.o \
+	    $(BUILD)/BuildComp.o OptPasses
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
@@ -69,7 +70,10 @@ $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 $(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
 
+$(BUILD)/BuildComp.o: $(SRC)/BuildComp.cpp $(INCLUDE)/BuildComp.hpp $(INCLUDE)/StateMap.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/BuildComp.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/BuildComp.o
 
+# Adapted LLVM passes
 OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o $(BUILD)/Sink.o \
 	   $(BUILD)/EarlyCSE.o $(BUILD)/SCCP.o $(BUILD)/LICM.o
 

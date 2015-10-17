@@ -9,6 +9,9 @@
 #include "Liveness.hpp"
 #include "StateMap.hpp"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/IR/Argument.h>
+#include <llvm/IR/Constant.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
@@ -17,6 +20,7 @@
 #include <cassert>
 #include <map>
 #include <set>
+#include <vector>
 
 using namespace llvm;
 
@@ -37,6 +41,48 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
             }
         }
     }
+}
+
+static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
+        &availableValues, std::map<Instruction*, Instruction*> &reconstructedMap,
+        std::set<Value*> &argsForCompCode, BuildComp::Heuristics opt) {
+    // TODO heuristics; other instruction types?
+    if (isa<PHINode>(I) || isa<LoadInst>(I)) return nullptr;
+
+    Instruction* RI = I->clone();
+
+    std::map<Value*, Value*>::iterator availEnd = availableValues.end();
+    std::map<Instruction*, Instruction*>::iterator recEnd = reconstructedMap.end();
+    for (Use &U: RI->operands()) {
+        Value* op = U.get();
+
+        if (isa<Constant>(op)) continue;
+
+        std::map<Value*, Value*>::iterator availIt = availableValues.find(op);
+        if (availIt != availEnd) {
+            Value* v = availIt->second;
+            U.set(v);
+            argsForCompCode.insert(v);
+            continue;
+        }
+
+        if (Instruction* opI = dyn_cast<Instruction>(op)) {
+            std::map<Instruction*, Instruction*>::iterator recIt =
+                    reconstructedMap.find(opI);
+            assert(recIt != recEnd && "unidentified or not in topological order?");
+            U.set(recIt->second);
+            continue;
+        }
+
+        assert(false && "Metadata operands are unsupported"); // TODO reachable?
+        return nullptr;
+    }
+
+    if (I->hasName()) {
+        RI->setName((I->getName()));
+    }
+
+    return RI;
 }
 
 static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
@@ -60,24 +106,25 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
 
     identifyMissingValues(mainInstToReconstruct, availableValues, missingValues);
 
-    std::set<Instruction*> instWorkList;
+    std::set<Instruction*> instWorkSet;
     for (Value* v: missingValues) {
         // TODO check option to extend liveness range
-        if (isa<Argument>(v)) return nullptr;
-        instWorkList.insert(cast<Instruction>(v));
+        if (isa<Argument>(v)) return nullptr; // TODO
+        instWorkSet.insert(cast<Instruction>(v));
     }
 
     // compute a topological order based on use-def information
     std::vector<Instruction*> sortedInstructions;
-    while (!instWorkList.empty()) {
-        for (std::set<Instruction*>::iterator it = instWorkList.begin(),
-                end = instWorkList.end(); it != end; ) {
+    while (!instWorkSet.empty()) {
+        for (std::set<Instruction*>::iterator it = instWorkSet.begin(),
+                end = instWorkSet.end(); it != end; ) {
             Instruction* I = *it;
             bool canInsert = true;
             for (Use &U: I->operands()) {
                 Value* op = U.get();
                 if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                    if (instWorkList.count(opI) > 0) {
+                    if (opI == op && cast<PHINode>(I)) continue; // legal!
+                    if (instWorkSet.count(opI) > 0) {
                         canInsert = false;
                         break;
                     }
@@ -85,7 +132,7 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
             }
             if (canInsert) {
                 sortedInstructions.push_back(I);
-                instWorkList.erase(it++);
+                instWorkSet.erase(it++);
             } else {
                 ++it;
             }
@@ -93,13 +140,39 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
     }
 
     StateMap::CompCode* compCode = new StateMap::CompCode();
+    compCode->args = nullptr;
+    compCode->code = new SmallVector<Value*, 8>;
 
+    bool success = true;
+    std::map<Instruction*, Instruction*> reconstructedMap;
+    std::set<Value*> argsForCompCode;
     for (Instruction* currInstToReconstruct: sortedInstructions) {
-        // TODO
+        Instruction* RI = reconstructInst(currInstToReconstruct, availableValues,
+                reconstructedMap, argsForCompCode, opt);
+        if (RI == nullptr) {
+            success = false;
+            break;
+        } else {
+            compCode->code->push_back(RI);
+            reconstructedMap[currInstToReconstruct] = RI;
+        }
     }
 
-    StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(compCode);
-    return valInfo;
+    if (success) {
+        compCode->value = compCode->code->back();
+        if (!argsForCompCode.empty()) {
+            compCode->args = new SmallVector<Value*, 4>;
+            for (Value* arg: argsForCompCode) {
+                compCode->args->push_back(arg);
+            }
+        }
+        return new StateMap::ValueInfo(compCode);
+    } else {
+        delete compCode->code;
+        delete compCode;
+
+        return nullptr;
+    }
 }
 
 std::set<Value*> BuildComp::buildComp(StateMap *M, Instruction* OSRSrc,

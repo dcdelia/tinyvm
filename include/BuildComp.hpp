@@ -19,12 +19,13 @@ public:
     enum Heuristics {
         BC_NONE = 0, BC_ALIAS = 1 // more to come: use a good enconding scheme
     };
-    static std::set<llvm::Value*> buildComp(StateMap *M,
-                                        llvm::Instruction* OSRSrc,
-                                        llvm::Instruction* LPad,
-                                        Heuristics opt,
-                                        bool updateMapping = true,
-                                        bool verbose = false);
+    static bool buildComp(StateMap *M,
+                        llvm::Instruction* OSRSrc,
+                        llvm::Instruction* LPad,
+                        std::set<llvm::Value*> &keepSet,
+                        Heuristics opt = BC_NONE,
+                        bool updateMapping = true,
+                        bool verbose = false);
 };
 
 #endif

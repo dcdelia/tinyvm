@@ -37,6 +37,7 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
             if (Instruction* opI = dyn_cast<Instruction>(op)) {
                 identifyMissingValues(opI, availableValues, missingValues);
             } else {
+                // reconstructInst will take care of Argument operands
                 assert (isa<Argument>(op) && "Metadata operands are unsupported");
             }
         }
@@ -66,6 +67,11 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
             continue;
         }
 
+        if (isa<Argument>(op)) {
+            // TODO check option to extend liveness range for a dead argument
+            return nullptr;
+        }
+
         if (Instruction* opI = dyn_cast<Instruction>(op)) {
             std::map<Instruction*, Instruction*>::iterator recIt =
                     reconstructedMap.find(opI);
@@ -74,7 +80,7 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
             continue;
         }
 
-        assert(false && "Metadata operands are unsupported"); // TODO reachable?
+        assert(false && "Metadata operands are unsupported"); // reachable?
         return nullptr;
     }
 
@@ -85,31 +91,24 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
     return RI;
 }
 
-static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
+static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
         std::map<Value*, Value*> &availableValues, std::set<Value*> &valuesToKeep,
         BuildComp::Heuristics opt) {
-    // indentify which values need to be reconstructed
-    std::set<Value*> missingValues;
-
-    if (isa<Argument>(valToReconstruct)) {
-        valuesToKeep.insert(valToReconstruct);
-        return nullptr;
-    }
-
-    Instruction* mainInstToReconstruct = cast<Instruction>(valToReconstruct);
 
     // TODO: other instructions as well?
-    if (isa<PHINode>(mainInstToReconstruct) || isa<LoadInst>(mainInstToReconstruct)) {
-        // TODO: check optimization for LOAD from read-only memory
+    if (isa<PHINode>(instToReconstruct) || isa<LoadInst>(instToReconstruct)) {
+        // TODO check optimization for LOAD from read-only memory
         return nullptr;
     }
 
-    identifyMissingValues(mainInstToReconstruct, availableValues, missingValues);
+    // identify which values need to be reconstructed
+    std::set<Value*> missingValues;
+    identifyMissingValues(instToReconstruct, availableValues, missingValues);
 
     std::set<Instruction*> instWorkSet;
     for (Value* v: missingValues) {
-        // TODO check option to extend liveness range
-        if (isa<Argument>(v)) return nullptr; // TODO
+        // TODO check option to extend liveness range for a dead argument
+        if (isa<Argument>(v)) return nullptr;
         instWorkSet.insert(cast<Instruction>(v));
     }
 
@@ -123,7 +122,10 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
             for (Use &U: I->operands()) {
                 Value* op = U.get();
                 if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                    if (opI == op && cast<PHINode>(I)) continue; // legal!
+                    // a use of a PHI node by itself is legal LLVM
+                    if (opI == op && cast<PHINode>(I)) continue;
+                    // we cannot insert an instruction before all the missing
+                    // instructions it uses as operands have not been inserted
                     if (instWorkSet.count(opI) > 0) {
                         canInsert = false;
                         break;
@@ -138,6 +140,13 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
             }
         }
     }
+
+    // now we can insert the instruction to reconstruct at the end of the list:
+    // since we are not reconstructing PHI nodes, instToReconstruct can not
+    // appear in missingValues (special case of a PHI node using itself)
+    assert(missingValues.count(instToReconstruct) == 0
+            && "instruction to reconstruct appear as operand for itself?!?");
+    sortedInstructions.push_back(instToReconstruct);
 
     StateMap::CompCode* compCode = new StateMap::CompCode();
     compCode->args = nullptr;
@@ -168,6 +177,10 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
         }
         return new StateMap::ValueInfo(compCode);
     } else {
+        for (StateMap::CodeSequence::iterator it = compCode->code->begin(),
+                end = compCode->code->end(); it != end; ++it) {
+            delete cast<Instruction>(*it);
+        }
         delete compCode->code;
         delete compCode;
 
@@ -175,10 +188,9 @@ static StateMap::ValueInfo* buildCompCode(Value* valToReconstruct,
     }
 }
 
-std::set<Value*> BuildComp::buildComp(StateMap *M, Instruction* OSRSrc,
-        Instruction* LPad, BuildComp::Heuristics opt, bool updateMapping,
+bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
+        std::set<Value*> &keepSet, BuildComp::Heuristics opt, bool updateMapping,
         bool verbose) {
-    std::set<Value*> valuesToKeep;
 
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
@@ -218,32 +230,43 @@ std::set<Value*> BuildComp::buildComp(StateMap *M, Instruction* OSRSrc,
         workList.push_back(valToSet);
     }
 
-    if (!workList.empty()) {
-        StateMap::ValueInfoMap valueInfoMap;
-        bool error = false;
-        for (Value* valToReconstruct: workList) {
-            std::set<Value*> curValuesToKeep;
-            StateMap::ValueInfo* valInfo = buildCompCode(valToReconstruct,
-                    availableValues, curValuesToKeep, opt);
+    if (workList.empty()) return true;
+
+
+    StateMap::ValueInfoMap valueInfoMap;
+    bool error = false;
+    for (Value* valToReconstruct: workList) {
+        std::set<Value*> curValuesToKeep;
+        if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
+            StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
+                    curValuesToKeep, opt);
             if (valInfo == nullptr) {
                 error = true;
-                valuesToKeep.insert(curValuesToKeep.begin(), curValuesToKeep.end());
+                keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());
             } else {
                 valueInfoMap[valToReconstruct] = valInfo;
             }
-        }
-        if (error) {
-            // placeholder for verbose mode
-            // TODO: remove memory leaks
-        } else if (updateMapping) {
-            StateMap::LocPair LP(OSRSrc, LPad);
-            /* TODO sync with recent changes to master is required!!! */
-            StateMap::LocPairInfo& LPInfo = M->getOrCreateMapBlockPairInfo(LP);
-            LPInfo.valueInfoMap = std::move(valueInfoMap);
+        } else {
+            // TODO option to extend liveness range of a dead argument
+            error = true;
+            keepSet.insert(valToReconstruct);
         }
     }
 
-    return valuesToKeep;
+    if (error || !updateMapping) {
+        // avoid memory leaks
+        for (StateMap::ValueInfoMap::iterator it = valueInfoMap.begin(),
+                end = valueInfoMap.end(); it != end; ++it) {
+            delete it->second;
+        }
+    } else {
+        StateMap::LocPair LP(OSRSrc, LPad);
+        /* TODO sync with recent changes to master is required!!! */
+        StateMap::LocPairInfo& LPInfo = M->getOrCreateMapBlockPairInfo(LP);
+        LPInfo.valueInfoMap = std::move(valueInfoMap);
+    }
+
+    return error;
 }
 
 /*

@@ -233,7 +233,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     if (workList.empty()) return true;
 
 
-    StateMap::ValueInfoMap valueInfoMap;
+    StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
     bool error = false;
     for (Value* valToReconstruct: workList) {
         std::set<Value*> curValuesToKeep;
@@ -255,15 +255,15 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
     if (error || !updateMapping) {
         // avoid memory leaks
-        for (StateMap::ValueInfoMap::iterator it = valueInfoMap.begin(),
+        for (StateMap::LocPairInfo::ValueInfoMap::iterator it = valueInfoMap.begin(),
                 end = valueInfoMap.end(); it != end; ++it) {
             delete it->second;
         }
     } else {
         StateMap::LocPair LP(OSRSrc, LPad);
-        /* TODO sync with recent changes to master is required!!! */
-        StateMap::LocPairInfo& LPInfo = M->getOrCreateMapBlockPairInfo(LP);
-        LPInfo.valueInfoMap = std::move(valueInfoMap);
+        assert(M->getLocPairInfo(LP) == nullptr && "LocPairInfo alread exists");
+        StateMap::LocPairInfo* LPInfo = M->createLocPairInfo(LP);
+        LPInfo->valueInfoMap = std::move(valueInfoMap);
     }
 
     return error;

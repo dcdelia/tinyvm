@@ -10,6 +10,10 @@
 
 #include <llvm/Pass.h>
 #include <llvm/PassSupport.h>
+#include <llvm/Analysis/LoopInfo.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/DataLayout.h>
 
 /* Adapted LLVM passes */
 llvm::FunctionPass* OSR_createAggressiveDCEPass();
@@ -19,6 +23,28 @@ llvm::FunctionPass* OSR_createSinkingPass();
 llvm::FunctionPass* OSR_createEarlyCSEPass();
 llvm::FunctionPass* OSR_createSCCPPass();
 llvm::Pass* OSR_createLICMPass(); // LoopPass
+
+extern char &OSR_LCSSAID;
+llvm::Pass* OSR_createLCSSAPass();
+extern char &OSR_LoopSimplifyID;
+llvm::Pass* OSR_createLoopSimplifyPass();
+
+/* Adapted LLVM utilities */
+llvm::BasicBlock* OSR_SplitBlockPredecessors(llvm::BasicBlock *BB,
+        llvm::ArrayRef<llvm::BasicBlock*> Preds, const char *Suffix,
+        llvm::Pass *P, CodeMapper* OSR_CM);
+
+void OSR_SplitLandingPadPredecessors(llvm::BasicBlock *OrigBB,
+        llvm::ArrayRef<llvm::BasicBlock*> Preds, const char *Suffix1,
+        const char *Suffix2, llvm::Pass *P,
+        llvm::SmallVectorImpl<llvm::BasicBlock*> &NewBBs,
+        CodeMapper* OSR_CM);
+
+bool OSR_makeLoopInvariant(llvm::Instruction *I, bool &Changed,
+        llvm::Instruction *InsertPt, llvm::Loop* L, CodeMapper* OSR_CM);
+
+bool OSR_FoldBranchToCommonDest(llvm::BranchInst *BI, const llvm::DataLayout *DL,
+        unsigned BonusInstThreshold, CodeMapper* OSR_CM);
 
 /* Adaptation of LLVM's internal macros*/
 #define OSR_INITIALIZE_PASS(passName, arg, name, cfg, analysis) \

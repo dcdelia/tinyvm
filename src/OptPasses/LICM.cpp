@@ -62,10 +62,10 @@ namespace {
       AU.setPreservesCFG();
       AU.addRequired<DominatorTreeWrapperPass>();
       AU.addRequired<LoopInfo>();
-      AU.addRequiredID(LoopSimplifyID);
-      AU.addPreservedID(LoopSimplifyID);
-      AU.addRequiredID(LCSSAID);
-      AU.addPreservedID(LCSSAID);
+      AU.addRequiredID(OSR_LoopSimplifyID);
+      AU.addPreservedID(OSR_LoopSimplifyID);
+      AU.addRequiredID(OSR_LCSSAID);
+      AU.addPreservedID(OSR_LCSSAID);
       AU.addRequired<AliasAnalysis>();
       AU.addPreserved<AliasAnalysis>();
       AU.addPreserved<ScalarEvolution>();

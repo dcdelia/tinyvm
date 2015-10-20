@@ -14,6 +14,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
+#include <llvm/Target/TargetLibraryInfo.h>
 
 /* Adapted LLVM passes */
 llvm::FunctionPass* OSR_createAggressiveDCEPass();
@@ -45,6 +46,10 @@ bool OSR_makeLoopInvariant(llvm::Instruction *I, bool &Changed,
 
 bool OSR_FoldBranchToCommonDest(llvm::BranchInst *BI, const llvm::DataLayout *DL,
         unsigned BonusInstThreshold, CodeMapper* OSR_CM);
+
+bool OSR_RecursivelyDeleteTriviallyDeadInstructions(llvm::Value *V,
+        const llvm::TargetLibraryInfo *TLI, CodeMapper* OSR_CM);
+
 
 /* Adaptation of LLVM's internal macros*/
 #define OSR_INITIALIZE_PASS(passName, arg, name, cfg, analysis) \

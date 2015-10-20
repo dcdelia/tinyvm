@@ -1,7 +1,6 @@
 /*
  * OSR-enabled version of LLVM (3.6.2) utilities used in optimization passes
  */
-
 #include "CodeMapper.hpp"
 #include "OptPasses.hpp"
 
@@ -13,6 +12,7 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/Target/TargetLibraryInfo.h>
 #include <llvm/Transforms/Utils/Local.h>
 
 using namespace llvm;
@@ -347,9 +347,41 @@ bool OSR_makeLoopInvariant(Instruction *I, bool &Changed, Instruction *InsertPt,
 }
 
 /*
- * TODO Adapted from Transforms/Utils/SimplifyCFG.cpp
+ * Adapted from Transforms/Utils/Local.cpp
  */
-bool OSR_FoldBranchToCommonDest(BranchInst *BI, const llvm::DataLayout *DL,
-        unsigned BonusInstThreshold, CodeMapper* OSR_CM) {
-    return FoldBranchToCommonDest(BI, DL, BonusInstThreshold);
+bool OSR_RecursivelyDeleteTriviallyDeadInstructions(Value *V,
+    const TargetLibraryInfo *TLI, CodeMapper* OSR_CM) {
+  Instruction *I = dyn_cast<Instruction>(V);
+  if (!I || !I->use_empty() || !isInstructionTriviallyDead(I, TLI))
+    return false;
+
+  SmallVector<Instruction*, 16> DeadInsts;
+  DeadInsts.push_back(I);
+
+  do {
+    I = DeadInsts.pop_back_val();
+
+    // Null out all of the instruction's operands to see if any operand becomes
+    // dead as we go.
+    for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i) {
+      Value *OpV = I->getOperand(i);
+      I->setOperand(i, nullptr);
+
+      if (!OpV->use_empty()) continue;
+
+      // If the operand is an instruction that became dead as we nulled out the
+      // operand, and if it is 'trivially' dead, delete it in a future loop
+      // iteration.
+      if (Instruction *OpI = dyn_cast<Instruction>(OpV))
+        if (isInstructionTriviallyDead(OpI, TLI))
+          DeadInsts.push_back(OpI);
+    }
+
+    if (OSR_CM) OSR_CM->deleteInstruction(I); /* OSR */
+    I->eraseFromParent();
+  } while (!DeadInsts.empty());
+
+  return true;
 }
+
+

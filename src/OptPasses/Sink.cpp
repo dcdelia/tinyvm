@@ -93,6 +93,7 @@ bool OSR_Sinking::AllUsesDominatedByBlock(Instruction *Inst,
 
 bool OSR_Sinking::runOnFunction(Function &F) {
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("Sinking");
 
   DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
   LI = &getAnalysis<LoopInfo>();

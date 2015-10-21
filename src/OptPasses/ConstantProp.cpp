@@ -52,6 +52,7 @@ FunctionPass* OSR_createConstantPropagationPass() {
 
 bool OSR_ConstantPropagation::runOnFunction(Function &F) {
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("ConstantPropagation");
 
   // Initialize the worklist to all of the instructions ready to process...
   std::set<Instruction*> WorkList;

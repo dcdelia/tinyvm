@@ -795,6 +795,7 @@ Pass* OSR_createLoopSimplifyPass() { return new OSR_LoopSimplify(); }
 ///
 bool OSR_LoopSimplify::runOnFunction(Function &F) {
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("LoopSimplify");
 
   bool Changed = false;
   AA = getAnalysisIfAvailable<AliasAnalysis>();

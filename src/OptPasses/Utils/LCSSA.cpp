@@ -313,6 +313,7 @@ char &OSR_LCSSAID = OSR_LCSSA::ID; /* OSR: declared as extern in OptPasses.hpp *
 /// Process all loops in the function, inner-most out.
 bool OSR_LCSSA::runOnFunction(Function &F) {
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("LCSSA");
 
   bool Changed = false;
   LI = &getAnalysis<LoopInfo>();

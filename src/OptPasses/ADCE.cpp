@@ -48,6 +48,7 @@ bool OSR_ADCE::runOnFunction(Function& F) {
     return false;
 
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("ADCE");
 
   SmallPtrSet<Instruction*, 128> alive;
   SmallVector<Instruction*, 128> worklist;

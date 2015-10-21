@@ -19,14 +19,15 @@ class StateMap;
 
 class CodeMapper {
 private:
-    // Classes to encode IR manipulations
-    class CMAction;
+    class CMAction; // abstract class to encode IR manipulations
+    class BeginOpt;
     class AddInst;
     class DeleteInst;
     class HoistInst;
     class SinkInst;
-    class RAUWInstWithInst;
+    class RAUWInstWithArg;
     class RAUWInstWithConst;
+    class RAUWInstWithInst;
 
 public:
     CodeMapper() {}
@@ -35,6 +36,8 @@ public:
     static CodeMapper* createCodeMapper(llvm::Function &F);
     static bool hasCodeMapper(llvm::Function &F);
     static void removeCodeMapper(llvm::Function &F);
+
+    void beginOptimization(const char* name);
 
     // to call AFTER the instruction has been added
     void addInstruction(llvm::Instruction* I);
@@ -65,8 +68,9 @@ class CodeMapper::CMAction {
 public:
     // types are explicitly encoded as I might later delete a pointed object!
     enum CMActionKind {
-        CMAK_AddInst, CMAK_DeleteInst, CMAK_HoistInst, CMAK_SinkInst,
-        CMAK_RAUWInstWithInst, CMAK_RAUWInstWithConst
+        CMAK_BeginOpt, CMAK_AddInst, CMAK_DeleteInst, CMAK_HoistInst,
+        CMAK_SinkInst, CMAK_RAUWInstWithArg, CMAK_RAUWInstWithConst,
+        CMAK_RAUWInstWithInst
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
@@ -76,6 +80,19 @@ public:
 
 private:
     const CMActionKind Kind;
+};
+
+class CodeMapper::BeginOpt : public CodeMapper::CMAction {
+public:
+    BeginOpt(const char* name) : CMAction(CMAK_BeginOpt), Name(name) {}
+
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_BeginOpt;
+    }
+
+    void apply(StateMap *M, bool verbose = false) { } // TODO display message
+
+    std::string Name;
 };
 
 class CodeMapper::AddInst : public CodeMapper::CMAction {
@@ -91,8 +108,6 @@ public:
 
     llvm::Instruction* AddedI;
     llvm::Instruction* SuccI;
-private:
-
 };
 
 class CodeMapper::DeleteInst : public CodeMapper::CMAction {
@@ -108,7 +123,6 @@ public:
 
     llvm::Instruction* DeletedI;
     llvm::Instruction* SuccI;
-private:
 };
 
 
@@ -127,8 +141,6 @@ public:
     llvm::Instruction* HoistedI;
     llvm::Instruction* BeforeI;
     llvm::Instruction* SuccHoistedI;
-
-private:
 };
 
 
@@ -147,23 +159,21 @@ public:
     llvm::Instruction* SunkI;
     llvm::Instruction* InsertPt;
     llvm::Instruction* SuccSunkI;
-
-private:
 };
 
-class CodeMapper::RAUWInstWithInst : public CodeMapper::CMAction {
+class CodeMapper::RAUWInstWithArg : public CodeMapper::CMAction {
 public:
-    RAUWInstWithInst(llvm::Instruction* oldI, llvm::Instruction* newI):
-            CMAction(CMAK_RAUWInstWithInst), OI(oldI), NI(newI) {}
+    RAUWInstWithArg(llvm::Instruction* I, llvm::Argument* A):
+            CMAction(CMAK_RAUWInstWithArg), I(I), A(A) {}
 
     static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_RAUWInstWithInst;
+        return CMA->getKind() == CMAK_RAUWInstWithArg;
     }
 
     void apply(StateMap *M, bool verbose = false) { } // TODO
 
-    llvm::Instruction *OI, *NI;
-private:
+    llvm::Instruction* I;
+    llvm::Argument* A;
 };
 
 class CodeMapper::RAUWInstWithConst : public CodeMapper::CMAction {
@@ -179,7 +189,21 @@ public:
 
     llvm::Instruction* I;
     llvm::Constant* C;
-private:
+};
+
+class CodeMapper::RAUWInstWithInst : public CodeMapper::CMAction {
+public:
+    RAUWInstWithInst(llvm::Instruction* oldI, llvm::Instruction* newI):
+            CMAction(CMAK_RAUWInstWithInst), OI(oldI), NI(newI) {}
+
+    static bool classof(const CMAction* CMA) {
+        return CMA->getKind() == CMAK_RAUWInstWithInst;
+    }
+
+    void apply(StateMap *M, bool verbose = false) { } // TODO
+
+    llvm::Instruction* OI;
+    llvm::Instruction* NI;
 };
 
 #endif

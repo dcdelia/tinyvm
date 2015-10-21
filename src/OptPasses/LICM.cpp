@@ -199,6 +199,7 @@ bool OSR_LICM::runOnLoop(Loop *L, LPPassManager &LPM) {
     return false;
 
   OSR_CM = CodeMapper::getCodeMapper(*L->getHeader()->getParent()); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("LICM");
 
   Changed = false;
 

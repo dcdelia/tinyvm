@@ -1557,6 +1557,7 @@ bool OSR_SCCP::runOnFunction(Function &F) {
     return false;
 
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
+  if (OSR_CM) OSR_CM->beginOptimization("SCCP");
 
   DEBUG(dbgs() << "SCCP on function '" << F.getName() << "'\n");
   const DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();

@@ -43,6 +43,10 @@ void CodeMapper::removeCodeMapper(Function& F) {
     globalMap.erase(it);
 }
 
+void CodeMapper::beginOptimization(const char* name) {
+    operations.push_back(new BeginOpt(name));
+}
+
 void CodeMapper::addInstruction(Instruction* I) {
     operations.push_back(new AddInst(I));
 }
@@ -65,8 +69,7 @@ void CodeMapper::replaceAllUsesWith(Instruction* I, Value* V) {
     } else if (Constant* C = dyn_cast<Constant>(V)) {
         operations.push_back(new RAUWInstWithConst(I, C));
     } else if (Argument* A = dyn_cast<Argument>(V)) {
-        // TODO
-        assert(false && "[OSR] RAUW for arguments not implemented yet");
+        operations.push_back(new RAUWInstWithArg(I, A));
     } else {
         assert(false && "[OSR] unknown value type for RAUW");
     }

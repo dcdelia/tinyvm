@@ -19,6 +19,7 @@
 #include <map>
 
 #include "Liveness.hpp"
+#include "CodeMapper.hpp"
 
 /// \brief Map program points and values from two functions.
 ///
@@ -29,6 +30,7 @@
 /// continuation functions.
 ///
 class StateMap {
+    friend class CodeMapper;
 public:
     /// \brief Values from the source function required by a compensation code.
     typedef llvm::SmallVectorImpl<llvm::Value*> CompCodeArgs;
@@ -287,6 +289,11 @@ public:
                             llvm::Value* dest_v,
                             bool bidirectional = false);
 
+    /// \brief Discard 1:1 mapping information for a Value.
+    ///
+    /// \param src_v Value for which 1:1 mapping information is to discard.
+    void unregisterOneToOneValue(llvm::Value* src_v);
+
     /// \brief Set the landing pad for an OSR source location.
     ///
     /// \param OSRSrc Location in the OSR source function.
@@ -298,6 +305,11 @@ public:
     void registerLandingPad(llvm::Instruction* OSRSrc,
                             llvm::Instruction* LPad,
                             bool bidirectional = false);
+
+    /// \brief Discard landing pad information for a Value.
+    ///
+    /// \param OSRSrc Location for which landing pad information is to discard.
+    void unregisterLandingPad(llvm::Instruction* OSRSrc);
 
     /// \brief Get mapping information specific to a LocPair
     ///

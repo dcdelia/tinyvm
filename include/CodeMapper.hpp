@@ -15,6 +15,8 @@
 #include <llvm/Support/Casting.h>
 #include <map>
 
+class StateMap;
+
 class CodeMapper {
 private:
     // Classes to encode IR manipulations
@@ -51,6 +53,11 @@ private:
     typedef std::map<llvm::Function*, CodeMapper*> GlobalMap;
     static GlobalMap globalMap;
     std::vector<CMAction*> operations;
+
+    // manipulation of private fields in StateMap objects
+    static void replaceLandingPads(StateMap* M, llvm::Instruction* OldLPad,
+        llvm::Instruction* NewLPad);
+    static void discardLandingPads(StateMap* M, llvm::Instruction* OldLPad);
 };
 
 /* CMAction's derived classes implement LLVM's lightweight RTTI */
@@ -63,7 +70,7 @@ public:
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
-    virtual void apply(StateMap *M) = 0;
+    virtual void apply(StateMap *M, bool verbose = false) = 0;
 
     static llvm::Instruction* findSuccessor(llvm::Instruction* I);
 
@@ -80,7 +87,7 @@ public:
         return CMA->getKind() == CMAK_AddInst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M, bool verbose = false);
 
     llvm::Instruction* AddedI;
     llvm::Instruction* SuccI;
@@ -97,7 +104,7 @@ public:
         return CMA->getKind() == CMAK_DeleteInst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M, bool verbose = false);
 
     llvm::Instruction* DeletedI;
     llvm::Instruction* SuccI;
@@ -115,7 +122,7 @@ public:
         return CMA->getKind() == CMAK_HoistInst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M, bool verbose = false);
 
     llvm::Instruction* HoistedI;
     llvm::Instruction* BeforeI;
@@ -135,7 +142,7 @@ public:
         return CMA->getKind() == CMAK_SinkInst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M, bool verbose = false);
 
     llvm::Instruction* SunkI;
     llvm::Instruction* InsertPt;
@@ -153,7 +160,7 @@ public:
         return CMA->getKind() == CMAK_RAUWInstWithInst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M, bool verbose = false) { } // TODO
 
     llvm::Instruction *OI, *NI;
 private:
@@ -168,7 +175,7 @@ public:
         return CMA->getKind() == CMAK_RAUWInstWithConst;
     }
 
-    void apply(StateMap *M) { } // TODO
+    void apply(StateMap *M, bool verbose = false) { } // TODO
 
     llvm::Instruction* I;
     llvm::Constant* C;

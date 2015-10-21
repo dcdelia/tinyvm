@@ -84,6 +84,100 @@ Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {
     return &*it;
 }
 
+// set NewLPad as landing pad for program points mapped to OldLPad
+void CodeMapper::replaceLandingPads(StateMap* M, Instruction* OldLPad,
+        Instruction* NewLPad) {
+    for (StateMap::LocMap::iterator it = M->landingPadMap.begin(),
+            end = M->landingPadMap.end(); it != end; ++it) {
+        if (it->second == OldLPad) {
+            it->second = NewLPad;
+        }
+    }
+}
+
+// discard landing pad information for program points mapped to OldLPad
+void CodeMapper::discardLandingPads(StateMap* M, Instruction* OldLPad) {
+    for (StateMap::LocMap::iterator it = M->landingPadMap.begin(),
+            end = M->landingPadMap.end(); it != end; ) {
+        if (it->second == OldLPad) {
+            M->landingPadMap.erase(it++);
+        } else {
+            ++it;
+        }
+    }
+}
+
+/*
+ * Original     Updated
+ * function     function
+ * I1'          I1
+ * -            A
+ * I2'          I2
+ * I3'          I3
+ *
+ * Actions:
+ * - set LPad[A] to LPad[succ(A)] = LPad[I2] = I2'
+ *
+ */
+void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
+    Instruction* LPadForSuccI = M->getLandingPad(SuccI);
+    if (LPadForSuccI) {
+        M->registerLandingPad(AddedI, LPadForSuccI, false);
+    }
+}
+
+/*
+ * Original     Updated
+ * function     function
+ * I1'          I1
+ * D            -
+ * I2'          I2
+ * I3'          I3
+ *
+ * Actions:
+ * - remove corresponding 1:1 value info for D
+ * - set LPad[D] to LPad[succ(D)] = LPad[I2'] = I2
+ * - for each OSRSrc s.t. LPad[OSRSrc] = D do
+ *      set LPad[OSRSrc] to LPad[succ(D)] = I2
+ *
+ */
+void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
+    StateMap::OneToOneValueMap::iterator it = M->defaultOneToOneMap.find(DeletedI);
+    Value* otherD = nullptr;
+    if (it != M->defaultOneToOneMap.end()) {
+        otherD = it->second;
+        M->defaultOneToOneMap.erase(it);
+        // Deleted instruction might not exist in the original function (this
+        // happens when it has been added at some point during optimization)
+        it = M->defaultOneToOneMap.find(otherD);
+        if (it != M->defaultOneToOneMap.end()) {
+            M->defaultOneToOneMap.erase(it);
+        }
+    }
+
+    Instruction* LPadForSuccI = M->getLandingPad(SuccI);
+    if (LPadForSuccI) {
+        // the deleted instruction might have been constant-folded in the other
+        // function, so we have to check whether otherD is an Instruction
+        if (Instruction* otherDI = dyn_cast_or_null<Instruction>(otherD)) {
+            M->registerLandingPad(otherDI, LPadForSuccI);
+        }
+        replaceLandingPads(M, DeletedI, LPadForSuccI);
+    } else {
+        // we ought to be conservative here
+        discardLandingPads(M, DeletedI);
+    }
+
+}
+
+void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
+    // TODO
+}
+
+void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {
+    // TODO
+}
+
 /*
  * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia
  *

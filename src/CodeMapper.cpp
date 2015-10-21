@@ -173,8 +173,50 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
 
 }
 
+/*
+ * Original     Updated
+ * function     function
+ * I1'          I1
+ * B'           H
+ * I2'          B
+ * H'           I2
+ * I3'          I3
+ *
+ * Actions (order matters!):
+ * - for each OSRSrc s.t. LPad[OSRSrc] = H do
+ *      set LPad[OSRSrc] to I3
+ * - for each OSRSrc s.t. LPad[OSRSrc] = B do
+ *      set LPad[OSRSrc] to H
+ * - set LPad[B'] to H
+ * - set LPad[H] to B'
+ * - set LPad[H'] to I3
+ *
+ */
 void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
-    // TODO
+    replaceLandingPads(M, HoistedI, SuccHoistedI);
+    replaceLandingPads(M, BeforeI, HoistedI);
+
+    // TODO when the instruction does not exist, can we do better than this?
+    StateMap::OneToOneValueMap::iterator it = M->defaultOneToOneMap.find(BeforeI);
+    if (it != M->defaultOneToOneMap.end()) {
+        Value *otherBefore = it->second;
+        if (Instruction* otherBeforeI = dyn_cast<Instruction>(otherBefore)) {
+            M->registerLandingPad(otherBeforeI, HoistedI);
+            M->registerLandingPad(HoistedI, otherBeforeI);
+        } else {
+            M->unregisterLandingPad(HoistedI);
+        }
+    } else {
+        M->unregisterLandingPad(HoistedI);
+    }
+
+    it = M->defaultOneToOneMap.find(HoistedI);
+    if (it != M->defaultOneToOneMap.end()) {
+        Value* otherHoisted = it->second;
+        if (Instruction* otherHoistedI = dyn_cast<Instruction>(otherHoisted)) {
+            M->registerLandingPad(otherHoistedI, SuccHoistedI);
+        } // TODO else branch?
+    }
 }
 
 void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {

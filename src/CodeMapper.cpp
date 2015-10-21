@@ -59,16 +59,21 @@ void CodeMapper::sinkInstruction(Instruction* I, Instruction* insertBefore) {
     operations.push_back(new SinkInst(I, insertBefore));
 }
 
-void CodeMapper::replaceAllUsesWith(Instruction* oldI, Instruction* newI) {
-    operations.push_back(new RAUWInstWithInst(oldI, newI));
-}
-
-void CodeMapper::replaceAllUsesWith(Instruction* I, Constant* C) {
-    operations.push_back(new RAUWInstWithConst(I, C));
+void CodeMapper::replaceAllUsesWith(Instruction* I, Value* V) {
+    if (Instruction* newI = dyn_cast<Instruction>(V)) {
+        operations.push_back(new RAUWInstWithInst(I, newI));
+    } else if (Constant* C = dyn_cast<Constant>(V)) {
+        operations.push_back(new RAUWInstWithConst(I, C));
+    } else if (Argument* A = dyn_cast<Argument>(V)) {
+        // TODO
+        assert(false && "[OSR] RAUW for arguments not implemented yet");
+    } else {
+        assert(false && "[OSR] unknown value type for RAUW");
+    }
 }
 
 Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {
-    if (isa<TerminatorInst>(I)) return nullptr;
+    if (isa<TerminatorInst>(I)) return nullptr; // TODO unconditional branchs?
 
     BasicBlock* B = I->getParent();
     assert(B != nullptr && "instruction not in a block");

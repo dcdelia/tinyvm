@@ -34,12 +34,14 @@ public:
     static bool hasCodeMapper(llvm::Function &F);
     static void removeCodeMapper(llvm::Function &F);
 
+    // to call AFTER the instruction has been added
     void addInstruction(llvm::Instruction* I);
+
+    // to call BEFORE the operation is performed
     void deleteInstruction(llvm::Instruction* I);
     void hoistInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
     void sinkInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
-    void replaceAllUsesWith(llvm::Instruction* oldI, llvm::Instruction* newI);
-    void replaceAllUsesWith(llvm::Instruction* I, llvm::Constant* C);
+    void replaceAllUsesWith(llvm::Instruction* I, llvm::Value* V);
 
     void updateStateMapping(StateMap* M) {}
 
@@ -71,15 +73,17 @@ private:
 
 class CodeMapper::AddInst : public CodeMapper::CMAction {
 public:
-    AddInst(llvm::Instruction* I): CMAction(CMAK_AddInst), AI(I) {}
+    AddInst(llvm::Instruction* I): CMAction(CMAK_AddInst), AddedI(I),
+            SuccI(findSuccessor(I)) {}
 
     static bool classof(const CMAction* CMA) {
         return CMA->getKind() == CMAK_AddInst;
     }
 
-    void apply(StateMap *M) { } // nothing to do
+    void apply(StateMap *M) { } // TODO
 
-    llvm::Instruction* AI;
+    llvm::Instruction* AddedI;
+    llvm::Instruction* SuccI;
 private:
 
 };
@@ -103,10 +107,9 @@ private:
 
 class CodeMapper::HoistInst : public CodeMapper::CMAction {
 public:
-    HoistInst(llvm::Instruction* I, llvm::Instruction* insertBefore):
-            CMAction(CMAK_HoistInst), MI(I), BI(insertBefore) {
-            // TODO
-            }
+    HoistInst(llvm::Instruction* I, llvm::Instruction* insertPt):
+            CMAction(CMAK_HoistInst), HoistedI(I), BeforeI(insertPt),
+            SuccHoistedI(findSuccessor(I)) { }
 
     static bool classof(const CMAction* CMA) {
         return CMA->getKind() == CMAK_HoistInst;
@@ -114,7 +117,9 @@ public:
 
     void apply(StateMap *M) { } // TODO
 
-    llvm::Instruction *MI, *BI;
+    llvm::Instruction* HoistedI;
+    llvm::Instruction* BeforeI;
+    llvm::Instruction* SuccHoistedI;
 
 private:
 };
@@ -122,10 +127,9 @@ private:
 
 class CodeMapper::SinkInst : public CodeMapper::CMAction {
 public:
-    SinkInst(llvm::Instruction* I, llvm::Instruction* insertBefore):
-            CMAction(CMAK_SinkInst), MI(I), BI(insertBefore) {
-            // TODO
-            }
+    SinkInst(llvm::Instruction* I, llvm::Instruction* insertPt):
+            CMAction(CMAK_SinkInst), SunkI(I), InsertPt(insertPt),
+            SuccSunkI(findSuccessor(I)) { }
 
     static bool classof(const CMAction* CMA) {
         return CMA->getKind() == CMAK_SinkInst;
@@ -133,7 +137,9 @@ public:
 
     void apply(StateMap *M) { } // TODO
 
-    llvm::Instruction *MI, *BI;
+    llvm::Instruction* SunkI;
+    llvm::Instruction* InsertPt;
+    llvm::Instruction* SuccSunkI;
 
 private:
 };

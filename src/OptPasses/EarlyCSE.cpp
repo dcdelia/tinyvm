@@ -448,13 +448,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
     if (Value *V = SimplifyInstruction(Inst, DL, TLI, DT, AC)) {
       DEBUG(dbgs() << "EarlyCSE Simplify: " << *Inst << "  to: " << *V << '\n');
       if (OSR_CM) { /* OSR */
-          if (Instruction* tmpInst = dyn_cast<Instruction>(V)) {
-              OSR_CM->replaceAllUsesWith(Inst, tmpInst);
-          } else if (Constant* tmpConst = dyn_cast<Constant>(V)) {
-              OSR_CM->replaceAllUsesWith(Inst, tmpConst);
-          } else {
-              assert(false && "[OSR] unknown value type");
-          }
+          OSR_CM->replaceAllUsesWith(Inst, V);
           OSR_CM->deleteInstruction(Inst);
       }
       Inst->replaceAllUsesWith(V);
@@ -509,8 +503,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
         if (!Inst->use_empty()) {
             if (OSR_CM) {
                 assert(isa<Instruction>(InVal.first) && "[OSR] unexpected value type");
-                Instruction* tmpInst = cast<Instruction>(InVal.first);
-                OSR_CM->replaceAllUsesWith(Inst, tmpInst);
+                OSR_CM->replaceAllUsesWith(Inst, InVal.first);
             }
             Inst->replaceAllUsesWith(InVal.first);
         }
@@ -540,12 +533,8 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
       if (InVal.first != nullptr && InVal.second == CurrentGeneration) {
         DEBUG(dbgs() << "EarlyCSE CSE CALL: " << *Inst << "  to: "
                      << *InVal.first << '\n');
-        /* [OSR] if (!Inst->use_empty()) Inst->replaceAllUsesWith(InVal.first);*/
         if (!Inst->use_empty()) {
-            if (OSR_CM) {
-                Instruction* tmpInst = cast<Instruction>(InVal.first);
-                OSR_CM->replaceAllUsesWith(Inst, tmpInst);
-            }
+            if (OSR_CM) OSR_CM->replaceAllUsesWith(Inst, InVal.first); /* OSR */
             Inst->replaceAllUsesWith(InVal.first);
         }
         if (OSR_CM) OSR_CM->deleteInstruction(Inst);

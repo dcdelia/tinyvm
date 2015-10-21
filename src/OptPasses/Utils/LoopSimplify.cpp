@@ -188,13 +188,7 @@ static PHINode *findPHIToPartitionLoops(Loop *L, AliasAnalysis *AA,
     if (Value *V = SimplifyInstruction(PN, nullptr, nullptr, DT, AC)) {
       // This is a degenerate PHI already, don't modify it!
       if (OSR_CM) { /* OSR */
-        if (Instruction* tmpInst = dyn_cast<Instruction>(V)) {
-          OSR_CM->replaceAllUsesWith(PN, tmpInst);
-        } else if (Constant* tmpConst = dyn_cast<Constant>(V)) {
-          OSR_CM->replaceAllUsesWith(PN, tmpConst);
-        } else {
-          assert(false && "[OSR] unknown value type");
-        }
+        OSR_CM->replaceAllUsesWith(PN, V);
         OSR_CM->deleteInstruction(PN);
       }
       PN->replaceAllUsesWith(V);
@@ -426,13 +420,7 @@ static BasicBlock *insertUniqueBackedgeBlock(Loop *L, BasicBlock *Preheader,
     // eliminate the PHI Node.
     if (HasUniqueIncomingValue) {
       if (OSR_CM) { /* OSR */
-        if (Instruction* tmpInst = dyn_cast<Instruction>(UniqueValue)) {
-          OSR_CM->replaceAllUsesWith(NewPN, tmpInst);
-        } else if (Constant* tmpConst = dyn_cast<Constant>(UniqueValue)) {
-          OSR_CM->replaceAllUsesWith(NewPN, tmpConst);
-        } else {
-          assert(false && "[OSR] unknown value type");
-        }
+        OSR_CM->replaceAllUsesWith(NewPN, UniqueValue);
         OSR_CM->deleteInstruction(NewPN);
       }
       NewPN->replaceAllUsesWith(UniqueValue);
@@ -505,7 +493,7 @@ ReprocessLoop:
 
       /* [OSR] TI->replaceAllUsesWith(UndefValue::get(TI->getType())); */
       UndefValue* tmpUndef = UndefValue::get(TI->getType());
-      if (OSR_CM) { /* OSR */
+      if (OSR_CM) {
         OSR_CM->replaceAllUsesWith(TI, tmpUndef);
         OSR_CM->deleteInstruction(TI);
       }
@@ -623,13 +611,7 @@ ReprocessLoop:
       if (AA) AA->deleteValue(PN);
       if (SE) SE->forgetValue(PN);
       if (OSR_CM) { /* OSR */
-        if (Instruction* tmpInst = dyn_cast<Instruction>(V)) {
-          OSR_CM->replaceAllUsesWith(PN, tmpInst);
-        } else if (Constant* tmpConst = dyn_cast<Constant>(V)) {
-          OSR_CM->replaceAllUsesWith(PN, tmpConst);
-        } else {
-          assert(false && "[OSR] unknown value type");
-        }
+        OSR_CM->replaceAllUsesWith(PN, V);
         OSR_CM->deleteInstruction(PN);
       }
       PN->replaceAllUsesWith(V);

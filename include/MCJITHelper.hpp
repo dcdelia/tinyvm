@@ -11,6 +11,7 @@
 #include "CustomMemoryManager.hpp"
 #include "OSRLibrary.hpp"
 #include "StackMap.hpp"
+#include "StateMap.hpp"
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
@@ -66,6 +67,13 @@ public:
     LLVMContext     &Context;
     bool            verbose;
 
+    // public types
+    /// \brief Code generation for open OSR transitions
+    typedef struct DynamicInlinerInfo {
+        MCJITHelper*    TheHelper;
+        Value*          valToInline;
+    } DynamicInlinerInfo;
+
     // public methods
     void addModule(std::unique_ptr<Module> M);
     std::unique_ptr<Module> createModuleFromFile(const std::string &FileName);
@@ -86,21 +94,21 @@ public:
     bool canModifyModule(Module* M);
     std::vector<Module*>& getLoadedModules() { return Modules; };
 
+    StateMap* getStateMap(Function* F1, Function* F2);
+    void showStateMaps();
+    void registerStateMap(Function* F1, Function* F2, StateMap* M);
+
     static ValueToValueMapTy* generateIdentityMapping(Function* F);
     static std::string& LLVMTypeToString(Type* type);
     static std::string prototypeToString(Function& F);
-
-    /* Code generation for open OSR transitions */
-    typedef struct DynamicInlinerInfo {
-        MCJITHelper*    TheHelper;
-        Value*          valToInline;
-    } DynamicInlinerInfo;
 
     static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
     static void* dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
 
 private:
     typedef std::pair<uint64_t, std::string> AddrSymPair;
+    typedef OSRLibrary::OSRPair OrdOSRPair;
+    typedef std::map<OrdOSRPair, StateMap*> OrdOSRPairToStateMapMap;
     IRBuilder<>                     *Builder;
     CustomMemoryManager             *MManager;
     std::vector<Module*>            Modules;
@@ -112,6 +120,8 @@ private:
     std::map<std::string, std::vector<Function*>>   PrevFunctions;
     std::map<std::string, std::vector<Function*>>   FunctionPrototypes;
     std::vector<std::pair<std::string, std::vector<std::string>>>  Symbols;
+
+    OrdOSRPairToStateMapMap StateMaps;
 
     bool            trackAsmCode;
     raw_ostream     *asmFdStream;

@@ -53,6 +53,7 @@ int Lexer::getNextToken() {
         if (command == "SHOW_ASM")      return tok_show_asm;
         if (command == "SHOW_FUNS")     return tok_show_funs;
         if (command == "SHOW_LINE_IDS") return tok_show_lids;
+        if (command == "SHOW_MAPS")     return tok_show_maps;
         if (command == "SHOW_MODS")     return tok_show_mods;
         if (command == "TRACK_ASM")     return tok_track_asm;
         if (command == "VERBOSE")       return tok_verbose;

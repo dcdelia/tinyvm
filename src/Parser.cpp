@@ -61,6 +61,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_show_lids:     handleDumpCommand(true); break;
+            case tok_show_maps:     TheHelper->showStateMaps(); break;
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_verbose:       handleVerboseCommand(); break;
@@ -276,46 +277,48 @@ void Parser::handleHelpCommand() {
 
     std::cerr << "List of available commands:" << std::endl;
     std::cerr << "--> BEGIN <module_name>" << std::endl
-              << "\tType an IR module from stdin. Press CTRL-D when finished."
+              << "\tType an IR module (from stdin). Press CTRL-D when finished."
               << std::endl;
     std::cerr << "--> CFG <function_name>" << std::endl
-              << "\tShows a compact view of the CFG of a given function."
+              << "\tShow a compact view of the CFG of a given function."
               << std::endl;
     std::cerr << "--> CFG_FULL <function_name>" << std::endl
-              << "\tShows the CFG (with instructions) of a given function."
+              << "\tShow the CFG (with instructions) of a given function."
               << std::endl;
     std::cerr << "--> CLONE_FUN <function_name> AS <clone_name>" << std::endl
-              << "\tClones a given function and generates a StateMap for the "
-              << "two functions." << std::endl;
+              << "\tClone a given function and generate a StateMap for the two "
+              << "functions." << std::endl;
     std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
-              << "\tShows the IR code of a given function or module."
+              << "\tShow the IR code of a given function or module."
               << std::endl;
     std::cerr << "--> INSERT_OSR <...>" << std::endl
-              << "\tInserts an OSR point in a function." << std::endl
+              << "\tInsert an OSR point in a function." << std::endl
               << "\tEnter HELP INSERT_OSR to find out the syntax." << std::endl;
     std::cerr << "--> LOAD_IR <file_name>" << std::endl
-              << "\tLoads an IR module from a given file." << std::endl;
+              << "\tLoad an IR module from a given file." << std::endl;
     std::cerr << "--> LOAD_LIB <file_name>" << std::endl
-              << "\tLoads the dynamic library at the given path." << std::endl;
+              << "\tLoad the dynamic library at the given path." << std::endl;
     std::cerr << "--> OPT_CFG <function_name>" << std::endl
-              << "\tPerforms a CFG simplification pass over a given function."
+              << "\tPerform a CFG simplification pass over a given function."
               << std::endl;
     std::cerr << "--> OPT_FULL <function_name>" << std::endl
-              << "\tPerforms several optimization passes over a given function."
+              << "\tPerform several optimization passes over a given function."
               << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl
-              << "\tPerforms a function call (see next paragraph) repeatedly."
+              << "\tPerform a function call (see next paragraph) repeatedly."
               << std::endl;
     std::cerr << "--> SHOW_ADDR <function_name>" << std::endl
-              << "\tShows compiled-code address for a given function symbol."
+              << "\tShow compiled-code address for a given function symbol."
               << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl
               << "\tShow logged x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_FUNS" << std::endl
               << "\tShow function symbols tracked by MCJITHelper." << std::endl;
     std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl
-              << "\tShows by-line IR identifiers for a given function."
+              << "\tShow by-line IR identifiers for a given function."
               << std::endl;
+    std::cerr << "--> SHOW_MAPS" << std::endl
+              << "\tShow registered StateMap objects." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl
               << "\tShow loaded modules and their symbols." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl
@@ -709,9 +712,10 @@ void Parser::handleCloneFunCommand() {
     if (usesFixed && TheHelper->verbose) {
         std::cerr << "Added declarations for referenced globals/functions." << std::endl;
     }
-    TheHelper->addModule(std::move(NewModule));
 
-    // TODO store StateMap
+    // load module and register StateMap
+    TheHelper->addModule(std::move(NewModule));
+    TheHelper->registerStateMap(src, clonedFun, M);
 }
 
 void Parser::handleLoadIRCommand() {

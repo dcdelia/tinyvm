@@ -618,6 +618,39 @@ bool MCJITHelper::canModifyModule(Module* M) {
     return true;
 }
 
+void MCJITHelper::registerStateMap(Function* F1, Function* F2, StateMap* M) {
+    Function* first = F1 < F2 ? F1 : F2;
+    Function* second = F1 < F2 ? F2 : F1;
+    OrdOSRPair ordPair(first, second);
+    std::pair<OrdOSRPairToStateMapMap::iterator, bool> ret =
+            StateMaps.insert(std::pair<OrdOSRPair, StateMap*>(ordPair, M));
+    assert(ret.second && "a StateMap already exists");
+}
+
+StateMap* MCJITHelper::getStateMap(Function* F1, Function* F2) {
+    Function* first = F1 < F2 ? F1 : F2;
+    Function* second = F1 < F2 ? F2 : F1;
+    OrdOSRPair ordPair(first, second);
+    OrdOSRPairToStateMapMap::iterator oneToOneIt = StateMaps.find(ordPair);
+    if (oneToOneIt != StateMaps.end()) {
+        return oneToOneIt->second;
+    }
+    return nullptr;
+}
+
+void MCJITHelper::showStateMaps() {
+    if (StateMaps.empty()) {
+        std::cerr << "No StateMap registered yet." << std::endl;
+        return;
+    }
+
+    std::cerr << "A StateMap is available for these pairs of functions:" << std::endl;
+    for (const std::pair<OrdOSRPair, StateMap*> &pair: StateMaps) {
+        std::cerr << pair.first.first->getName().str() << ", " <<
+                pair.first.second->getName().str() << std::endl;
+    }
+}
+
 /*
  * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia
  *

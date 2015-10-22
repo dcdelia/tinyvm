@@ -4,39 +4,41 @@ A simple VM to play with LLVM's MCJIT compiler and exercise a new OSR technique.
 ```diff
 pctips@xubuntu64:~/OSR$ ./tinyvm
 Welcome! Enter 'HELP' to show the list of available commands.
-TinyVM> help
+TinyVM> HELP
 List of available commands:
 --> BEGIN <module_name>
-	Type an IR module from stdin. Press CTRL-D when finished.
+	Type an IR module (from stdin). Press CTRL-D when finished.
 --> CFG <function_name>
-	Shows a compact view of the CFG of a given function.
+	Show a compact view of the CFG of a given function.
 --> CFG_FULL <function_name>
-	Shows the CFG (with instructions) of a given function.
+	Show the CFG (with instructions) of a given function.
 --> CLONE_FUN <function_name> AS <clone_name>
-	Clones a given function and generates a StateMap for the two functions.
+	Clone a given function and generate a StateMap for the two functions.
 --> DUMP [<function_name> | <module_name>]
-	Shows the IR code of a given function or module.
+	Show the IR code of a given function or module.
 --> INSERT_OSR <...>
-	Inserts an OSR point in a function.
+	Insert an OSR point in a function.
 	Enter HELP INSERT_OSR to find out the syntax.
 --> LOAD_IR <file_name>
-	Loads an IR module from a given file.
+	Load an IR module from a given file.
 --> LOAD_LIB <file_name>
-	Loads the dynamic library at the given path.
+	Load the dynamic library at the given path.
 --> OPT_CFG <function_name>
-	Performs a CFG simplification pass over a given function.
+	Perform a CFG simplification pass over a given function.
 --> OPT_FULL <function_name>
-	Performs several optimization passes over a given function.
+	Perform several optimization passes over a given function.
 --> REPEAT <iterations> <function call>
-	Performs a function call (see next paragraph) repeatedly.
+	Perform a function call (see next paragraph) repeatedly.
 --> SHOW_ADDR <function_name>
-	Shows compiled-code address for a given function symbol.
+	Show compiled-code address for a given function symbol.
 --> SHOW_ASM
 	Show logged x86-64 assembly code.
 --> SHOW_FUNS
 	Show function symbols tracked by MCJITHelper.
 --> SHOW_LINE_IDS <function_name>
-	Shows by-line IR identifiers for a given function.
+	Show by-line IR identifiers for a given function.
+--> SHOW_MAPS
+	Show registered StateMap objects.
 --> SHOW_MODS
 	Show loaded modules and their symbols.
 --> TRACK_ASM
@@ -50,7 +52,7 @@ The TinyVM command line supports the invocation of loaded functions. Functions
 can be invoked as in C, except for the final semi-colon that must not be added.
 For the time being, only functions with integer arguments and return values are
 supported.
-TinyVM> help insert_osr
+TinyVM> HELP INSERT_OSR
 OSR points can be inserted with one of the following commands:
 --> INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> CLONE
 --> INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'> CLONE

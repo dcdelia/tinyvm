@@ -48,7 +48,7 @@ public:
     void sinkInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
     void replaceAllUsesWith(llvm::Instruction* I, llvm::Value* V);
 
-    void updateStateMapping(StateMap* M) {}
+    void updateStateMapping(StateMap* M, bool verbose = false);
 
 private:
     // Metadata attached to function have been introduced only since LLVM 3.7.0,
@@ -147,7 +147,7 @@ public:
 class CodeMapper::SinkInst : public CodeMapper::CMAction {
 public:
     SinkInst(llvm::Instruction* I, llvm::Instruction* insertPt):
-            CMAction(CMAK_SinkInst), SunkI(I), InsertPt(insertPt),
+            CMAction(CMAK_SinkInst), SunkI(I), BeforeI(insertPt),
             SuccSunkI(findSuccessor(I)) { }
 
     static bool classof(const CMAction* CMA) {
@@ -157,7 +157,7 @@ public:
     void apply(StateMap *M, bool verbose = false);
 
     llvm::Instruction* SunkI;
-    llvm::Instruction* InsertPt;
+    llvm::Instruction* BeforeI;
     llvm::Instruction* SuccSunkI;
 };
 

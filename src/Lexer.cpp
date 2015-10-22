@@ -38,22 +38,23 @@ int Lexer::getNextToken() {
 
         if (command == "HELP")          return tok_help;
         if (command == "QUIT")          return tok_quit;
-        if (command == "LOAD_IR")       return tok_load_IR;
         if (command == "BEGIN")         return tok_begin;
-        if (command == "INSERT_OSR")    return tok_insert_osr;
         if (command == "CFG")           return tok_cfg;
         if (command == "CFG_FULL")      return tok_cfg_full;
+        if (command == "CLONE_FUN")     return tok_clone_fun;
         if (command == "DUMP")          return tok_dump;
+        if (command == "INSERT_OSR")    return tok_insert_osr;
+        if (command == "LOAD_IR")       return tok_load_IR;
+        if (command == "LOAD_LIB")      return tok_load_lib;
         if (command == "OPT_CFG")       return tok_opt_cfg;
         if (command == "OPT_FULL")      return tok_opt_full;
-        if (command == "TRACK_ASM")     return tok_track_asm;
-        if (command == "SHOW_ASM")      return tok_show_asm;
         if (command == "REPEAT")        return tok_repeat;
-        if (command == "SHOW_MODS")     return tok_show_mods;
         if (command == "SHOW_ADDR")     return tok_show_addr;
+        if (command == "SHOW_ASM")      return tok_show_asm;
         if (command == "SHOW_FUNS")     return tok_show_funs;
         if (command == "SHOW_LINE_IDS") return tok_show_lids;
-        if (command == "LOAD_LIB")      return tok_load_lib;
+        if (command == "SHOW_MODS")     return tok_show_mods;
+        if (command == "TRACK_ASM")     return tok_track_asm;
         if (command == "VERBOSE")       return tok_verbose;
 
         return tok_identifier;

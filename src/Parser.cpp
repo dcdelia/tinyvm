@@ -47,21 +47,22 @@ int Parser::start(bool displayHelpMsg) {
             case tok_newline:       fprintf(stderr, "\r"); break; // dirty trick :-)
             case tok_help:          handleHelpCommand(); break;
             case tok_begin:         handleBeginCommand(); break;
-            case tok_load_IR:       handleLoadIRCommand(); break;
-            case tok_insert_osr:    handleInsertOSRCommand(); break;
             case tok_cfg:           handleShowCFGCommand(false); break;
             case tok_cfg_full:      handleShowCFGCommand(true); break;
+            case tok_clone_fun:     handleCloneFunCommand(); break;
             case tok_dump:          handleDumpCommand(false); break;
-            case tok_show_lids:     handleDumpCommand(true); break;
-            case tok_repeat:        handleRepeatCommand(); break;
-            case tok_track_asm:     handleTrackAsmCommand(); break;
-            case tok_show_addr:     handleShowAddrCommand(); break;
-            case tok_show_asm:      TheHelper->showTrackedAsm(); break;
-            case tok_show_mods:     TheHelper->showModules(); break;
-            case tok_show_funs:     TheHelper->showFunctions(); break;
+            case tok_insert_osr:    handleInsertOSRCommand(); break;
+            case tok_load_IR:       handleLoadIRCommand(); break;
             case tok_load_lib:      handleLoadLibCommand(); break;
             case tok_opt_cfg:       handleOptCommand(true); break;
             case tok_opt_full:      handleOptCommand(false); break;
+            case tok_repeat:        handleRepeatCommand(); break;
+            case tok_show_addr:     handleShowAddrCommand(); break;
+            case tok_show_asm:      TheHelper->showTrackedAsm(); break;
+            case tok_show_funs:     TheHelper->showFunctions(); break;
+            case tok_show_lids:     handleDumpCommand(true); break;
+            case tok_show_mods:     TheHelper->showModules(); break;
+            case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_verbose:       handleVerboseCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return 0;
             case tok_identifier:    handleFunctionInvocation(1); break;
@@ -283,6 +284,9 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> CFG_FULL <function_name>" << std::endl
               << "\tShows the CFG (with instructions) of a given function."
               << std::endl;
+    std::cerr << "--> CLONE_FUN <function_name> AS <clone_name>" << std::endl
+              << "\tClones a given function and generates a StateMap for the "
+              << "two functions." << std::endl;
     std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
               << "\tShows the IR code of a given function or module."
               << std::endl;
@@ -525,7 +529,7 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 void Parser::handleInsertOSRCommand() {
     #define INVALID() do { std::cerr << "Invalid syntax for an INSERT_OSR command!" << std::endl\
             << "Error at argument " << numToken << ". Enter HELP to display the right syntax." << std::endl;\
-            return; } while (0);
+            free(cmdLine); return; } while (0);
 
     std::string* tmp = TheLexer->getLine();
     char* cmdLine = strdup(tmp->c_str());
@@ -618,7 +622,7 @@ void Parser::handleInsertOSRCommand() {
         }
 
         openOSRHelper(src, OSRSrc, update, tmpForF1NewName, cond, branchTakenProb, dynInline, valToInline);
-        delete cmdLine;
+        free(cmdLine);
         return;
     }
 
@@ -630,6 +634,7 @@ void Parser::handleInsertOSRCommand() {
 
     if (F1Name != F2Name) {
         std::cerr << "Sorry, I don't support OSR transitions for F2 != F1 yet!" << std::endl;
+        free(cmdLine);
         return;
     }
 
@@ -648,11 +653,66 @@ void Parser::handleInsertOSRCommand() {
     resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &P2Name,
             const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
-    delete cmdLine;
+    free(cmdLine);
     #undef getToken
     #undef INVALID
 }
 
+void Parser::handleCloneFunCommand() {
+    #define INVALID() do { std::cerr << "Invalid syntax for a CLONE_FUN command!" << std::endl\
+            << "Error at argument " << numToken << ". Enter HELP to display the right syntax." << std::endl;\
+            free(cmdLine); return; } while (0);
+
+    std::string* tmp = TheLexer->getLine();
+    char* cmdLine = strdup(tmp->c_str());
+    delete tmp;
+
+    int numToken = 1;
+    char* token = strtok(cmdLine, " ");
+    if (token == NULL) INVALID();
+    #define getToken() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+
+    const std::string FunName(token);
+    Function* src = TheHelper->getFunction(FunName);
+    if (src == nullptr) {
+        std::cerr << "Unable to find function " << FunName << "!" << std::endl;
+        free(cmdLine);
+        return;
+    }
+
+    getToken();
+    if (strcasecmp(token, "AS")) INVALID();
+
+    getToken();
+    std::string NewName(token);
+
+    if (TheHelper->getFunction(NewName) != nullptr) {
+        std::cerr << "ERROR: function " << NewName << "  already exists!" << std::endl;
+        free(cmdLine);
+        return;
+    }
+
+    free(cmdLine);
+    #undef getToken
+    #undef INVALID
+
+    // clone function and generate a StateMap for the two functions
+    std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
+    StateMap* M = tmpMapPair.second;
+    Function *clonedFun = tmpMapPair.first;
+    clonedFun->setName(NewName);
+
+    // put the cloned function in a new module and add declarations for symbols
+    std::unique_ptr<Module> NewModule = llvm::make_unique<Module>("CloneMod", TheHelper->Context);
+    NewModule->getFunctionList().push_back(clonedFun);
+    bool usesFixed = OSRLibrary::fixUsesOfFunctionsAndGlobals(src, clonedFun);
+    if (usesFixed && TheHelper->verbose) {
+        std::cerr << "Added declarations for referenced globals/functions." << std::endl;
+    }
+    TheHelper->addModule(std::move(NewModule));
+
+    // TODO store StateMap
+}
 
 void Parser::handleLoadIRCommand() {
     std::string *FileName = TheLexer->getLine();

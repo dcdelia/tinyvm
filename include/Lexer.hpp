@@ -39,13 +39,16 @@ enum Token {
     tok_show_mods   = -25,
     tok_show_addr   = -26,
     tok_show_funs   = -27,
-    tok_load_lib    = -28
+    tok_load_lib    = -28,
+    tok_clone_fun   = -29
 };
 
 class Lexer {
 public:
-    Lexer(FILE* stream) : InputStream(stream), LastChar(' '), CurString(""), userGetInputCharFun(nullptr) {}
-    Lexer(int (*getInputCharFun)()) : InputStream(nullptr), LastChar(' '), CurString(""), userGetInputCharFun(getInputCharFun) {}
+    Lexer(FILE* stream) : InputStream(stream), LastChar(' '), CurString(""),
+            userGetInputCharFun(nullptr) {}
+    Lexer(int (*getInputCharFun)()) : InputStream(nullptr), LastChar(' '),
+            CurString(""), userGetInputCharFun(getInputCharFun) {}
 
     ~Lexer() {}
     int getNextToken();

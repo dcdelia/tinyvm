@@ -12,6 +12,8 @@ List of available commands:
 	Shows a compact view of the CFG of a given function.
 --> CFG_FULL <function_name>
 	Shows the CFG (with instructions) of a given function.
+--> CLONE_FUN <function_name> AS <clone_name>
+	Clones a given function and generates a StateMap for the two functions.
 --> DUMP [<function_name> | <module_name>]
 	Shows the IR code of a given function or module.
 --> INSERT_OSR <...>

@@ -135,9 +135,13 @@ void* MCJITHelper::getPointerToNamedFunction(const std::string &Name) {
 Function* MCJITHelper::getFunction(const std::string &Name) {
     std::map<std::string, Function*>::iterator it = ActiveFunctions.find(Name);
     if (it == ActiveFunctions.end()) {
-        std::cerr << "[MCJITHelper] Couldn't locate Function* object for function " << Name
-                  << ", I will rely on the ExecutionEngine!" << std::endl;
-        return JIT->FindFunctionNamed(Name.c_str());
+        Function* ret = JIT->FindFunctionNamed(Name.c_str());
+        if (ret) {
+            std::cerr << "[MCJITHelper] Couldn't locate Function* object for "
+                      << "function " << Name << ", but ExecutionEngine did!"
+                      << std::endl;
+        }
+        return ret;
     } else {
         return it->second;
     }

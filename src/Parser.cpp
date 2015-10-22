@@ -265,38 +265,80 @@ void Parser::handleFunctionInvocation(int iterations) {
 
 void Parser::handleHelpCommand() {
     // simple commands
+    int token = TheLexer->getNextToken();
+
+    if (token != tok_newline) {
+        std::string CommandName = TheLexer->getIdentifier();
+        const char* commandName = CommandName.c_str();
+        if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
+    }
+
     std::cerr << "List of available commands:" << std::endl;
-    std::cerr << "--> BEGIN <module_name>" << std::endl << "\tType an IR module from stdin. Press CTRL-D when finished." << std::endl;
-    std::cerr << "--> LOAD_IR <file_name>" << std::endl << "\tLoads an IR module from a given file." << std::endl;
-    std::cerr << "--> LOAD_LIB <file_name>" << std::endl << "\tLoads the dynamic library at the given path." << std::endl;
-    std::cerr << "--> CFG <function_name>" << std::endl << "\tShows a compact view of the CFG of a given function." << std::endl;
-    std::cerr << "--> CFG_FULL <function_name>" << std::endl << "\tShows the full CFG (with instructions) of a given function." << std::endl;
-    std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl << "\tShows the IR code of a given function or module." << std::endl;
-    std::cerr << "--> OPT_CFG <function_name>" << std::endl << "\tPerforms a CFG simplification pass over a given function." << std::endl;
-    std::cerr << "--> OPT_FULL <function_name>" << std::endl << "\tPerforms several optimization passes over a given function." << std::endl;
-    std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
-    std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
-    std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address for a given function symbol." << std::endl;
-    std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl << "\tShows by-line IR identifiers for a given function." << std::endl;
-    std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
-    std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
-    std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
-    std::cerr << "--> VERBOSE" << std::endl << "\tEnable/disable verbose mode." << std::endl;
+    std::cerr << "--> BEGIN <module_name>" << std::endl
+              << "\tType an IR module from stdin. Press CTRL-D when finished."
+              << std::endl;
+    std::cerr << "--> CFG <function_name>" << std::endl
+              << "\tShows a compact view of the CFG of a given function."
+              << std::endl;
+    std::cerr << "--> CFG_FULL <function_name>" << std::endl
+              << "\tShows the CFG (with instructions) of a given function."
+              << std::endl;
+    std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
+              << "\tShows the IR code of a given function or module."
+              << std::endl;
+    std::cerr << "--> INSERT_OSR <...>" << std::endl
+              << "\tInserts an OSR point in a function." << std::endl
+              << "\tEnter HELP INSERT_OSR to find out the syntax." << std::endl;
+    std::cerr << "--> LOAD_IR <file_name>" << std::endl
+              << "\tLoads an IR module from a given file." << std::endl;
+    std::cerr << "--> LOAD_LIB <file_name>" << std::endl
+              << "\tLoads the dynamic library at the given path." << std::endl;
+    std::cerr << "--> OPT_CFG <function_name>" << std::endl
+              << "\tPerforms a CFG simplification pass over a given function."
+              << std::endl;
+    std::cerr << "--> OPT_FULL <function_name>" << std::endl
+              << "\tPerforms several optimization passes over a given function."
+              << std::endl;
+    std::cerr << "--> REPEAT <iterations> <function call>" << std::endl
+              << "\tPerforms a function call (see next paragraph) repeatedly."
+              << std::endl;
+    std::cerr << "--> SHOW_ADDR <function_name>" << std::endl
+              << "\tShows compiled-code address for a given function symbol."
+              << std::endl;
+    std::cerr << "--> SHOW_ASM" << std::endl
+              << "\tShow logged x86-64 assembly code." << std::endl;
+    std::cerr << "--> SHOW_FUNS" << std::endl
+              << "\tShow function symbols tracked by MCJITHelper." << std::endl;
+    std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl
+              << "\tShows by-line IR identifiers for a given function."
+              << std::endl;
+    std::cerr << "--> SHOW_MODS" << std::endl
+              << "\tShow loaded modules and their symbols." << std::endl;
+    std::cerr << "--> TRACK_ASM" << std::endl
+              << "\tEnable/disable logging of generated x86-64 assembly code."
+              << std::endl;
+    std::cerr << "--> VERBOSE" << std::endl
+              << "\tEnable/disable verbose mode." << std::endl;
     std::cerr << "--> QUIT" << std::endl << "\tExits TinyVM." << std::endl;
 
     // function invocation
-    std::cerr << std::endl << "The TinyVM command line supports the invocation of loaded functions. "
-              << "Functions can be invoked as in C, except for the final semi-colon that must not be added." << std::endl
-              << "For the time being, only functions with integer arguments and return values are supported." << std::endl;
+    std::cerr << std::endl << "The TinyVM command line supports the invocation "
+              << "of loaded functions. Functions can be invoked as in C, except "
+              << "for the final semi-colon that must not be added." << std::endl
+              << "For the time being, only functions with integer arguments and "
+              << "return values are supported." << std::endl;
 
-    // insert_osr
-    std::cerr << std::endl << "Demo OSR points can be inserted with one of the following commands:" << std::endl
-              << "INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> CLONE" << std::endl
-              << "INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'> CLONE" << std::endl
-              << "INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> DYN_INLINE <V1>" << std::endl
-              << "INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'> DYN_INLINE <V1>" << std::endl
-              << "INSERT_OSR <PROB> <COND> SLVD UPDATE IN <F1> AT <P1> TO <F2> AT <P2> AS <F2'>" << std::endl
-              << "INSERT_OSR <PROB> <COND> SLVD COPY IN <F1> AT <P1> AS <F1'> TO <F2> AT <P2> AS <F2'>" << std::endl
+    goto EXIT;
+
+    // HELP INSERT_OSR
+    INSERT_OSR: std::cerr
+              << "OSR points can be inserted with one of the following commands:" << std::endl
+              << "--> INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> CLONE" << std::endl
+              << "--> INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'> CLONE" << std::endl
+              << "--> INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> DYN_INLINE <V1>" << std::endl
+              << "--> INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'> DYN_INLINE <V1>" << std::endl
+              << "--> INSERT_OSR <PROB> <COND> SLVD UPDATE IN <F1> AT <P1> TO <F2> AT <P2> AS <F2'>" << std::endl
+              << "--> INSERT_OSR <PROB> <COND> SLVD COPY IN <F1> AT <P1> AS <F1'> TO <F2> AT <P2> AS <F2'>" << std::endl
               << std::endl << "where:" << std::endl
               << "\tPROB is either -1 (no branch weight) or an integer in {0, ..., 100}" << std::endl
               << "\tCOND is either ALWAYS or NEVER" << std::endl
@@ -315,6 +357,8 @@ void Parser::handleHelpCommand() {
               << "numerical IDs for anonymous values) or a line ID \'$i\' reported by SHOW_LINE_IDS. "
               << "For basic block locations OSR points are inserted before the first non-PHI instruction."
               << std::endl;
+
+    EXIT: return;
 }
 
 void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,

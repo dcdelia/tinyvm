@@ -46,6 +46,7 @@ int Lexer::getNextToken() {
         if (command == "INSERT_OSR")    return tok_insert_osr;
         if (command == "LOAD_IR")       return tok_load_IR;
         if (command == "LOAD_LIB")      return tok_load_lib;
+        if (command == "OPT")           return tok_opt;
         if (command == "OPT_CFG")       return tok_opt_cfg;
         if (command == "OPT_FULL")      return tok_opt_full;
         if (command == "REPEAT")        return tok_repeat;

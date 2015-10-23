@@ -41,7 +41,8 @@ enum Token {
     tok_show_funs   = -27,
     tok_load_lib    = -28,
     tok_clone_fun   = -29,
-    tok_show_maps   = -30
+    tok_show_maps   = -30,
+    tok_opt         = -31
 };
 
 class Lexer {

@@ -6,7 +6,9 @@
  * =============================================================== */
 #include "Parser.hpp"
 #include "Lexer.hpp"
+#include "Liveness.hpp"
 #include "MCJITHelper.hpp"
+#include "OptPasses.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
 #include "history.h"
@@ -54,8 +56,9 @@ int Parser::start(bool displayHelpMsg) {
             case tok_insert_osr:    handleInsertOSRCommand(); break;
             case tok_load_IR:       handleLoadIRCommand(); break;
             case tok_load_lib:      handleLoadLibCommand(); break;
-            case tok_opt_cfg:       handleOptCommand(true); break;
-            case tok_opt_full:      handleOptCommand(false); break;
+            case tok_opt:           handleOptCommand(); break;
+            case tok_opt_cfg:       handleOldOptCommand(true); break;
+            case tok_opt_full:      handleOldOptCommand(false); break;
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_show_addr:     handleShowAddrCommand(); break;
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
@@ -127,7 +130,85 @@ void Parser::handleBeginCommand() {
     std::cerr << "[LOAD] The new module has been loaded." << std::endl;
 }
 
-void Parser::handleOptCommand(bool CFGSimplificationOnly) {
+void Parser::handleOptCommand() {
+    int token;
+    #define EAT_TOKENS() do { token = TheLexer->getNextToken(); } \
+        while(token != tok_newline && token != tok_eof)
+    #define INVALID() do { std::cerr << "Invalid syntax for an OPT command!" \
+        << std::endl << "Enter HELP OPT to display the right syntax" \
+        << std::endl; EAT_TOKENS() } while(0)
+
+    const std::string Name = TheLexer->getIdentifier();
+    Function* F = TheHelper->getFunction(Name);
+    if (F == nullptr) {
+        std::cerr << "Unable to find function " << Name << "!" << std::endl;
+        EAT_TOKENS();
+        return;
+    }
+
+    Module* M = F->getParent();
+    if (!TheHelper->canModifyModule(M)) {
+        std::cerr << "Cannot update a possibly already-JITted function!" << std::endl;
+        EAT_TOKENS();
+        return;
+    }
+
+    token = TheLexer->getNextToken();
+    if (token == tok_newline || token == tok_eof) {
+        std::cerr << "At least one transformation should be specified!" << std::endl;
+        return;
+    }
+
+    // TODO set up a CodeMapper for F
+
+    // create a FunctionPassManager with optimizations specified by the user
+    FunctionPassManager FPM(M);
+
+    do {
+        const std::string OptName = TheLexer->getIdentifier();
+        const char* optName = OptName.c_str();
+
+        if (!strcmp(optName, "ADCE")) {
+            FPM.add(OSR_createAggressiveDCEPass());
+        } else if (!strcmp(optName, "ConstProp")) {
+            FPM.add(OSR_createConstantPropagationPass());
+        } else if (!strcmp(optName, "DCE")) {
+            FPM.add(OSR_createDeadCodeEliminationPass());
+        } else if (!strcmp(optName, "EarlyCSE")) {
+            FPM.add(OSR_createEarlyCSEPass());
+        } else if (!strcmp(optName, "LCSSA")) {
+            FPM.add(OSR_createLCSSAPass());
+        } else if (!strcmp(optName, "LoopSimplify")) {
+            FPM.add(OSR_createLoopSimplifyPass());
+        } else if (!strcmp(optName, "LICM")) {
+            std::cerr << "Sorry, LICM not fully implemented yet!" << std::endl;
+            EAT_TOKENS();
+            goto EXIT;
+        } else if (!strcmp(optName, "SCCP")) {
+            FPM.add(OSR_createSCCPPass());
+        } else if (!strcmp(optName, "Sink")) {
+            FPM.add(OSR_createSinkingPass());
+        } else {
+            std::cerr << "Unknown \'" << OptName << "\' function pass!" << std::endl;
+            EAT_TOKENS();
+            goto EXIT;
+        }
+
+        token = TheLexer->getNextToken();
+    }
+    while (token != tok_newline && token != tok_eof);
+
+    FPM.doInitialization();
+    FPM.run(*F);
+    // TODO finalization?
+
+    EXIT: return;
+
+    #undef INVALID
+    #undef EAT_TOKENS
+}
+
+void Parser::handleOldOptCommand(bool CFGSimplificationOnly) {
     if (TheLexer->getNextToken() != tok_identifier) {
         const std::string cmdName = (CFGSimplificationOnly) ? "OPT_FULL" : "OPT_CFG";
         std::cerr << "Invalid syntax for a " << cmdName << "command!" << std::endl
@@ -139,7 +220,7 @@ void Parser::handleOptCommand(bool CFGSimplificationOnly) {
 
     Function* F = TheHelper->getFunction(Name);
     if (F == nullptr) {
-        std::cerr << "Unable to find function named " << Name << "!" << std::endl;
+        std::cerr << "Unable to find function " << Name << "!" << std::endl;
         return;
     } else {
         Module* M = F->getParent();
@@ -269,10 +350,11 @@ void Parser::handleHelpCommand() {
     // simple commands
     int token = TheLexer->getNextToken();
 
-    if (token != tok_newline) {
+    if (token != tok_newline && token != tok_eof) {
         std::string CommandName = TheLexer->getIdentifier();
         const char* commandName = CommandName.c_str();
         if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
+        if (!strcasecmp("OPT", commandName)) goto OPT;
     }
 
     std::cerr << "List of available commands:" << std::endl;
@@ -298,6 +380,10 @@ void Parser::handleHelpCommand() {
               << "\tLoad an IR module from a given file." << std::endl;
     std::cerr << "--> LOAD_LIB <file_name>" << std::endl
               << "\tLoad the dynamic library at the given path." << std::endl;
+    std::cerr << "--> OPT <function_name> { <opt1> ... } " << std::endl
+              << "\tPerform optimization passes on a given function." << std::endl
+              << "\tEnter HELP OPT to find out which optimizations are supported."
+              << std::endl;
     std::cerr << "--> OPT_CFG <function_name>" << std::endl
               << "\tPerform a CFG simplification pass over a given function."
               << std::endl;
@@ -364,6 +450,32 @@ void Parser::handleHelpCommand() {
               << "numerical IDs for anonymous values) or a line ID \'$i\' reported by SHOW_LINE_IDS. "
               << "For basic block locations OSR points are inserted before the first non-PHI instruction."
               << std::endl;
+    goto EXIT;
+
+    // HELP OPT
+    OPT: std::cerr << "List of OSR-enabled implemented function passes:" << std::endl;
+    std::cerr << "--> ADCE" << std::endl
+              << "\tAggressive dead code elimination (assume dead unless proved otherwise)."
+              << std::endl;
+    std::cerr << "--> ConstProp" << std::endl
+              << "\tSimple constant propagation (for instructions with constant operands)."
+              << std::endl;
+    std::cerr << "--> DCE" << std::endl
+              << "\tDead code elimination." << std::endl;
+    std::cerr << "--> EarlyCSE" << std::endl
+              << "\tRemove trivially redundant instructions with a dominator tree walk."
+              << std::endl;
+    std::cerr << "--> LCSSA" << std::endl
+              << "\tTransform loops into loop-closed SSA form." << std::endl;
+    std::cerr << "--> LICM" << std::endl
+              << "\tLoop-invariant code motion (hoist & sink)."
+              << std::endl;
+    std::cerr << "--> LoopSimplify" << std::endl
+              << "\tCanonicalize natural loops." << std::endl;
+    std::cerr << "--> SCCP" << std::endl
+              << "\tSparse conditional constant propagation." << std::endl;
+    std::cerr << "--> Sink" << std::endl
+              << "\tSink instructions into successor blocks." << std::endl;
 
     EXIT: return;
 }
@@ -472,7 +584,6 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     }
 
     #define FREEOBJS() do { if (identityMapping) { delete M; delete dest; } } while(0)
-
 
     Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, *LPadName));
     if (LPad == nullptr) {
@@ -586,7 +697,7 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 
 void Parser::handleInsertOSRCommand() {
     #define INVALID() do { std::cerr << "Invalid syntax for an INSERT_OSR command!" << std::endl\
-            << "Error at argument " << numToken << ". Enter HELP to display the right syntax." << std::endl;\
+            << "Error at argument " << numToken << ". Enter HELP OSR to display the right syntax." << std::endl;\
             free(cmdLine); return; } while (0);
 
     std::string* tmp = TheLexer->getLine();

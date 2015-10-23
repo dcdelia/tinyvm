@@ -25,8 +25,6 @@ using namespace llvm;
 
 STATISTIC(NumLCSSA, "Number of live out of a loop variables");
 
-void initializeOSR_LCSSAPass(PassRegistry&);
-
 /// Return true if the specified block is in the list.
 static bool isExitBlock(BasicBlock *BB,
                         const SmallVectorImpl<BasicBlock *> &ExitBlocks) {
@@ -290,7 +288,7 @@ struct OSR_LCSSA : public FunctionPass {
 
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<LoopInfo>();
-    AU.addPreservedID(LoopSimplifyID);
+    AU.addPreservedID(OSR_LoopSimplifyID);
     AU.addPreserved<AliasAnalysis>();
     AU.addPreserved<ScalarEvolution>();
   }

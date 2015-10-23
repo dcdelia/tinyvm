@@ -38,8 +38,6 @@ STATISTIC(NumDeadBlocks , "Number of basic blocks unreachable");
 //STATISTIC(IPNumArgsElimed ,"Number of arguments constant propagated by IPSCCP");
 //STATISTIC(IPNumGlobalConst, "Number of globals found to be constant by IPSCCP");
 
-void initializeOSR_SCCPPass(PassRegistry&);
-
 namespace {
 /// LatticeVal class - This class represents the different lattice values that
 /// an LLVM value may occupy.  It is a simple class with value semantics.
@@ -1510,8 +1508,13 @@ namespace {
 } // end anonymous namespace
 
 char OSR_SCCP::ID = 0;
-OSR_INITIALIZE_PASS(OSR_SCCP, "OSR_sccp",
-                "[OSR] Sparse Conditional Constant Propagation", false, false)
+/* [OSR - possible bug fix?] INITIALIZE_PASS(SCCP, "sccp",
+        "Sparse Conditional Constant Propagation", false, false)*/
+OSR_INITIALIZE_PASS_BEGIN(OSR_SCCP, "OSR_sccp",
+        "[OSR] Sparse Conditional Constant Propagation", false, false)
+OSR_INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfo)
+OSR_INITIALIZE_PASS_END(OSR_SCCP, "OSR_sccp",
+        "[OSR] Sparse Conditional Constant Propagation", false, false)
 
 // createSCCPPass - This is the public interface to this file.
 FunctionPass* OSR_createSCCPPass() {

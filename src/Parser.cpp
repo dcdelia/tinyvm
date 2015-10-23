@@ -136,7 +136,14 @@ void Parser::handleOptCommand() {
         while(token != tok_newline && token != tok_eof)
     #define INVALID() do { std::cerr << "Invalid syntax for an OPT command!" \
         << std::endl << "Enter HELP OPT to display the right syntax" \
-        << std::endl; EAT_TOKENS() } while(0)
+        << std::endl; return; } while(0)
+
+    token = TheLexer->getNextToken();
+    if (token == tok_newline || token == tok_eof) INVALID();
+    if (token != tok_identifier) {
+        EAT_TOKENS();
+        INVALID();
+    }
 
     const std::string Name = TheLexer->getIdentifier();
     Function* F = TheHelper->getFunction(Name);
@@ -165,28 +172,30 @@ void Parser::handleOptCommand() {
     FunctionPassManager FPM(M);
 
     do {
+        if (token != tok_identifier) {
+            EAT_TOKENS();
+            INVALID();
+        }
         const std::string OptName = TheLexer->getIdentifier();
         const char* optName = OptName.c_str();
 
         if (!strcmp(optName, "ADCE")) {
             FPM.add(OSR_createAggressiveDCEPass());
-        } else if (!strcmp(optName, "ConstProp")) {
+        } else if (!strcasecmp(optName, "ConstProp")) {
             FPM.add(OSR_createConstantPropagationPass());
-        } else if (!strcmp(optName, "DCE")) {
+        } else if (!strcasecmp(optName, "DCE")) {
             FPM.add(OSR_createDeadCodeEliminationPass());
-        } else if (!strcmp(optName, "EarlyCSE")) {
+        } else if (!strcasecmp(optName, "EarlyCSE")) {
             FPM.add(OSR_createEarlyCSEPass());
-        } else if (!strcmp(optName, "LCSSA")) {
+        } else if (!strcasecmp(optName, "LCSSA")) {
             FPM.add(OSR_createLCSSAPass());
-        } else if (!strcmp(optName, "LoopSimplify")) {
+        } else if (!strcasecmp(optName, "LoopSimplify")) {
             FPM.add(OSR_createLoopSimplifyPass());
-        } else if (!strcmp(optName, "LICM")) {
-            std::cerr << "Sorry, LICM not fully implemented yet!" << std::endl;
-            EAT_TOKENS();
-            goto EXIT;
-        } else if (!strcmp(optName, "SCCP")) {
+        } else if (!strcasecmp(optName, "LICM")) {
+            FPM.add(OSR_createLICMPass());
+        } else if (!strcasecmp(optName, "SCCP")) {
             FPM.add(OSR_createSCCPPass());
-        } else if (!strcmp(optName, "Sink")) {
+        } else if (!strcasecmp(optName, "Sink")) {
             FPM.add(OSR_createSinkingPass());
         } else {
             std::cerr << "Unknown \'" << OptName << "\' function pass!" << std::endl;
@@ -453,7 +462,10 @@ void Parser::handleHelpCommand() {
     goto EXIT;
 
     // HELP OPT
-    OPT: std::cerr << "List of OSR-enabled implemented function passes:" << std::endl;
+    OPT: std::cerr << "Syntax:" << std::endl
+                   << "    OPT <function_name> { <opt1> <opt2> ... << <optN> }"
+                   << std::endl << std::endl;
+    std::cerr << "List of OSR-compatible implemented function passes:" << std::endl;
     std::cerr << "--> ADCE" << std::endl
               << "\tAggressive dead code elimination (assume dead unless proved otherwise)."
               << std::endl;
@@ -476,6 +488,7 @@ void Parser::handleHelpCommand() {
               << "\tSparse conditional constant propagation." << std::endl;
     std::cerr << "--> Sink" << std::endl
               << "\tSink instructions into successor blocks." << std::endl;
+    goto EXIT;
 
     EXIT: return;
 }

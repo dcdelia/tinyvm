@@ -32,8 +32,6 @@ STATISTIC(NumCSELoad,  "Number of load instructions CSE'd");
 STATISTIC(NumCSECall,  "Number of call instructions CSE'd");
 STATISTIC(NumDSE,      "Number of trivial dead stores removed");
 
-void initializeOSR_EarlyCSEPass(PassRegistry&);
-
 static unsigned getHash(const void *V) {
   return DenseMapInfo<const void*>::getHashValue(V);
 }

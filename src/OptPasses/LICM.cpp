@@ -43,8 +43,6 @@ STATISTIC(NumMovedCalls, "Number of call insts hoisted or sunk");
 /* [OSR] Memory promotion */
 //STATISTIC(NumPromoted  , "Number of memory locations promoted to registers");
 
-void initializeOSR_LICMPass(PassRegistry&);
-
 namespace {
   struct OSR_LICM : public LoopPass {
     static char ID; // Pass identification, replacement for typeid
@@ -181,8 +179,8 @@ char OSR_LICM::ID = 0;
 OSR_INITIALIZE_PASS_BEGIN(OSR_LICM, "OSR_licm", "[OSR] Loop Invariant Code Motion", false, false)
 OSR_INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 OSR_INITIALIZE_PASS_DEPENDENCY(LoopInfo)
-OSR_INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
-OSR_INITIALIZE_PASS_DEPENDENCY(LCSSA)
+OSR_INITIALIZE_PASS_DEPENDENCY(OSR_LoopSimplify)
+OSR_INITIALIZE_PASS_DEPENDENCY(OSR_LCSSA)
 OSR_INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 OSR_INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfo)
 OSR_INITIALIZE_AG_DEPENDENCY(AliasAnalysis)

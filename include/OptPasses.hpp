@@ -9,6 +9,7 @@
 #define	TINYVM_OPTPASSES_HPP
 
 #include <llvm/Pass.h>
+#include <llvm/PassRegistry.h>
 #include <llvm/PassSupport.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -18,17 +19,28 @@
 
 /* Adapted LLVM passes */
 llvm::FunctionPass* OSR_createAggressiveDCEPass();
-llvm::FunctionPass* OSR_createDeadCodeEliminationPass();
 llvm::FunctionPass* OSR_createConstantPropagationPass();
-llvm::FunctionPass* OSR_createSinkingPass();
+llvm::FunctionPass* OSR_createDeadCodeEliminationPass();
 llvm::FunctionPass* OSR_createEarlyCSEPass();
 llvm::FunctionPass* OSR_createSCCPPass();
+llvm::FunctionPass* OSR_createSinkingPass();
+
 llvm::Pass* OSR_createLICMPass(); // LoopPass
 
 extern char &OSR_LCSSAID;
 llvm::Pass* OSR_createLCSSAPass();
 extern char &OSR_LoopSimplifyID;
 llvm::Pass* OSR_createLoopSimplifyPass();
+
+void initializeOSR_ADCEPass(llvm::PassRegistry&);
+void initializeOSR_ConstantPropagationPass(llvm::PassRegistry&);
+void initializeOSR_DCEPass(llvm::PassRegistry&);
+void initializeOSR_EarlyCSEPass(llvm::PassRegistry&);
+void initializeOSR_LCSSAPass(llvm::PassRegistry&);
+void initializeOSR_LICMPass(llvm::PassRegistry&);
+void initializeOSR_LoopSimplifyPass(llvm::PassRegistry&);
+void initializeOSR_SCCPPass(llvm::PassRegistry&);
+void initializeOSR_SinkingPass(llvm::PassRegistry&);
 
 /* Adapted LLVM utilities */
 llvm::BasicBlock* OSR_SplitBlockPredecessors(llvm::BasicBlock *BB,

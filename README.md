@@ -23,6 +23,9 @@ List of available commands:
 	Load an IR module from a given file.
 --> LOAD_LIB <file_name>
 	Load the dynamic library at the given path.
+--> OPT <function_name> { <opt1> ... }
+	Perform optimization passes on a given function.
+	Enter HELP OPT to find out which optimizations are supported.
 --> OPT_CFG <function_name>
 	Perform a CFG simplification pass over a given function.
 --> OPT_FULL <function_name>
@@ -82,4 +85,28 @@ F2 to resume the execution at P2.
 Program locations can be expressed using an LLVM '%name' (including numerical
 IDs for anonymous values) or a line ID '$i' reported by SHOW_LINE_IDS. For basic
 block locations OSR points are inserted before the first non-PHI instruction.
+TinyVM> HELP OPT
+Syntax:
+    OPT <function_name> { <opt1> <opt2> ... << <optN> }
+
+List of OSR-compatible implemented function passes:
+--> ADCE
+	Aggressive dead code elimination (assume dead unless proved otherwise).
+--> ConstProp
+	Simple constant propagation (for instructions with constant operands).
+--> DCE
+	Dead code elimination.
+--> EarlyCSE
+	Remove trivially redundant instructions with a dominator tree walk.
+--> LCSSA
+	Transform loops into loop-closed SSA form.
+--> LICM
+	Loop-invariant code motion (hoist & sink).
+--> LoopSimplify
+	Canonicalize natural loops.
+--> SCCP
+	Sparse conditional constant propagation.
+--> Sink
+	Sink instructions into successor blocks.
+TinyVM>
 ```

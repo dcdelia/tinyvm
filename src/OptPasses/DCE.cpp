@@ -17,8 +17,6 @@ using namespace llvm;
 
 STATISTIC(DCEEliminated, "Number of insts removed");
 
-void initializeOSR_DCEPass(PassRegistry&);
-
 namespace {
   //===--------------------------------------------------------------------===//
   // DeadCodeElimination pass implementation

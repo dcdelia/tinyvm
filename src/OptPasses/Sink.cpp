@@ -22,8 +22,6 @@ using namespace llvm;
 STATISTIC(NumSunk, "Number of instructions sunk");
 STATISTIC(NumSinkIter, "Number of sinking iterations");
 
-void initializeOSR_SinkingPass(PassRegistry&);
-
 namespace {
   class OSR_Sinking : public FunctionPass {
     DominatorTree *DT;

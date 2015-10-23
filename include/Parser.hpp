@@ -46,8 +46,9 @@ private:
     void openOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,
             std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb,
             bool dynInline, llvm::Value* valToDynInline);
-    void resolvedOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,
-            std::string* F1NewName, const std::string* LPadName, std::string* F2NewName,
+    void resolvedOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc,
+            bool update, std::string* F1NewName, const std::string* F2Name,
+            const std::string* LPadName, std::string* F2NewName,
             OSRLibrary::OSRCond &cond, int branchTakenProb);
 
     typedef std::vector<const llvm::Value*> IDToValueVec;

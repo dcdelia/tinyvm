@@ -435,36 +435,77 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         TheHelper->trackAsmCodeUtil(modToUse);
     }
 
-    if (!update) delete F1NewToF1Map;
+    if (!update) {
+        TheHelper->registerStateMap(src, src_new, F1NewToF1Map);
+    }
 }
 
 void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
-            std::string* F1NewName, const std::string* LPadName, std::string*
-            F2NewName, OSRLibrary::OSRCond &cond, int branchTakenProb) {
+        std::string* F1NewName, const std::string* F2Name,
+        const std::string* LPadName, std::string* F2NewName,
+        OSRLibrary::OSRCond &cond, int branchTakenProb) {
 
-    std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
-    StateMap* M = tmpMapPair.second;
-    Function *dest = tmpMapPair.first;
-    Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, *LPadName));
-    if (LPad == nullptr) return;
+    Function* dest = nullptr;
+    StateMap* M = nullptr;
+    bool identityMapping = true;
 
-    if (LPad != M->getLandingPad(OSRSrc)) { // TODO
-        std::cerr << "I don't know how to perform an OSR transition from P1 to P2, sorry!" << std::endl;
-        return;
+    if (*F2Name == src->getName().str()) {
+        if (TheHelper->verbose) {
+            std::cerr << "Cloning " << *F2Name << " and generating a StateMap..."
+                      << std::endl;
+        }
+        std::pair<Function*, StateMap*> tmpMapPair = StateMap::generateIdentityMapping(src);
+        M = tmpMapPair.second;
+        dest = tmpMapPair.first;
+    } else {
+        identityMapping = false;
+        dest = TheHelper->getFunction(*F2Name);
+        if (dest == nullptr) {
+            std::cerr << "Unable to find function " << *F2Name << "!" << std::endl;
+            return;
+        }
+        M = TheHelper->getStateMap(src, dest);
+        if (M == nullptr) {
+            std::cerr << "Could not find a StateMap for the two functions!" << std::endl;
+            return;
+        }
     }
 
-    // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
+    #define FREEOBJS() do { if (identityMapping) { delete M; delete dest; } } while(0)
+
+
+    Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, *LPadName));
+    if (LPad == nullptr) {
+        FREEOBJS();
+        return;
+    } else {
+        Instruction* LPadFromStateMap = M->getLandingPad(OSRSrc);
+        if (LPadFromStateMap == nullptr) {
+            std::cerr << "No known feasible LPad for the given OSRSrc P1!" << std::endl;
+            // this should be dead code as it wouldn't happen when src is cloned
+            FREEOBJS();
+        } else if (LPad != LPadFromStateMap) {
+            std::cerr << "Could not perform an OSR transition to P2. According "
+                      << "to the StateMap, the LPad to use is:" << std::endl;
+            LPadFromStateMap->dump();
+            FREEOBJS();
+            return;
+        }
+    }
+
+    // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1,
+    // ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
     StateMap* F2NewToF2Map;
 
     Module *modForNewSrc = src->getParent();
-    Module *modForNewDest = dest->getParent(); // nullptr
+    Module *modForNewDest = dest->getParent();
     std::unique_ptr<Module> NewModule;
 
     bool needNewModuleForNewSrc = !TheHelper->canModifyModule(modForNewSrc);
     if (needNewModuleForNewSrc) {
         if (update) {
-            std::cerr << "ERROR: Cannot update a possibly already JIT-ted function!" << std::endl;
+            std::cerr << "Cannot update a possibly already-JITted function!" << std::endl;
             return;
         } else {
             if (TheHelper->verbose) {
@@ -475,7 +516,8 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         }
     }
 
-    bool needNewModuleForNewDest = true; // !TheHelper->canModifyModule(modForNewDest)
+    bool needNewModuleForNewDest = (modForNewDest == nullptr) ? true
+            : !TheHelper->canModifyModule(modForNewDest);
     if (needNewModuleForNewDest) {
         if (!needNewModuleForNewSrc) {
             if (TheHelper->verbose) {
@@ -486,11 +528,14 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         modForNewDest = NewModule.get();
     }
 
-    // dirty stuff for dest
-    modForNewDest->getFunctionList().push_back(dest);
-    bool usesFixedInDest = OSRLibrary::fixUsesOfFunctionsAndGlobals(src, dest);
-    if (usesFixedInDest && TheHelper->verbose) {
-        std::cerr << "Creating declarations to update references to globals and functions..." << std::endl;
+    if (identityMapping) {
+        // put dest into a module and fix references to symbols
+        modForNewDest->getFunctionList().push_back(dest);
+        bool usesFixedInDest = OSRLibrary::fixUsesOfFunctionsAndGlobals(src, dest);
+        if (usesFixedInDest && TheHelper->verbose) {
+            std::cerr << "Creating declarations to update references to globals and functions..."
+                      << std::endl;
+        }
     }
 
     OSRLibrary::OSRPointConfig config(TheHelper->verbose, update, branchTakenProb,
@@ -506,7 +551,9 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
 
-    dest->eraseFromParent();
+    if (identityMapping) {
+        dest->removeFromParent();
+    }
 
     if (needNewModuleForNewSrc) {
         TheHelper->addModule(std::move(NewModule));
@@ -524,9 +571,17 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         }
     }
 
-    delete M;
-    if (!update) delete F1NewToF1Map;
-    delete F2NewToF2Map;
+    FREEOBJS();
+    if (!update) {
+        TheHelper->registerStateMap(src, src_new, F1NewToF1Map);
+    }
+    if (identityMapping) {
+        delete F2NewToF2Map;
+    } else {
+        TheHelper->registerStateMap(dest, dest_new, F2NewToF2Map);
+    }
+
+    #undef FREEOBJS
 }
 
 void Parser::handleInsertOSRCommand() {
@@ -635,12 +690,6 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     const std::string F2Name(token);
 
-    if (F1Name != F2Name) {
-        std::cerr << "Sorry, I don't support OSR transitions for F2 != F1 yet!" << std::endl;
-        free(cmdLine);
-        return;
-    }
-
     getToken();
     if (strcasecmp(token, "AT")) INVALID();
 
@@ -653,7 +702,7 @@ void Parser::handleInsertOSRCommand() {
     getToken();
     const std::string F2NewName(token);
 
-    resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &P2Name,
+    resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &F2Name, &P2Name,
             const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
     free(cmdLine);
@@ -662,8 +711,9 @@ void Parser::handleInsertOSRCommand() {
 }
 
 void Parser::handleCloneFunCommand() {
-    #define INVALID() do { std::cerr << "Invalid syntax for a CLONE_FUN command!" << std::endl\
-            << "Error at argument " << numToken << ". Enter HELP to display the right syntax." << std::endl;\
+    #define INVALID() do { std::cerr << "Invalid syntax for a CLONE_FUN command!" \
+            << std::endl << "Error at argument " << numToken \
+            << ". Enter HELP to display the right syntax." << std::endl;\
             free(cmdLine); return; } while (0);
 
     std::string* tmp = TheLexer->getLine();

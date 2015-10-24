@@ -264,7 +264,20 @@ void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {
 }
 
 void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {
+    int addedInst = 0, deletedInst = 0, hoistedInst = 0, sunkInst = 0;
+    int instRAUWedWithArg = 0, instRAUWedwithConst = 0, instRAUWedWithInst = 0;
+
     for (CMAction* action: operations) {
+        switch (action->getKind()) {
+            case CMAction::CMAK_AddInst:            ++addedInst; break;
+            case CMAction::CMAK_BeginOpt:           break;
+            case CMAction::CMAK_DeleteInst:         ++deletedInst; break;
+            case CMAction::CMAK_HoistInst:          ++hoistedInst; break;
+            case CMAction::CMAK_SinkInst:           ++sunkInst; break;
+            case CMAction::CMAK_RAUWInstWithArg:    ++instRAUWedWithArg; break;
+            case CMAction::CMAK_RAUWInstWithConst:  ++instRAUWedwithConst; break;
+            case CMAction::CMAK_RAUWInstWithInst:   ++instRAUWedWithInst; break;
+        }
         action->apply(M, verbose);
     }
 }

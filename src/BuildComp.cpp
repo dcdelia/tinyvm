@@ -194,30 +194,36 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
+    LivenessAnalysis::LiveValues liveAtOSRSrc, liveAtLPad;
+    LivenessAnalysis *LA_src, *LA_dest;
+
     BasicBlock* OSRSrcBlock = OSRSrc->getParent();
     BasicBlock* LPadBlock = LPad->getParent();
     Function* src = OSRSrcBlock->getParent();
     Function* dest = LPadBlock->getParent();
 
-    LivenessAnalysis::LiveValues *liveAtOSRSrc, *liveAtLPad;
-
     if (src == funPair.first) {
         assert (dest == funPair.second && "wrong LocPair or StateMap");
-        liveAtOSRSrc = &LAPair.first.getLiveInValues(OSRSrcBlock);
-        liveAtLPad = &LAPair.second.getLiveInValues(LPadBlock);
+        LA_src = &LAPair.first;
+        LA_dest = &LAPair.second;
     } else {
         assert (src == funPair.second && dest == funPair.first
                 && "wrong LocPair or StateMap");
-        liveAtOSRSrc = &LAPair.second.getLiveInValues(OSRSrcBlock);
-        liveAtLPad = &LAPair.first.getLiveInValues(LPadBlock);
+        LA_src = &LAPair.second;
+        LA_dest = &LAPair.first;
     }
+
+    liveAtOSRSrc = LivenessAnalysis::analyzeLiveInForSeq(OSRSrcBlock,
+                LA_src->getLiveOutValues(OSRSrcBlock), OSRSrc, nullptr);
+    liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
+                LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
 
     // check if for each value to set there is a 1:1 mapping with a live value
     std::vector<Value*> valuesToReconstruct;
-    for (const Value* v: *liveAtLPad) {
+    for (const Value* v: liveAtLPad) {
         Value* valToSet = const_cast<Value*>(v);
         Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
-        if (oneToOneVal == nullptr || liveAtOSRSrc->count(oneToOneVal) == 0) {
+        if (oneToOneVal == nullptr || liveAtOSRSrc.count(oneToOneVal) == 0) {
             valuesToReconstruct.push_back(valToSet);
         }
     }
@@ -242,34 +248,41 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
+    LivenessAnalysis::LiveValues liveAtOSRSrc, liveAtLPad;
+    LivenessAnalysis *LA_src, *LA_dest;
+
     BasicBlock* OSRSrcBlock = OSRSrc->getParent();
     BasicBlock* LPadBlock = LPad->getParent();
     Function* src = OSRSrcBlock->getParent();
     Function* dest = LPadBlock->getParent();
 
-    LivenessAnalysis::LiveValues *liveAtOSRSrc, *liveAtLPad;
-
     if (src == funPair.first) {
         assert (dest == funPair.second && "wrong LocPair or StateMap");
-        liveAtOSRSrc = &LAPair.first.getLiveInValues(OSRSrcBlock);
-        liveAtLPad = &LAPair.second.getLiveInValues(LPadBlock);
+        LA_src = &LAPair.first;
+        LA_dest = &LAPair.second;
     } else {
         assert (src == funPair.second && dest == funPair.first
                 && "wrong LocPair or StateMap");
-        liveAtOSRSrc = &LAPair.second.getLiveInValues(OSRSrcBlock);
-        liveAtLPad = &LAPair.first.getLiveInValues(LPadBlock);
+        LA_src = &LAPair.second;
+        LA_dest = &LAPair.first;
     }
+
+    liveAtOSRSrc = LivenessAnalysis::analyzeLiveInForSeq(OSRSrcBlock,
+                LA_src->getLiveOutValues(OSRSrcBlock), OSRSrc, nullptr);
+    liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
+                LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
+
 
     std::map<Value*, Value*> availableValues;
     std::vector<Value*> workList;
 
     // build map of available values (i.e., 1:1 mapping & both are live)
-    for (const Value* v: *liveAtLPad) {
+    for (const Value* v: liveAtLPad) {
         Value* valToSet = const_cast<Value*>(v);
         Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
         if (oneToOneVal != nullptr) {
             // TODO check option to extend liveness range
-            if (liveAtOSRSrc->count(oneToOneVal) > 0) {
+            if (liveAtOSRSrc.count(oneToOneVal) > 0) {
                 availableValues[valToSet] = oneToOneVal;
                 continue;
             }

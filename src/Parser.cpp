@@ -6,6 +6,7 @@
  * =============================================================== */
 #include "Parser.hpp"
 #include "Lexer.hpp"
+#include "BuildComp.hpp"
 #include "Liveness.hpp"
 #include "MCJITHelper.hpp"
 #include "OptPasses.hpp"
@@ -52,6 +53,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_cfg:           handleShowCFGCommand(false); break;
             case tok_cfg_full:      handleShowCFGCommand(true); break;
             case tok_clone_fun:     handleCloneFunCommand(); break;
+            case tok_comp_code:     handleCompCodeCommand(); break;
             case tok_dump:          handleDumpCommand(false); break;
             case tok_insert_osr:    handleInsertOSRCommand(); break;
             case tok_load_IR:       handleLoadIRCommand(); break;
@@ -364,6 +366,7 @@ void Parser::handleHelpCommand() {
         const char* commandName = CommandName.c_str();
         if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
         if (!strcasecmp("OPT", commandName)) goto OPT;
+        if (!strcasecmp("COMP_CODE", commandName)) goto COMP_CODE;
     }
 
     std::cerr << "List of available commands:" << std::endl;
@@ -379,12 +382,15 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> CLONE_FUN <function_name> AS <clone_name>" << std::endl
               << "\tClone a given function and generate a StateMap for the two "
               << "functions." << std::endl;
+    std::cerr << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>" << std::endl
+              << "\tManipulate compensation code for OSR points." << std::endl
+              << "\tEnter HELP COMP_CODE to find out more." << std::endl;
     std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
               << "\tShow the IR code of a given function or module."
               << std::endl;
-    std::cerr << "--> INSERT_OSR <...>" << std::endl
+    std::cerr << "--> INSERT_OSR [...]" << std::endl
               << "\tInsert an OSR point in a function." << std::endl
-              << "\tEnter HELP INSERT_OSR to find out the syntax." << std::endl;
+              << "\tEnter HELP INSERT_OSR to find out more." << std::endl;
     std::cerr << "--> LOAD_IR <file_name>" << std::endl
               << "\tLoad an IR module from a given file." << std::endl;
     std::cerr << "--> LOAD_LIB <file_name>" << std::endl
@@ -430,6 +436,29 @@ void Parser::handleHelpCommand() {
               << "For the time being, only functions with integer arguments and "
               << "return values are supported." << std::endl;
 
+    #define SHOW_HELP_FOR_LOCATIONS() std::cerr << std::endl << \
+        "Program locations can be expressed using an LLVM \'%name\' (including"\
+        << " numerical IDs for anonymous values) or a line ID \'$i\' reported "\
+        << "by SHOW_LINE_IDS. When a basic block is specified, its first "\
+        << "non-PHI instruction is picked as location." << std::endl;
+
+    goto EXIT;
+
+    // HELP COMP_CODE
+    COMP_CODE:
+    std::cerr << "Manipulate compensation code for OSR points:" << std::endl
+              << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>"
+              << std::endl << std::endl << "where:" << std::endl
+              << "\tOP is one of the following actions: CHECK, CAN_BUILD, BUILD" << std::endl
+              << "\tF1 and F2 are existing functions" << std::endl
+              << "\tP1 and P2 are locations in F1 and F2 respectively"
+              << std::endl << std::endl;
+    std::cerr << "COMP_CODE can CHECK whether a compensation code is required"
+              << " to perform an OSR transition from P1 to P2, verify if OSRKit"
+              << " CAN_BUILD it automatically and actually BUILD it."
+              << std::endl;
+    SHOW_HELP_FOR_LOCATIONS();
+
     goto EXIT;
 
     // HELP INSERT_OSR
@@ -455,10 +484,7 @@ void Parser::handleHelpCommand() {
               << "dynamic inliner attempts to inline calls whose target is contained in V1." << std::endl;
     std::cerr << std::endl << "For SLVD transitions, a continuation function F2' is statically "
                  "generated from F2 to resume the execution at P2." << std::endl;
-    std::cerr << std::endl << "Program locations can be expressed using an LLVM \'%name\' (including "
-              << "numerical IDs for anonymous values) or a line ID \'$i\' reported by SHOW_LINE_IDS. "
-              << "For basic block locations OSR points are inserted before the first non-PHI instruction."
-              << std::endl;
+    SHOW_HELP_FOR_LOCATIONS();
     goto EXIT;
 
     // HELP OPT
@@ -489,6 +515,8 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> Sink" << std::endl
               << "\tSink instructions into successor blocks." << std::endl;
     goto EXIT;
+
+    #undef SHOW_HELP_FOR_LOCATIONS
 
     EXIT: return;
 }
@@ -605,12 +633,12 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     } else {
         Instruction* LPadFromStateMap = M->getLandingPad(OSRSrc);
         if (LPadFromStateMap == nullptr) {
-            std::cerr << "No known feasible LPad for the given OSRSrc P1!" << std::endl;
+            std::cerr << "No known feasible LPad for the given OSRSrc!" << std::endl;
             // this should be dead code as it wouldn't happen when src is cloned
             FREEOBJS();
         } else if (LPad != LPadFromStateMap) {
-            std::cerr << "Could not perform an OSR transition to P2. According "
-                      << "to the StateMap, the LPad to use is:" << std::endl;
+            std::cerr << "Invalid landing pad! According to the StateMap, the "
+                      << "LPad to use is:" << std::endl;
             LPadFromStateMap->dump();
             FREEOBJS();
             return;
@@ -720,12 +748,12 @@ void Parser::handleInsertOSRCommand() {
     int numToken = 1;
     char* token = strtok(cmdLine, " ");
     if (token == NULL) INVALID();
-    #define getToken() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+    #define GET_TOKEN() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
 
     int branchTakenProb = (int)strtol(token, NULL, 10);
     if (branchTakenProb != -1 && (branchTakenProb < 0 || branchTakenProb > 100)) INVALID();
 
-    getToken();
+    GET_TOKEN();
     OSRLibrary::OSRCond cond;
     if (!strcasecmp(token, "ALWAYS")) {
         cond.push_back(TheHelper->generateAlwaysTrueCond());
@@ -736,7 +764,7 @@ void Parser::handleInsertOSRCommand() {
     }
 
     bool open = false;
-    getToken();
+    GET_TOKEN();
     if (!strcasecmp(token, "OPEN")) {
         open = true;
     } else if (strcasecmp(token, "SLVD")) {
@@ -744,23 +772,23 @@ void Parser::handleInsertOSRCommand() {
     }
 
     bool update = false;
-    getToken();
+    GET_TOKEN();
     if (!strcasecmp(token, "UPDATE")) {
         update = true;
     } else if (strcasecmp(token, "COPY")) {
         INVALID();
     }
 
-    getToken();
+    GET_TOKEN();
     if (strcasecmp(token, "IN")) INVALID();
 
-    getToken();
+    GET_TOKEN();
     const std::string F1Name(token);
 
-    getToken();
+    GET_TOKEN();
     if (strcasecmp(token, "AT")) INVALID();
 
-    getToken();
+    GET_TOKEN();
     const std::string P1Name(token);
 
     // look for F1 and P1
@@ -774,10 +802,10 @@ void Parser::handleInsertOSRCommand() {
 
     std::string F1NewName;
     if (!update) {
-        getToken();
+        GET_TOKEN();
         if (strcasecmp(token, "AS")) INVALID();
 
-        getToken();
+        GET_TOKEN();
         F1NewName = std::string(token);
     }
 
@@ -787,7 +815,7 @@ void Parser::handleInsertOSRCommand() {
         bool dynInline = false;
         Value* valToInline = nullptr;
 
-        getToken();
+        GET_TOKEN();
         if (!strcasecmp(token, "DYN_INLINE")) {
             dynInline = true;
         } else if (strcasecmp(token, "CLONE")) {
@@ -795,7 +823,7 @@ void Parser::handleInsertOSRCommand() {
         }
 
         if (dynInline) {
-            getToken();
+            GET_TOKEN();
             std::string V1Name = std::string(token);
             IDToValueVec slotIDs = computeSlotIDs(src);
             valToInline = const_cast<Value*>(
@@ -808,29 +836,29 @@ void Parser::handleInsertOSRCommand() {
         return;
     }
 
-    getToken();
+    GET_TOKEN();
     if (strcasecmp(token, "TO")) INVALID();
 
-    getToken();
+    GET_TOKEN();
     const std::string F2Name(token);
 
-    getToken();
+    GET_TOKEN();
     if (strcasecmp(token, "AT")) INVALID();
 
-    getToken();
+    GET_TOKEN();
     const std::string P2Name(token);
 
-    getToken();
+    GET_TOKEN();
     if (strcasecmp(token, "AS")) INVALID();
 
-    getToken();
+    GET_TOKEN();
     const std::string F2NewName(token);
 
     resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &F2Name, &P2Name,
             const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
     free(cmdLine);
-    #undef getToken
+    #undef GET_TOKEN
     #undef INVALID
 }
 
@@ -891,6 +919,133 @@ void Parser::handleCloneFunCommand() {
     TheHelper->addModule(std::move(NewModule));
     TheHelper->registerStateMap(src, clonedFun, M);
 }
+
+void Parser::handleCompCodeCommand() {
+    #define INVALID() do { std::cerr << "Invalid syntax for an COMP_CODE command!" << std::endl\
+            << "Error at argument " << numToken << ". Enter HELP COMP_CODE to display the right syntax." << std::endl;\
+            free(cmdLine); return; } while (0);
+
+    std::string* tmp = TheLexer->getLine();
+    char* cmdLine = strdup(tmp->c_str());
+    delete tmp;
+
+    int numToken = 1;
+    char* token = strtok(cmdLine, " ");
+    if (token == NULL) INVALID();
+    #define GET_TOKEN() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+
+    // we use an anonymous enum      for future extensions
+    enum { buildCode, canBuildCode, checkCodeRequired };
+
+    int action;
+    if (!strcasecmp(token, "BUILD")) {
+        action = buildCode;
+    } else if (!strcasecmp(token, "CAN_BUILD")) {
+        action = canBuildCode;
+    } else if (!strcasecmp(token, "CHECK")) {
+        action = checkCodeRequired;
+    } else {
+        INVALID();
+    }
+
+    GET_TOKEN();
+    if (strcasecmp(token, "FOR")) INVALID();
+
+    GET_TOKEN();
+    const std::string F1Name(token);
+
+    GET_TOKEN();
+    if (strcasecmp(token, "AT")) INVALID();
+
+    GET_TOKEN();
+    const std::string P1Name(token);
+
+    GET_TOKEN();
+    if (strcasecmp(token, "TO")) INVALID();
+
+    GET_TOKEN();
+    const std::string F2Name(token);
+
+    GET_TOKEN();
+    if (strcasecmp(token, "AT")) INVALID();
+
+    GET_TOKEN();
+    const std::string P2Name(token);
+
+    // TODO trailing tokens?
+    free(cmdLine);
+
+    // now process parsed arguments
+    Function* src = TheHelper->getFunction(F1Name);
+    if (src == nullptr) {
+        std::cerr << "Unable to find function " << F1Name << "!" << std::endl;
+        return;
+    }
+
+    Instruction* OSRSrc = const_cast<Instruction*>(getOSRLocationFromStrIDs(*src, P1Name));
+    if (OSRSrc == nullptr) return;
+
+    Function* dest = TheHelper->getFunction(F2Name);
+    if (dest == nullptr) {
+        std::cerr << "Unable to find function " << F2Name << "!" << std::endl;
+        return;
+    }
+
+    Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, P2Name));
+    if (LPad == nullptr) return;
+
+    StateMap* M = TheHelper->getStateMap(src, dest);
+
+    if (M == nullptr) {
+        std::cerr << "Unable to find a StateMap for " << F1Name << ", "
+                  << F2Name << std::endl;
+    } else {
+        Instruction* LPadFromStateMap = M->getLandingPad(OSRSrc);
+        if (LPadFromStateMap == nullptr) {
+            std::cerr << "No known feasible LPad for the given OSRSrc!" << std::endl;
+            return;
+        } else if (LPad != LPadFromStateMap) {
+            std::cerr << "Invalid landing pad! According to the StateMap, the "
+                      << "LPad to use is:" << std::endl;
+            LPadFromStateMap->dump();
+            return;
+        }
+    }
+
+    // perform the required action
+    if (action == checkCodeRequired) {
+        bool ret = BuildComp::isBuildCompRequired(M, OSRSrc, LPad, TheHelper->verbose);
+        if (ret) {
+            std::cerr << "Compensation code is required!" << std::endl;
+        } else {
+            std::cerr << "No compensation code is required." << std::endl;
+        }
+    } else if (action == buildCode || action == canBuildCode) {
+        bool doBuild = (action == buildCode);
+        std::set<Value*> keepSet;
+        bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+                BuildComp::Heuristics::BC_NONE, doBuild, TheHelper->verbose);
+        if (ret) {
+            if (doBuild) {
+                std::cerr << "Compensation code built successfully." << std::endl;
+            } else {
+                std::cerr << "OSRKit can build the required compensation code."
+                          << std::endl;
+            }
+        } else {
+            std::cerr << "Compensation code cannot be built automatically, as "
+                      << "the following values cannot be reconstructed:"
+                      << std::endl;
+            for (Value* v: keepSet) {
+                v->dump();
+            }
+        }
+    }
+
+    #undef GET_TOKEN
+    #undef INVALID
+}
+
 
 void Parser::handleLoadIRCommand() {
     std::string *FileName = TheLexer->getLine();

@@ -29,6 +29,7 @@ private:
     // simple auxiliary methods
     void handleBeginCommand();
     void handleCloneFunCommand();
+    void handleCompCodeCommand();
     void handleDumpCommand(bool showLineIDs);
     void handleFunctionInvocation(int iterations);
     void handleHelpCommand();

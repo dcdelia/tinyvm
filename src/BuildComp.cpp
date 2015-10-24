@@ -19,6 +19,7 @@
 #undef NDEBUG
 #include <cassert>
 #include <map>
+#include <iostream>
 #include <set>
 #include <vector>
 
@@ -188,6 +189,52 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     }
 }
 
+bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
+        Instruction* LPad, bool verbose) {
+    std::pair<Function*, Function*> funPair = M->getFunctions();
+    std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
+
+    BasicBlock* OSRSrcBlock = OSRSrc->getParent();
+    BasicBlock* LPadBlock = LPad->getParent();
+    Function* src = OSRSrcBlock->getParent();
+    Function* dest = LPadBlock->getParent();
+
+    LivenessAnalysis::LiveValues *liveAtOSRSrc, *liveAtLPad;
+
+    if (src == funPair.first) {
+        assert (dest == funPair.second && "wrong LocPair or StateMap");
+        liveAtOSRSrc = &LAPair.first.getLiveInValues(OSRSrcBlock);
+        liveAtLPad = &LAPair.second.getLiveInValues(LPadBlock);
+    } else {
+        assert (src == funPair.second && dest == funPair.first
+                && "wrong LocPair or StateMap");
+        liveAtOSRSrc = &LAPair.second.getLiveInValues(OSRSrcBlock);
+        liveAtLPad = &LAPair.first.getLiveInValues(LPadBlock);
+    }
+
+    // check if for each value to set there is a 1:1 mapping with a live value
+    std::vector<Value*> valuesToReconstruct;
+    for (const Value* v: *liveAtLPad) {
+        Value* valToSet = const_cast<Value*>(v);
+        Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
+        if (oneToOneVal == nullptr || liveAtOSRSrc->count(oneToOneVal) == 0) {
+            valuesToReconstruct.push_back(valToSet);
+        }
+    }
+
+    bool ret = !valuesToReconstruct.empty();
+
+    if (verbose && ret) {
+        std::cerr << "No live value available to set the following values:"
+                  << std::endl;
+        for (Value* v: valuesToReconstruct) {
+            v->dump();
+        }
+    }
+
+    return ret;
+}
+
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         std::set<Value*> &keepSet, BuildComp::Heuristics opt, bool updateMapping,
         bool verbose) {
@@ -252,6 +299,8 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             keepSet.insert(valToReconstruct);
         }
     }
+
+    assert( (error || keepSet.empty()) && "non-empty keepSet on success?");
 
     if (error || !updateMapping) {
         // avoid memory leaks

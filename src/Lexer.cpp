@@ -42,6 +42,7 @@ int Lexer::getNextToken() {
         if (command == "CFG")           return tok_cfg;
         if (command == "CFG_FULL")      return tok_cfg_full;
         if (command == "CLONE_FUN")     return tok_clone_fun;
+        if (command == "COMP_CODE")     return tok_comp_code;
         if (command == "DUMP")          return tok_dump;
         if (command == "INSERT_OSR")    return tok_insert_osr;
         if (command == "LOAD_IR")       return tok_load_IR;

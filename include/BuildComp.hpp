@@ -26,6 +26,11 @@ public:
                         Heuristics opt = BC_NONE,
                         bool updateMapping = true,
                         bool verbose = false);
+
+    static bool isBuildCompRequired(StateMap* M,
+                        llvm::Instruction* OSRSrc,
+                        llvm::Instruction* LPad,
+                        bool verbose = false);
 };
 
 #endif

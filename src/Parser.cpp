@@ -152,11 +152,13 @@ void Parser::handleMapsCommand() {
     if (token == NULL) INVALID();
 
     // anonymous enum to encode actions
-    enum { showMaps, updateMap };
+    enum { analyzeMap, showMaps, updateMap };
     int action;
 
     if (!strcasecmp(token, "SHOW")) {
         action = showMaps;
+    } else if (!strcasecmp(token, "ANALYZE")) {
+        action = analyzeMap;
     } else if (!strcasecmp(token, "UPDATE")) {
         action = updateMap;
     } else {
@@ -165,32 +167,37 @@ void Parser::handleMapsCommand() {
 
     if (action == showMaps) {
         TheHelper->showStateMaps();
-    } else if (action == updateMap) {
-        GET_TOKEN();
-        const std::string F1Name(token);
+        return;
+    }
 
-        GET_TOKEN();
-        const std::string F2Name(token);
+    // action is either updateMap or analyzeMap
 
-        Function* F1 = TheHelper->getFunction(F1Name);
-        if (F1 == nullptr) {
-            std::cerr << "Unable to find function " << F1Name << "!" << std::endl;
-            return;
-        }
+    GET_TOKEN();
+    const std::string F1Name(token);
 
-        Function* F2 = TheHelper->getFunction(F2Name);
-        if (F2 == nullptr) {
-            std::cerr << "Unable to find function " << F2Name << "!" << std::endl;
-            return;
-        }
+    GET_TOKEN();
+    const std::string F2Name(token);
 
-        StateMap* M = TheHelper->getStateMap(F1, F2);
-        if (M == nullptr) {
-            std::cerr << "Could not find a StateMap for the two functions!"
-                      << std::endl;
-            return;
-        }
+    Function* F1 = TheHelper->getFunction(F1Name);
+    if (F1 == nullptr) {
+        std::cerr << "Unable to find function " << F1Name << "!" << std::endl;
+        return;
+    }
 
+    Function* F2 = TheHelper->getFunction(F2Name);
+    if (F2 == nullptr) {
+        std::cerr << "Unable to find function " << F2Name << "!" << std::endl;
+        return;
+    }
+
+    StateMap* M = TheHelper->getStateMap(F1, F2);
+    if (M == nullptr) {
+        std::cerr << "Could not find a StateMap for the two functions!"
+                  << std::endl;
+        return;
+    }
+
+    if (action == updateMap) {
         // process F1
         CodeMapper* CM_F1 = CodeMapper::getCodeMapper(*F1);
         if (CM_F1 == nullptr) {
@@ -210,6 +217,9 @@ void Parser::handleMapsCommand() {
             std::cerr << "StateMap updated to reflect changes in " << F2Name
                       << "." << std::endl;
         }
+    } else if (action == analyzeMap) {
+        BuildComp::printStatistics(M, BuildComp::Heuristic::BC_NONE,
+                TheHelper->verbose);
     }
 
     #undef INVALID
@@ -580,11 +590,14 @@ void Parser::handleHelpCommand() {
     MAPS:
     std::cerr << "Manipulate StateMap objects:" << std::endl
               << "--> MAPS SHOW" << std::endl
+              << "--> MAPS ANALYZE <F1> <F2>" << std::endl
               << "--> MAPS UPDATE <F1> <F2>"
               << std::endl << std::endl;
-    std::cerr << "MAPS can either SHOW the available StateMap objects, or "
-              << "UPDATE the StateMap for functions F1 and F2 when they have "
-              << "been optimized using the OPT command." << std::endl;
+    std::cerr << "MAPS can SHOW all the available StateMap objects, and for a "
+              << "specific StateMap on functions F1 and F2 it can either "
+              << "ANALYZE it to show which pairs of locations are feasible for "
+              << "OSR, or UPDATE it to reflect changes made to the functions "
+              << "using the OPT command." << std::endl;
     goto EXIT;
 
     OPT:
@@ -1107,7 +1120,7 @@ void Parser::handleCompCodeCommand() {
         bool doBuild = (action == buildCode);
         std::set<Value*> keepSet;
         bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                BuildComp::Heuristics::BC_NONE, doBuild, TheHelper->verbose);
+                BuildComp::Heuristic::BC_NONE, doBuild, TheHelper->verbose);
         if (ret) {
             if (doBuild) {
                 std::cerr << "Compensation code built successfully." << std::endl;

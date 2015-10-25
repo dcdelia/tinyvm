@@ -47,7 +47,7 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
 
 static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
         &availableValues, std::map<Instruction*, Instruction*> &reconstructedMap,
-        std::set<Value*> &argsForCompCode, BuildComp::Heuristics opt) {
+        std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
     // TODO heuristics; other instruction types?
     if (isa<PHINode>(I) || isa<LoadInst>(I)) return nullptr;
 
@@ -94,7 +94,7 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
 
 static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
         std::map<Value*, Value*> &availableValues, std::set<Value*> &valuesToKeep,
-        BuildComp::Heuristics opt) {
+        BuildComp::Heuristic opt) {
 
     // TODO: other instructions as well?
     if (isa<PHINode>(instToReconstruct) || isa<LoadInst>(instToReconstruct)) {
@@ -242,7 +242,7 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
 }
 
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
-        std::set<Value*> &keepSet, BuildComp::Heuristics opt, bool updateMapping,
+        std::set<Value*> &keepSet, BuildComp::Heuristic opt, bool updateMapping,
         bool verbose) {
 
     std::pair<Function*, Function*> funPair = M->getFunctions();
@@ -330,6 +330,71 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
     return error;
 }
+
+void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
+        bool verbose) {
+    std::pair<Function*, Function*> funPair = M->getFunctions();
+    Function* F1 = funPair.first;
+    Function* F2 = funPair.second;
+    std::string F1Name = F1->getName().str();
+    std::string F2Name = F2->getName().str();
+
+    int OSRSourcesInF1 = 0, OSRSourcesInF2 = 0;
+    int oneToOneValuesForF1 = 0, oneToOneValuesForF2 = 0;
+
+    StateMap::LocMap &landingPadMap = M->getAllLandingPads();
+    StateMap::OneToOneValueMap &defaultOneToOneValueMap =
+            M->getAllCorrespondingOneToOneValues();
+
+    for (StateMap::OneToOneValueMap::iterator it = defaultOneToOneValueMap.begin(),
+            end = defaultOneToOneValueMap.end(); it != end; ++it) {
+        Value* v = it->first;
+        if (Instruction* I = dyn_cast<Instruction>(v)) {
+            Function* F = I->getParent()->getParent();
+            if (F == F1) {
+                ++oneToOneValuesForF1;
+            } else {
+                assert (F == F2 && "Instruction from unknown function");
+                ++oneToOneValuesForF2;
+            }
+        } else if (Argument* A = dyn_cast<Argument>(v)) {
+            Function* F = A->getParent();
+            if (F == F1) {
+                ++oneToOneValuesForF1;
+            } else {
+                assert (F == F2 && "Argument from unknown function");
+                ++oneToOneValuesForF2;
+            }
+        } else if (Constant* C = dyn_cast<Constant>(v)) {
+            // TODO
+        }
+    }
+
+    for (StateMap::LocMap::iterator it = landingPadMap.begin(),
+            end = landingPadMap.end(); it != end; ++it) {
+        Instruction* I = it->first;
+        Function* F = I->getParent()->getParent();
+        if (F == F1) {
+            ++OSRSourcesInF1;
+        } else {
+            assert (F == F2 && "OSRSrc from unknown function");
+            ++OSRSourcesInF2;
+        }
+    }
+
+    std::cerr << "<" << F1Name << ">" << std::endl;
+    std::cerr << "- " << oneToOneValuesForF1 << " values for which there is a "
+              << "1:1 corresponding value" << std::endl;
+    std::cerr << "- " << OSRSourcesInF1 << " candidate OSRSrc locations"
+              << std::endl;
+
+    std::cerr << "<" << F2Name << ">" << std::endl;
+    std::cerr << "- " << oneToOneValuesForF2 << " values for which there is a "
+              << "1:1 corresponding value" << std::endl;
+    std::cerr << "- " << OSRSourcesInF2 << " candidate OSRSrc locations"
+              << std::endl;
+}
+
 
 /*
  * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia

@@ -107,10 +107,13 @@ basic block is specified, its first non-PHI instruction is picked as location.
 TinyVM> HELP MAPS
 Manipulate StateMap objects:
 --> MAPS SHOW
+--> MAPS ANALYZE <F1> <F2>
 --> MAPS UPDATE <F1> <F2>
 
-MAPS can either SHOW the available StateMap objects, or UPDATE the StateMap for
-functions F1 and F2 when they have been optimized using the OPT command.
+MAPS can SHOW all the available StateMap objects, and for a specific StateMap on
+functions F1 and F2 it can either ANALYZE it to show which pairs of locations
+are feasible for OSR, or UPDATE it to reflect changes made to the functions
+using the OPT command.
 TinyVM> HELP OPT
 Syntax:
     OPT <function_name> { <opt1> <opt2> ... << <optN> }

@@ -16,20 +16,24 @@
 
 class BuildComp {
 public:
-    enum Heuristics {
+    enum Heuristic {
         BC_NONE = 0, BC_ALIAS = 1 // more to come: use a good enconding scheme
     };
     static bool buildComp(StateMap *M,
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
                         std::set<llvm::Value*> &keepSet,
-                        Heuristics opt = BC_NONE,
+                        Heuristic opt = BC_NONE,
                         bool updateMapping = true,
                         bool verbose = false);
 
     static bool isBuildCompRequired(StateMap* M,
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
+                        bool verbose = false);
+
+    static void printStatistics(StateMap* M,
+                        Heuristic opt = BC_NONE,
                         bool verbose = false);
 };
 

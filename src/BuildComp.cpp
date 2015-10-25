@@ -339,8 +339,10 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     std::string F1Name = F1->getName().str();
     std::string F2Name = F2->getName().str();
 
-    int OSRSourcesInF1 = 0, OSRSourcesInF2 = 0;
     int oneToOneValuesForF1 = 0, oneToOneValuesForF2 = 0;
+    int OSRSourcesInF1 = 0, OSRSourcesInF2 = 0;
+    int buildCompRequiredInF1 = 0, buildCompRequiredInF2 = 0;
+    int buildCompFailsInF1 = 0, buildCompFailsInF2 = 0;
 
     StateMap::LocMap &landingPadMap = M->getAllLandingPads();
     StateMap::OneToOneValueMap &defaultOneToOneValueMap =
@@ -370,15 +372,36 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         }
     }
 
+    std::set<Value*> keepSet;
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
-        Instruction* I = it->first;
-        Function* F = I->getParent()->getParent();
+        Instruction* OSRSrc = it->first;
+        Instruction* LPad = it->second;
+        Function* F = OSRSrc->getParent()->getParent();
+        assert ( (F == F1 || F == F2) && "OSRSrc from unknown function");
+        bool bcReq = BuildComp::isBuildCompRequired(M, OSRSrc, LPad, verbose);
+        bool bcFails = false;
+        if (bcReq) {
+            bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+                    BuildComp::Heuristic::BC_NONE, false, verbose);
+            keepSet.clear();
+        }
         if (F == F1) {
             ++OSRSourcesInF1;
+            if (bcReq) {
+                ++buildCompRequiredInF1;
+                if (bcFails) {
+                    ++buildCompFailsInF1;
+                }
+            }
         } else {
-            assert (F == F2 && "OSRSrc from unknown function");
             ++OSRSourcesInF2;
+            if (bcReq) {
+                ++buildCompRequiredInF2;
+                if (bcFails) {
+                    ++buildCompFailsInF2;
+                }
+            }
         }
     }
 
@@ -387,12 +410,20 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
               << "1:1 corresponding value" << std::endl;
     std::cerr << "- " << OSRSourcesInF1 << " candidate OSRSrc locations"
               << std::endl;
+    std::cerr << "- " << buildCompRequiredInF1 << " OSRSrc locations for which "
+              << "a compensation code is required" << std::endl;
+    std::cerr << "- " << buildCompFailsInF1 << " OSRSrc locations for which a "
+              << "compensation code cannot be built automatically" << std::endl;
 
     std::cerr << "<" << F2Name << ">" << std::endl;
     std::cerr << "- " << oneToOneValuesForF2 << " values for which there is a "
               << "1:1 corresponding value" << std::endl;
     std::cerr << "- " << OSRSourcesInF2 << " candidate OSRSrc locations"
               << std::endl;
+    std::cerr << "- " << buildCompRequiredInF2 << " OSRSrc locations for which "
+              << "a compensation code is required" << std::endl;
+    std::cerr << "- " << buildCompFailsInF2 << " OSRSrc locations for which a "
+              << "compensation code cannot be built automatically" << std::endl;
 }
 
 

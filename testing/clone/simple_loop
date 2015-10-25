@@ -1,0 +1,2 @@
+LOAD_IR testing/IR/simple_loop.ll
+CLONE_FUN simple_loop AS sl

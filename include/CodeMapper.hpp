@@ -15,8 +15,6 @@
 #include <llvm/Support/Casting.h>
 #include <map>
 
-class StateMap;
-
 class CodeMapper {
 private:
     class CMAction; // abstract class to encode IR manipulations

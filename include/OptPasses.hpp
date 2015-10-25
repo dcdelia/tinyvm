@@ -8,6 +8,8 @@
 #ifndef TINYVM_OPTPASSES_HPP
 #define	TINYVM_OPTPASSES_HPP
 
+#include "CodeMapper.hpp"
+
 #include <llvm/Pass.h>
 #include <llvm/PassRegistry.h>
 #include <llvm/PassSupport.h>

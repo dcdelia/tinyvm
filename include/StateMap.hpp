@@ -19,7 +19,6 @@
 #include <map>
 
 #include "Liveness.hpp"
-#include "CodeMapper.hpp"
 
 /// \brief Map program points and values from two functions.
 ///
@@ -30,7 +29,6 @@
 /// continuation functions.
 ///
 class StateMap {
-    friend class CodeMapper;
 public:
     /// \brief Values from the source function required by a compensation code.
     typedef llvm::SmallVectorImpl<llvm::Value*> CompCodeArgs;
@@ -143,6 +141,13 @@ public:
     /// \brief Map between pairs of locations and corresponding compensation
     /// code information.
     typedef std::map<LocPair, LocPairInfo> LocPairInfoMap;
+
+    /// \brief Map between program locations from different functions.
+    typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
+
+    /// \brief Map between values and their corresponding 1:1 values.
+    /// \sa StateMap()
+    typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap;
 
     /// \brief Construct a StateMap object
     ///
@@ -334,6 +339,13 @@ public:
     /// \sa StateMap()
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
 
+    /// \brief Get all pairs of values and their corresponding 1:1 values.
+    /// \return A reference to the OneToOneValueMap maintained by the object.
+    /// \sa StateMap()
+    OneToOneValueMap& getAllCorrespondingOneToOneValues() {
+        return defaultOneToOneMap;
+    }
+
     /// \brief Get the landing pad for a given OSR source location.
     ///
     /// \param OSRSrc Instruction to use as source of an OSR transition.
@@ -341,6 +353,13 @@ public:
     /// landing pad for the OSR transition, or \c nullptr when an OSR from \a
     /// OSRSrc is not feasible.
     llvm::Instruction* getLandingPad(llvm::Instruction* OSRSrc);
+
+    /// \brief Get all pairs of OSR source locations and corresponding landing
+    /// pads
+    /// \return A reference to the LocMap maintained by the object.
+    LocMap& getAllLandingPads() {
+        return landingPadMap;
+    }
 
     /// \brief Clone a function and generate a StateMap.
     ///
@@ -350,9 +369,7 @@ public:
     static std::pair<llvm::Function*, StateMap*> generateIdentityMapping(llvm::Function *F);
 
 private:
-    typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
     typedef std::map<llvm::Instruction*, std::vector<llvm::Value*>> ValuesToSetCache;
-    typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap; // avoid clash with llvm::ValueMap
 
     llvm::Function      *F1, *F2;
     OneToOneValueMap    defaultOneToOneMap;

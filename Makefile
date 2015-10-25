@@ -58,7 +58,8 @@ $(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp \
 
 $(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp \
 	    $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h \
-	    $(INCLUDE)/Liveness.hpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/BuildComp.hpp
+	    $(INCLUDE)/Liveness.hpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/BuildComp.hpp \
+	    $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Parser.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Parser.o
 
 $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h

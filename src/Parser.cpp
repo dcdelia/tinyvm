@@ -7,6 +7,7 @@
 #include "Parser.hpp"
 #include "Lexer.hpp"
 #include "BuildComp.hpp"
+#include "CodeMapper.hpp"
 #include "Liveness.hpp"
 #include "MCJITHelper.hpp"
 #include "OptPasses.hpp"
@@ -36,6 +37,13 @@
 
 using namespace llvm;
 
+// INIT_TOKENIZER relies on function-local scope as it declares variables! The
+// calling function should also declare an INVALID() macro for error messages.
+// INIT_TOKENIZER also puts the first token inside the variable token. GET_TOKEN
+// can be used instead at any point of the function to get subsequent tokens.
+#define INIT_TOKENIZER(cmdLine) int numToken = 1; char* token = strtok((cmdLine), " ");
+#define GET_TOKEN() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+
 int Parser::start(bool displayHelpMsg) {
     if (displayHelpMsg) {
         std::cerr << "Welcome! Enter 'HELP' to show the list of available commands."
@@ -58,6 +66,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_insert_osr:    handleInsertOSRCommand(); break;
             case tok_load_IR:       handleLoadIRCommand(); break;
             case tok_load_lib:      handleLoadLibCommand(); break;
+            case tok_maps:          handleMapsCommand(); break;
             case tok_opt:           handleOptCommand(); break;
             case tok_opt_cfg:       handleOldOptCommand(true); break;
             case tok_opt_full:      handleOldOptCommand(false); break;
@@ -66,7 +75,6 @@ int Parser::start(bool displayHelpMsg) {
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_show_lids:     handleDumpCommand(true); break;
-            case tok_show_maps:     TheHelper->showStateMaps(); break;
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_verbose:       handleVerboseCommand(); break;
@@ -132,18 +140,94 @@ void Parser::handleBeginCommand() {
     std::cerr << "[LOAD] The new module has been loaded." << std::endl;
 }
 
+void Parser::handleMapsCommand() {
+    #define INVALID() do { std::cerr << "Invalid syntax for a MAPS command!" \
+        << std::endl << "Enter HELP MAPS to display the right syntax." \
+        << std::endl; return; } while(0)
+
+    std::string *tmpStr = TheLexer->getLine();
+    std::string LexerStr(std::move(*tmpStr));
+    delete tmpStr;
+    INIT_TOKENIZER(const_cast<char*>(LexerStr.c_str()));
+    if (token == NULL) INVALID();
+
+    // anonymous enum to encode actions
+    enum { showMaps, updateMap };
+    int action;
+
+    if (!strcasecmp(token, "SHOW")) {
+        action = showMaps;
+    } else if (!strcasecmp(token, "UPDATE")) {
+        action = updateMap;
+    } else {
+        INVALID();
+    }
+
+    if (action == showMaps) {
+        TheHelper->showStateMaps();
+    } else if (action == updateMap) {
+        GET_TOKEN();
+        const std::string F1Name(token);
+
+        GET_TOKEN();
+        const std::string F2Name(token);
+
+        Function* F1 = TheHelper->getFunction(F1Name);
+        if (F1 == nullptr) {
+            std::cerr << "Unable to find function " << F1Name << "!" << std::endl;
+            return;
+        }
+
+        Function* F2 = TheHelper->getFunction(F2Name);
+        if (F2 == nullptr) {
+            std::cerr << "Unable to find function " << F2Name << "!" << std::endl;
+            return;
+        }
+
+        StateMap* M = TheHelper->getStateMap(F1, F2);
+        if (M == nullptr) {
+            std::cerr << "Could not find a StateMap for the two functions!"
+                      << std::endl;
+            return;
+        }
+
+        // process F1
+        CodeMapper* CM_F1 = CodeMapper::getCodeMapper(*F1);
+        if (CM_F1 == nullptr) {
+            std::cerr << "Nothing to do for " << F1Name << "." << std::endl;
+        } else {
+            CM_F1->updateStateMapping(M, TheHelper->verbose);
+            std::cerr << "StateMap updated to reflect changes in " << F1Name
+                      << "." << std::endl;
+        }
+
+        // process F2
+        CodeMapper* CM_F2 = CodeMapper::getCodeMapper(*F2);
+        if (CM_F2 == nullptr) {
+            std::cerr << "Nothing to do for " << F2Name << "." << std::endl;
+        } else {
+            CM_F2->updateStateMapping(M, TheHelper->verbose);
+            std::cerr << "StateMap updated to reflect changes in " << F2Name
+                      << "." << std::endl;
+        }
+    }
+
+    #undef INVALID
+
+}
+
 void Parser::handleOptCommand() {
     int token;
-    #define EAT_TOKENS() do { token = TheLexer->getNextToken(); } \
+    #define EAT_LEXER_TOKENS() do { token = TheLexer->getNextToken(); } \
         while(token != tok_newline && token != tok_eof)
     #define INVALID() do { std::cerr << "Invalid syntax for an OPT command!" \
-        << std::endl << "Enter HELP OPT to display the right syntax" \
+        << std::endl << "Enter HELP OPT to display the right syntax." \
         << std::endl; return; } while(0)
 
     token = TheLexer->getNextToken();
     if (token == tok_newline || token == tok_eof) INVALID();
     if (token != tok_identifier) {
-        EAT_TOKENS();
+        EAT_LEXER_TOKENS();
         INVALID();
     }
 
@@ -151,14 +235,14 @@ void Parser::handleOptCommand() {
     Function* F = TheHelper->getFunction(Name);
     if (F == nullptr) {
         std::cerr << "Unable to find function " << Name << "!" << std::endl;
-        EAT_TOKENS();
+        EAT_LEXER_TOKENS();
         return;
     }
 
     Module* M = F->getParent();
     if (!TheHelper->canModifyModule(M)) {
         std::cerr << "Cannot update a possibly already-JITted function!" << std::endl;
-        EAT_TOKENS();
+        EAT_LEXER_TOKENS();
         return;
     }
 
@@ -168,14 +252,20 @@ void Parser::handleOptCommand() {
         return;
     }
 
-    // TODO set up a CodeMapper for F
+    // create a CodeMapper for F
+    if (CodeMapper::hasCodeMapper(*F)) {
+        std::cerr << "WARNING: discarding CodeMapper from previous "
+                  << "optimizations..." << std::endl;
+        CodeMapper::removeCodeMapper(*F);
+    }
+    CodeMapper::createCodeMapper(*F);
 
     // create a FunctionPassManager with optimizations specified by the user
     FunctionPassManager FPM(M);
 
     do {
         if (token != tok_identifier) {
-            EAT_TOKENS();
+            EAT_LEXER_TOKENS();
             INVALID();
         }
         const std::string OptName = TheLexer->getIdentifier();
@@ -201,7 +291,7 @@ void Parser::handleOptCommand() {
             FPM.add(OSR_createSinkingPass());
         } else {
             std::cerr << "Unknown \'" << OptName << "\' function pass!" << std::endl;
-            EAT_TOKENS();
+            EAT_LEXER_TOKENS();
             goto EXIT;
         }
 
@@ -211,12 +301,12 @@ void Parser::handleOptCommand() {
 
     FPM.doInitialization();
     FPM.run(*F);
-    // TODO finalization?
+    FPM.doFinalization();
 
     EXIT: return;
 
     #undef INVALID
-    #undef EAT_TOKENS
+    #undef EAT_LEXER_TOKENS
 }
 
 void Parser::handleOldOptCommand(bool CFGSimplificationOnly) {
@@ -364,9 +454,10 @@ void Parser::handleHelpCommand() {
     if (token != tok_newline && token != tok_eof) {
         std::string CommandName = TheLexer->getIdentifier();
         const char* commandName = CommandName.c_str();
-        if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
-        if (!strcasecmp("OPT", commandName)) goto OPT;
         if (!strcasecmp("COMP_CODE", commandName)) goto COMP_CODE;
+        if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
+        if (!strcasecmp("MAPS", commandName)) goto MAPS;
+        if (!strcasecmp("OPT", commandName)) goto OPT;
     }
 
     std::cerr << "List of available commands:" << std::endl;
@@ -395,6 +486,9 @@ void Parser::handleHelpCommand() {
               << "\tLoad an IR module from a given file." << std::endl;
     std::cerr << "--> LOAD_LIB <file_name>" << std::endl
               << "\tLoad the dynamic library at the given path." << std::endl;
+    std::cerr << "--> MAPS [...]" << std::endl
+              << "\tManipulate StateMap objects." << std::endl
+              << "\tEnter HELP MAPS to find out more.";
     std::cerr << "--> OPT <function_name> { <opt1> ... } " << std::endl
               << "\tPerform optimization passes on a given function." << std::endl
               << "\tEnter HELP OPT to find out which optimizations are supported."
@@ -418,8 +512,6 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl
               << "\tShow by-line IR identifiers for a given function."
               << std::endl;
-    std::cerr << "--> SHOW_MAPS" << std::endl
-              << "\tShow registered StateMap objects." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl
               << "\tShow loaded modules and their symbols." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl
@@ -444,7 +536,6 @@ void Parser::handleHelpCommand() {
 
     goto EXIT;
 
-    // HELP COMP_CODE
     COMP_CODE:
     std::cerr << "Manipulate compensation code for OSR points:" << std::endl
               << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>"
@@ -461,9 +552,8 @@ void Parser::handleHelpCommand() {
 
     goto EXIT;
 
-    // HELP INSERT_OSR
-    INSERT_OSR: std::cerr
-              << "OSR points can be inserted with one of the following commands:" << std::endl
+    INSERT_OSR:
+    std::cerr << "OSR points can be inserted with one of the following commands:" << std::endl
               << "--> INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> CLONE" << std::endl
               << "--> INSERT_OSR <PROB> <COND> OPEN COPY IN <F1> AT <P1> AS <F1'> CLONE" << std::endl
               << "--> INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> DYN_INLINE <V1>" << std::endl
@@ -487,10 +577,20 @@ void Parser::handleHelpCommand() {
     SHOW_HELP_FOR_LOCATIONS();
     goto EXIT;
 
-    // HELP OPT
-    OPT: std::cerr << "Syntax:" << std::endl
-                   << "    OPT <function_name> { <opt1> <opt2> ... << <optN> }"
-                   << std::endl << std::endl;
+    MAPS:
+    std::cerr << "Manipulate StateMap objects:" << std::endl
+              << "--> MAPS SHOW" << std::endl
+              << "--> MAPS UPDATE <F1> <F2>"
+              << std::endl << std::endl;
+    std::cerr << "MAPS can either SHOW the available StateMap objects, or "
+              << "UPDATE the StateMap for functions F1 and F2 when they have "
+              << "been optimized using the OPT command." << std::endl;
+    goto EXIT;
+
+    OPT:
+    std::cerr << "Syntax:" << std::endl
+              << "    OPT <function_name> { <opt1> <opt2> ... << <optN> }"
+              << std::endl << std::endl;
     std::cerr << "List of OSR-compatible implemented function passes:" << std::endl;
     std::cerr << "--> ADCE" << std::endl
               << "\tAggressive dead code elimination (assume dead unless proved otherwise)."
@@ -739,16 +839,13 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 void Parser::handleInsertOSRCommand() {
     #define INVALID() do { std::cerr << "Invalid syntax for an INSERT_OSR command!" << std::endl\
             << "Error at argument " << numToken << ". Enter HELP OSR to display the right syntax." << std::endl;\
-            free(cmdLine); return; } while (0);
+            return; } while (0);
 
-    std::string* tmp = TheLexer->getLine();
-    char* cmdLine = strdup(tmp->c_str());
-    delete tmp;
-
-    int numToken = 1;
-    char* token = strtok(cmdLine, " ");
+    std::string *tmpStr = TheLexer->getLine();
+    std::string LexerStr(std::move(*tmpStr));
+    delete tmpStr;
+    INIT_TOKENIZER(const_cast<char*>(LexerStr.c_str()));
     if (token == NULL) INVALID();
-    #define GET_TOKEN() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
 
     int branchTakenProb = (int)strtol(token, NULL, 10);
     if (branchTakenProb != -1 && (branchTakenProb < 0 || branchTakenProb > 100)) INVALID();
@@ -832,7 +929,6 @@ void Parser::handleInsertOSRCommand() {
         }
 
         openOSRHelper(src, OSRSrc, update, tmpForF1NewName, cond, branchTakenProb, dynInline, valToInline);
-        free(cmdLine);
         return;
     }
 
@@ -857,8 +953,6 @@ void Parser::handleInsertOSRCommand() {
     resolvedOSRHelper(src, OSRSrc, update, tmpForF1NewName, &F2Name, &P2Name,
             const_cast<std::string*>(&F2NewName), cond, branchTakenProb);
 
-    free(cmdLine);
-    #undef GET_TOKEN
     #undef INVALID
 }
 
@@ -866,39 +960,32 @@ void Parser::handleCloneFunCommand() {
     #define INVALID() do { std::cerr << "Invalid syntax for a CLONE_FUN command!" \
             << std::endl << "Error at argument " << numToken \
             << ". Enter HELP to display the right syntax." << std::endl;\
-            free(cmdLine); return; } while (0);
+            return; } while (0);
 
-    std::string* tmp = TheLexer->getLine();
-    char* cmdLine = strdup(tmp->c_str());
-    delete tmp;
-
-    int numToken = 1;
-    char* token = strtok(cmdLine, " ");
+    std::string *tmpStr = TheLexer->getLine();
+    std::string LexerStr(std::move(*tmpStr));
+    delete tmpStr;
+    INIT_TOKENIZER(const_cast<char*>(LexerStr.c_str()));
     if (token == NULL) INVALID();
-    #define getToken() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
 
     const std::string FunName(token);
     Function* src = TheHelper->getFunction(FunName);
     if (src == nullptr) {
         std::cerr << "Unable to find function " << FunName << "!" << std::endl;
-        free(cmdLine);
         return;
     }
 
-    getToken();
+    GET_TOKEN();
     if (strcasecmp(token, "AS")) INVALID();
 
-    getToken();
+    GET_TOKEN();
     std::string NewName(token);
 
     if (TheHelper->getFunction(NewName) != nullptr) {
         std::cerr << "ERROR: function " << NewName << "  already exists!" << std::endl;
-        free(cmdLine);
         return;
     }
 
-    free(cmdLine);
-    #undef getToken
     #undef INVALID
 
     // clone function and generate a StateMap for the two functions
@@ -923,21 +1010,18 @@ void Parser::handleCloneFunCommand() {
 void Parser::handleCompCodeCommand() {
     #define INVALID() do { std::cerr << "Invalid syntax for an COMP_CODE command!" << std::endl\
             << "Error at argument " << numToken << ". Enter HELP COMP_CODE to display the right syntax." << std::endl;\
-            free(cmdLine); return; } while (0);
+            return; } while (0);
 
-    std::string* tmp = TheLexer->getLine();
-    char* cmdLine = strdup(tmp->c_str());
-    delete tmp;
-
-    int numToken = 1;
-    char* token = strtok(cmdLine, " ");
+    std::string *tmpStr = TheLexer->getLine();
+    std::string LexerStr(std::move(*tmpStr));
+    delete tmpStr;
+    INIT_TOKENIZER(const_cast<char*>(LexerStr.c_str()));
     if (token == NULL) INVALID();
-    #define GET_TOKEN() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
 
-    // we use an anonymous enum      for future extensions
+    // anonymous enum to encode actions
     enum { buildCode, canBuildCode, checkCodeRequired };
-
     int action;
+
     if (!strcasecmp(token, "BUILD")) {
         action = buildCode;
     } else if (!strcasecmp(token, "CAN_BUILD")) {
@@ -973,7 +1057,6 @@ void Parser::handleCompCodeCommand() {
     const std::string P2Name(token);
 
     // TODO trailing tokens?
-    free(cmdLine);
 
     // now process parsed arguments
     Function* src = TheHelper->getFunction(F1Name);
@@ -1042,10 +1125,8 @@ void Parser::handleCompCodeCommand() {
         }
     }
 
-    #undef GET_TOKEN
     #undef INVALID
 }
-
 
 void Parser::handleLoadIRCommand() {
     std::string *FileName = TheLexer->getLine();

@@ -36,11 +36,11 @@ private:
     void handleInsertOSRCommand();
     void handleLoadIRCommand();
     void handleLoadLibCommand();
+    void handleMapsCommand();
     void handleRepeatCommand();
     void handleShowAddrCommand();
     void handleShowCFGCommand(bool showInstructions);
     void handleTrackAsmCommand();
-    void handleInsertOpenOSRCommand();
     void handleOptCommand();
     void handleOldOptCommand(bool CFGSimplificationOnly);
     void handleVerboseCommand();

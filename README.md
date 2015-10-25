@@ -14,16 +14,21 @@ List of available commands:
 	Show the CFG (with instructions) of a given function.
 --> CLONE_FUN <function_name> AS <clone_name>
 	Clone a given function and generate a StateMap for the two functions.
+--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>
+	Manipulate compensation code for OSR points.
+	Enter HELP COMP_CODE to find out more.
 --> DUMP [<function_name> | <module_name>]
 	Show the IR code of a given function or module.
---> INSERT_OSR <...>
+--> INSERT_OSR [...]
 	Insert an OSR point in a function.
-	Enter HELP INSERT_OSR to find out the syntax.
+	Enter HELP INSERT_OSR to find out more.
 --> LOAD_IR <file_name>
 	Load an IR module from a given file.
 --> LOAD_LIB <file_name>
 	Load the dynamic library at the given path.
---> OPT <function_name> { <opt1> ... }
+--> MAPS [...]
+	Manipulate StateMap objects.
+	Enter HELP MAPS to find out more.--> OPT <function_name> { <opt1> ... }
 	Perform optimization passes on a given function.
 	Enter HELP OPT to find out which optimizations are supported.
 --> OPT_CFG <function_name>
@@ -40,8 +45,6 @@ List of available commands:
 	Show function symbols tracked by MCJITHelper.
 --> SHOW_LINE_IDS <function_name>
 	Show by-line IR identifiers for a given function.
---> SHOW_MAPS
-	Show registered StateMap objects.
 --> SHOW_MODS
 	Show loaded modules and their symbols.
 --> TRACK_ASM
@@ -55,6 +58,22 @@ The TinyVM command line supports the invocation of loaded functions. Functions
 can be invoked as in C, except for the final semi-colon that must not be added.
 For the time being, only functions with integer arguments and return values are
 supported.
+TinyVM> HELP COMP_CODE
+Manipulate compensation code for OSR points:
+--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>
+
+where:
+	OP is one of the following actions: CHECK, CAN_BUILD, BUILD
+	F1 and F2 are existing functions
+	P1 and P2 are locations in F1 and F2 respectively
+
+COMP_CODE can CHECK whether a compensation code is required to perform an OSR
+transition from P1 to P2, verify if OSRKit CAN_BUILD it automatically and
+actually BUILD it.
+
+Program locations can be expressed using an LLVM '%name' (including numerical
+IDs for anonymous values) or a line ID '$i' reported by SHOW_LINE_IDS. When a
+basic block is specified, its first non-PHI instruction is picked as location.
 TinyVM> HELP INSERT_OSR
 OSR points can be inserted with one of the following commands:
 --> INSERT_OSR <PROB> <COND> OPEN UPDATE IN <F1> AT <P1> CLONE
@@ -83,8 +102,15 @@ For SLVD transitions, a continuation function F2' is statically generated from
 F2 to resume the execution at P2.
 
 Program locations can be expressed using an LLVM '%name' (including numerical
-IDs for anonymous values) or a line ID '$i' reported by SHOW_LINE_IDS. For basic
-block locations OSR points are inserted before the first non-PHI instruction.
+IDs for anonymous values) or a line ID '$i' reported by SHOW_LINE_IDS. When a
+basic block is specified, its first non-PHI instruction is picked as location.
+TinyVM> HELP MAPS
+Manipulate StateMap objects:
+--> MAPS SHOW
+--> MAPS UPDATE <F1> <F2>
+
+MAPS can either SHOW the available StateMap objects, or UPDATE the StateMap for
+functions F1 and F2 when they have been optimized using the OPT command.
 TinyVM> HELP OPT
 Syntax:
     OPT <function_name> { <opt1> <opt2> ... << <optN> }
@@ -108,5 +134,4 @@ List of OSR-compatible implemented function passes:
 	Sparse conditional constant propagation.
 --> Sink
 	Sink instructions into successor blocks.
-TinyVM>
 ```

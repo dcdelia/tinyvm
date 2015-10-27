@@ -1484,7 +1484,7 @@ void Parser::dumpFunctionWithLineIDs(llvm::Function* F) {
     std::cerr << "}" << std::endl;
 }
 
-const llvm::Value* Parser::getValueFromStrID(llvm::Function &F, std::string &StrID,
+const Value* Parser::getValueFromStrID(Function &F, std::string &StrID,
         Parser::IDToValueVec *slotIDs, Parser::IDToValueVec *lineIDs) {
     int length = StrID.length();
     if (length < 2) return nullptr;
@@ -1503,7 +1503,7 @@ const llvm::Value* Parser::getValueFromStrID(llvm::Function &F, std::string &Str
         if (!isNumber || !lineIDs) return nullptr;
         int ID = (int)strtol(StrID.c_str()+1, NULL, 10);
 
-        if (ID == 0 || ID > lineIDs->size() + 1) return nullptr;
+        if (ID == 0 || ID > lineIDs->size()) return nullptr;
         return (*lineIDs)[ID-1];
     }
 

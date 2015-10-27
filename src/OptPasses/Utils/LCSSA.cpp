@@ -21,9 +21,9 @@
 #include <llvm/Transforms/Utils/SSAUpdater.h>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_lcssa"
+#define DEBUG_TYPE "lcssa"
 
-STATISTIC(NumLCSSA, "Number of live out of a loop variables");
+OSR_STATISTIC(NumLCSSA, "Number of live out of a loop variables");
 
 /// Return true if the specified block is in the list.
 static bool isExitBlock(BasicBlock *BB,

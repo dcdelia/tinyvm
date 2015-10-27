@@ -33,12 +33,12 @@
 #include <algorithm>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_licm"
+#define DEBUG_TYPE "licm"
 
-STATISTIC(NumSunk      , "Number of instructions sunk out of loop");
-STATISTIC(NumHoisted   , "Number of instructions hoisted out of loop");
-STATISTIC(NumMovedLoads, "Number of load insts hoisted or sunk");
-STATISTIC(NumMovedCalls, "Number of call insts hoisted or sunk");
+OSR_STATISTIC(NumSunk      , "Number of instructions sunk out of loop");
+OSR_STATISTIC(NumHoisted   , "Number of instructions hoisted out of loop");
+OSR_STATISTIC(NumMovedLoads, "Number of load insts hoisted or sunk");
+OSR_STATISTIC(NumMovedCalls, "Number of call insts hoisted or sunk");
 
 /* [OSR] Memory promotion */
 //STATISTIC(NumPromoted  , "Number of memory locations promoted to registers");

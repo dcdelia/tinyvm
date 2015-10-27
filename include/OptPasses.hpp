@@ -19,6 +19,8 @@
 #include <llvm/IR/DataLayout.h>
 #include <llvm/Target/TargetLibraryInfo.h>
 
+#include <vector>
+
 /* Adapted LLVM passes */
 llvm::FunctionPass* OSR_createAggressiveDCEPass();
 llvm::FunctionPass* OSR_createConstantPropagationPass();
@@ -64,6 +66,34 @@ bool OSR_FoldBranchToCommonDest(llvm::BranchInst *BI, const llvm::DataLayout *DL
 bool OSR_RecursivelyDeleteTriviallyDeadInstructions(llvm::Value *V,
         const llvm::TargetLibraryInfo *TLI, CodeMapper* OSR_CM);
 
+/* Simplified version of LLVM's Statistic class that allows counter reset */
+class OSR_Statistic {
+public:
+    const char *Name;
+    const char *Desc;
+    int Value;
+
+    // constructor
+    OSR_Statistic(const char* Name, const char* Desc, int Value);
+
+    // operators
+    operator unsigned() const { return Value; }
+    unsigned operator++(int) { init(); return Value++; }
+    OSR_Statistic& operator++() { ++Value; return init(); }
+
+    // print/reset statistics
+    static void printStats();
+    static void resetStats();
+
+private:
+    bool Initialized;
+
+    OSR_Statistic& init();
+    static std::vector<OSR_Statistic*> statistics;
+};
+
+#define OSR_STATISTIC(VARNAME, DESC) \
+        static OSR_Statistic VARNAME(DEBUG_TYPE, DESC, 0)
 
 /* Adaptation of LLVM's internal macros*/
 #define OSR_INITIALIZE_PASS(passName, arg, name, cfg, analysis) \

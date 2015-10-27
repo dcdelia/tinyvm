@@ -17,9 +17,9 @@
 #include <llvm/Pass.h>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_adce"
+#define DEBUG_TYPE "adce"
 
-STATISTIC(NumRemoved, "Number of instructions removed");
+OSR_STATISTIC(NumRemoved, "Number of instructions removed");
 
 namespace {
   struct OSR_ADCE : public FunctionPass {

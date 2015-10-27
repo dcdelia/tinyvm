@@ -10,6 +10,7 @@
 
 #undef NDEBUG
 #include <cassert>
+#include <iostream>
 #include <map>
 
 using namespace llvm;
@@ -29,7 +30,6 @@ CodeMapper* CodeMapper::createCodeMapper(Function &F) {
     CodeMapper* LM = new CodeMapper();
     globalMap.insert(std::pair<Function*, CodeMapper*>(&F, LM));
 
-    // embed LM as metadata for the function
     return LM;
 }
 
@@ -141,6 +141,7 @@ void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
  *
  * Actions:
  * - remove corresponding 1:1 value info for D
+ * - remove information for values for which D is the 1:1 corresponding value
  * - set LPad[D] to LPad[succ(D)] = LPad[I2'] = I2
  * - for each OSRSrc s.t. LPad[OSRSrc] = D do
  *      set LPad[OSRSrc] to LPad[succ(D)] = I2
@@ -149,16 +150,16 @@ void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
 void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
     StateMap::OneToOneValueMap &defaultOneToOneMap =
             M->getAllCorrespondingOneToOneValues();
-    StateMap::OneToOneValueMap::iterator it = defaultOneToOneMap.find(DeletedI);
     Value* otherD = nullptr;
-    if (it != defaultOneToOneMap.end()) {
-        otherD = it->second;
-        defaultOneToOneMap.erase(it);
-        // Deleted instruction might not exist in the original function (this
-        // happens when it has been added at some point during optimization)
-        it = defaultOneToOneMap.find(otherD);
-        if (it != defaultOneToOneMap.end()) {
-            defaultOneToOneMap.erase(it);
+    for (StateMap::OneToOneValueMap::iterator it = defaultOneToOneMap.begin(),
+            end = defaultOneToOneMap.end(); it != end; ) {
+        if (it->first == DeletedI) {
+            otherD = it->second;
+            defaultOneToOneMap.erase(it++);
+        } else if (it->second == DeletedI) {
+            defaultOneToOneMap.erase(it++);
+        } else {
+            ++it;
         }
     }
 
@@ -174,7 +175,6 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
         // we ought to be conservative here
         discardLandingPads(M, DeletedI);
     }
-
 }
 
 /*
@@ -287,6 +287,16 @@ void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {
             case CMAction::CMAK_RAUWInstWithInst:   ++instRAUWedWithInst; break;
         }
         action->apply(M, verbose);
+    }
+
+    if (verbose) {
+        std::cerr << "Added instructions: " << addedInst << std::endl;
+        std::cerr << "Deleted instructions: " << deletedInst << std::endl;
+        std::cerr << "Hoisted instructions: " << hoistedInst << std::endl;
+        std::cerr << "Sunk instructions: " << sunkInst << std::endl;
+        std::cerr << "RAUW_I instructions: " << instRAUWedWithInst << std::endl;
+        std::cerr << "RAUW_C instructions: " << instRAUWedwithConst << std::endl;
+        std::cerr << "RAUW_A instructions: " << instRAUWedWithArg << std::endl;
     }
 }
 

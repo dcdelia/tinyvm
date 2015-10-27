@@ -13,9 +13,9 @@
 #include <llvm/Transforms/Utils/Local.h>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_dce"
+#define DEBUG_TYPE "dce"
 
-STATISTIC(DCEEliminated, "Number of insts removed");
+OSR_STATISTIC(DCEEliminated, "Number of insts removed");
 
 namespace {
   //===--------------------------------------------------------------------===//

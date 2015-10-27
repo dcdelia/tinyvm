@@ -28,10 +28,10 @@
 #include <algorithm>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_sccp"
+#define DEBUG_TYPE "sccp"
 
-STATISTIC(NumInstRemoved, "Number of instructions removed");
-STATISTIC(NumDeadBlocks , "Number of basic blocks unreachable");
+OSR_STATISTIC(NumInstRemoved, "Number of instructions removed");
+OSR_STATISTIC(NumDeadBlocks , "Number of basic blocks unreachable");
 
 /* [OSR] Interprocedural SSCP */
 //STATISTIC(IPNumInstRemoved, "Number of instructions removed by IPSCCP");

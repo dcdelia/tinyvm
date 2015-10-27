@@ -17,10 +17,10 @@
 #include <llvm/Support/raw_ostream.h>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_sink"
+#define DEBUG_TYPE "sink"
 
-STATISTIC(NumSunk, "Number of instructions sunk");
-STATISTIC(NumSinkIter, "Number of sinking iterations");
+OSR_STATISTIC(NumSunk, "Number of instructions sunk");
+OSR_STATISTIC(NumSinkIter, "Number of sinking iterations");
 
 namespace {
   class OSR_Sinking : public FunctionPass {

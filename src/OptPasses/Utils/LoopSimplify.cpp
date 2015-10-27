@@ -33,8 +33,8 @@ using namespace llvm;
 
 #define DEBUG_TYPE "loop-simplify"
 
-STATISTIC(NumInserted, "Number of pre-header or exit blocks inserted");
-STATISTIC(NumNested  , "Number of nested loops split out");
+OSR_STATISTIC(NumInserted, "Number of pre-header or exit blocks inserted");
+OSR_STATISTIC(NumNested  , "Number of nested loops split out");
 
 // If the block isn't already, move the new block to right after some 'outside
 // block' block.  This prevents the preheader from being placed inside the loop

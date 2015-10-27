@@ -24,13 +24,13 @@
 using namespace llvm;
 using namespace llvm::PatternMatch;
 
-#define DEBUG_TYPE "OSR_early-cse"
+#define DEBUG_TYPE "early-cse"
 
-STATISTIC(NumSimplify, "Number of instructions simplified or DCE'd");
-STATISTIC(NumCSE,      "Number of instructions CSE'd");
-STATISTIC(NumCSELoad,  "Number of load instructions CSE'd");
-STATISTIC(NumCSECall,  "Number of call instructions CSE'd");
-STATISTIC(NumDSE,      "Number of trivial dead stores removed");
+OSR_STATISTIC(NumSimplify, "Number of instructions simplified or DCE'd");
+OSR_STATISTIC(NumCSE,      "Number of instructions CSE'd");
+OSR_STATISTIC(NumCSELoad,  "Number of load instructions CSE'd");
+OSR_STATISTIC(NumCSECall,  "Number of call instructions CSE'd");
+OSR_STATISTIC(NumDSE,      "Number of trivial dead stores removed");
 
 static unsigned getHash(const void *V) {
   return DenseMapInfo<const void*>::getHashValue(V);

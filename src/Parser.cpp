@@ -16,12 +16,14 @@
 #include "history.h"
 #include "timer.h"
 
+#include <llvm/ADT/Statistic.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instruction.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_os_ostream.h>
 
 #undef NDEBUG
@@ -309,9 +311,13 @@ void Parser::handleOptCommand() {
     }
     while (token != tok_newline && token != tok_eof);
 
+    if (TheHelper->verbose) OSR_Statistic::resetStats();
+
     FPM.doInitialization();
     FPM.run(*F);
     FPM.doFinalization();
+
+    if (TheHelper->verbose) OSR_Statistic::printStats();
 
     EXIT: return;
 

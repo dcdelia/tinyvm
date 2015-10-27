@@ -77,7 +77,8 @@ $(BUILD)/BuildComp.o: $(SRC)/BuildComp.cpp $(INCLUDE)/BuildComp.hpp $(INCLUDE)/S
 # Adapted LLVM passes
 OptPasses: $(BUILD)/ADCE.o $(BUILD)/DCE.o $(BUILD)/ConstantProp.o $(BUILD)/Sink.o \
 	   $(BUILD)/EarlyCSE.o $(BUILD)/SCCP.o $(BUILD)/LICM.o $(BUILD)/PassUtils.o \
-	   $(BUILD)/SimplifyCFG.o $(BUILD)/LCSSA.o $(BUILD)/LoopSimplify.o
+	   $(BUILD)/SimplifyCFG.o $(BUILD)/LCSSA.o $(BUILD)/LoopSimplify.o \
+	   $(BUILD)/OSR_Statistic.o
 
 $(BUILD)/ADCE.o: $(PASSES_SRC)/ADCE.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/ADCE.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/ADCE.o
@@ -111,6 +112,9 @@ $(BUILD)/LCSSA.o: $(PASSES_SRC)/Utils/LCSSA.cpp $(INCLUDE)/OptPasses.hpp $(INCLU
 
 $(BUILD)/LoopSimplify.o: $(PASSES_SRC)/Utils/LoopSimplify.cpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/CodeMapper.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/Utils/LoopSimplify.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/LoopSimplify.o
+
+$(BUILD)/OSR_Statistic.o: $(PASSES_SRC)/Utils/OSR_Statistic.cpp $(INCLUDE)/OptPasses.hpp
+	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/Utils/OSR_Statistic.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSR_Statistic.o
 
 clean:
 	rm -f $(BUILD)/*.o

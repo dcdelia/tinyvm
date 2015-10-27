@@ -16,9 +16,9 @@
 #include <set>
 using namespace llvm;
 
-#define DEBUG_TYPE "OSR_constprop"
+#define DEBUG_TYPE "constprop"
 
-STATISTIC(NumInstKilled, "Number of instructions killed");
+OSR_STATISTIC(NumInstKilled, "Number of instructions killed");
 
 namespace {
   struct OSR_ConstantPropagation : public FunctionPass {

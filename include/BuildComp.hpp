@@ -30,6 +30,7 @@ public:
     static bool isBuildCompRequired(StateMap* M,
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
+                        std::set<llvm::Value*> &missingSet,
                         bool verbose = false);
 
     static void printStatistics(StateMap* M,

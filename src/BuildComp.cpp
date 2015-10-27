@@ -99,6 +99,7 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     // TODO: other instructions as well?
     if (isa<PHINode>(instToReconstruct) || isa<LoadInst>(instToReconstruct)) {
         // TODO check optimization for LOAD from read-only memory
+        valuesToKeep.insert(instToReconstruct);
         return nullptr;
     }
 
@@ -190,7 +191,7 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
 }
 
 bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
-        Instruction* LPad, bool verbose) {
+        Instruction* LPad, std::set<Value*> &missingSet, bool verbose) {
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
@@ -219,21 +220,20 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
                 LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
 
     // check if for each value to set there is a 1:1 mapping with a live value
-    std::vector<Value*> valuesToReconstruct;
     for (const Value* v: liveAtLPad) {
         Value* valToSet = const_cast<Value*>(v);
         Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
         if (oneToOneVal == nullptr || liveAtOSRSrc.count(oneToOneVal) == 0) {
-            valuesToReconstruct.push_back(valToSet);
+            missingSet.insert(valToSet);
         }
     }
 
-    bool ret = !valuesToReconstruct.empty();
+    bool ret = !missingSet.empty();
 
     if (verbose && ret) {
         std::cerr << "No live value available to set the following values:"
                   << std::endl;
-        for (Value* v: valuesToReconstruct) {
+        for (Value* v: missingSet) {
             v->dump();
         }
     }
@@ -328,7 +328,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         LPInfo->valueInfoMap = std::move(valueInfoMap);
     }
 
-    return error;
+    return !error;
 }
 
 void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
@@ -373,15 +373,18 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     }
 
     std::set<Value*> keepSet;
+    std::set<Value*> missingSet;
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
         Instruction* OSRSrc = it->first;
         Instruction* LPad = it->second;
         Function* F = OSRSrc->getParent()->getParent();
         assert ( (F == F1 || F == F2) && "OSRSrc from unknown function");
-        bool bcReq = BuildComp::isBuildCompRequired(M, OSRSrc, LPad, verbose);
+        bool bcReq = BuildComp::isBuildCompRequired(M, OSRSrc, LPad, missingSet,
+                verbose);
         bool bcFails = false;
         if (bcReq) {
+            missingSet.clear();
             bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
                     BuildComp::Heuristic::BC_NONE, false, verbose);
             keepSet.clear();

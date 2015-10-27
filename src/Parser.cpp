@@ -489,7 +489,7 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> CLONE_FUN <function_name> AS <clone_name>" << std::endl
               << "\tClone a given function and generate a StateMap for the two "
               << "functions." << std::endl;
-    std::cerr << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>" << std::endl
+    std::cerr << "--> COMP_CODE [...]" << std::endl
               << "\tManipulate compensation code for OSR points." << std::endl
               << "\tEnter HELP COMP_CODE to find out more." << std::endl;
     std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
@@ -504,7 +504,7 @@ void Parser::handleHelpCommand() {
               << "\tLoad the dynamic library at the given path." << std::endl;
     std::cerr << "--> MAPS [...]" << std::endl
               << "\tManipulate StateMap objects." << std::endl
-              << "\tEnter HELP MAPS to find out more.";
+              << "\tEnter HELP MAPS to find out more." << std::endl;
     std::cerr << "--> OPT <function_name> { <opt1> ... } " << std::endl
               << "\tPerform optimization passes on a given function." << std::endl
               << "\tEnter HELP OPT to find out which optimizations are supported."
@@ -554,15 +554,24 @@ void Parser::handleHelpCommand() {
 
     COMP_CODE:
     std::cerr << "Manipulate compensation code for OSR points:" << std::endl
-              << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>"
+              << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>" << std::endl
+              << "--> COMP_CODE <OP> FOR <F1> TO <F2>"
               << std::endl << std::endl << "where:" << std::endl
-              << "\tOP is one of the following actions: CHECK, CAN_BUILD, BUILD" << std::endl
+              << "\tOP is one of the following actions: CHECK, CAN_BUILD, "
+              << "BUILD, SHOW, TEST" << std::endl
               << "\tF1 and F2 are existing functions" << std::endl
               << "\tP1 and P2 are locations in F1 and F2 respectively"
               << std::endl << std::endl;
     std::cerr << "COMP_CODE can CHECK whether a compensation code is required"
               << " to perform an OSR transition from P1 to P2, verify if OSRKit"
-              << " CAN_BUILD it automatically and actually BUILD it."
+              << " CAN_BUILD it automatically and actually BUILD it. For "
+              << "debugging purposes, COMP_CODE can SHOW a built compensation "
+              << "code and also TEST if an OSR continuation funtion can be "
+              << "successfully generated from it."
+              << std::endl << std::endl;
+    std::cerr << "When P1 and P2 are not specified, the required action is "
+              << "performed on all the candidate OSR source locations in F1 "
+              << "encoded in the StateMap."
               << std::endl;
     SHOW_HELP_FOR_LOCATIONS();
 
@@ -1038,7 +1047,7 @@ void Parser::handleCompCodeCommand() {
     if (token == NULL) INVALID();
 
     // anonymous enum to encode actions
-    enum { buildCode, canBuildCode, checkCodeRequired };
+    enum { buildCode, canBuildCode, checkCodeRequired, testCode, showCode };
     int action;
 
     if (!strcasecmp(token, "BUILD")) {
@@ -1047,9 +1056,16 @@ void Parser::handleCompCodeCommand() {
         action = canBuildCode;
     } else if (!strcasecmp(token, "CHECK")) {
         action = checkCodeRequired;
+    } else if (!strcasecmp(token, "TEST")) {
+        action = testCode;
+    } else if (!strcasecmp(token, "SHOW")) {
+        action = showCode;
     } else {
         INVALID();
     }
+
+    std::string P1Name, P2Name;
+    bool forAllPairs = false;
 
     GET_TOKEN();
     if (strcasecmp(token, "FOR")) INVALID();
@@ -1058,34 +1074,48 @@ void Parser::handleCompCodeCommand() {
     const std::string F1Name(token);
 
     GET_TOKEN();
-    if (strcasecmp(token, "AT")) INVALID();
+    if (!strcasecmp(token, "TO")) {
+        forAllPairs = true;
+    } else if (strcasecmp(token, "AT")) {
+        INVALID();
+    }
 
-    GET_TOKEN();
-    const std::string P1Name(token);
+    if (!forAllPairs) {
+        GET_TOKEN();
+        P1Name = token;
 
-    GET_TOKEN();
-    if (strcasecmp(token, "TO")) INVALID();
+        GET_TOKEN();
+        if (strcasecmp(token, "TO")) INVALID();
+    }
 
     GET_TOKEN();
     const std::string F2Name(token);
 
-    GET_TOKEN();
-    if (strcasecmp(token, "AT")) INVALID();
+    if (!forAllPairs)  {
+        GET_TOKEN();
+        if (strcasecmp(token, "AT")) INVALID();
 
-    GET_TOKEN();
-    const std::string P2Name(token);
+        GET_TOKEN();
+        P2Name = token;
+    }
 
     // TODO trailing tokens?
 
     // now process parsed arguments
+    Instruction* OSRSrc = nullptr;
+    Instruction* LPad = nullptr;
+    std::vector<StateMap::LocPair> workList;
+
     Function* src = TheHelper->getFunction(F1Name);
     if (src == nullptr) {
         std::cerr << "Unable to find function " << F1Name << "!" << std::endl;
         return;
     }
 
-    Instruction* OSRSrc = const_cast<Instruction*>(getOSRLocationFromStrIDs(*src, P1Name));
-    if (OSRSrc == nullptr) return;
+    if (!forAllPairs) {
+        OSRSrc = const_cast<Instruction*>(getOSRLocationFromStrIDs(*src, P1Name));
+        if (OSRSrc == nullptr) return;
+    }
 
     Function* dest = TheHelper->getFunction(F2Name);
     if (dest == nullptr) {
@@ -1093,14 +1123,26 @@ void Parser::handleCompCodeCommand() {
         return;
     }
 
-    Instruction* LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, P2Name));
-    if (LPad == nullptr) return;
+    if (!forAllPairs) {
+        LPad = const_cast<Instruction*>(getOSRLocationFromStrIDs(*dest, P2Name));
+        if (LPad == nullptr) return;
+        workList.push_back(StateMap::LocPair(OSRSrc, LPad));
+    }
+
 
     StateMap* M = TheHelper->getStateMap(src, dest);
 
     if (M == nullptr) {
         std::cerr << "Unable to find a StateMap for " << F1Name << ", "
                   << F2Name << std::endl;
+    } else if (forAllPairs) {
+        StateMap::LocMap &landingPads = M->getAllLandingPads();
+        for (StateMap::LocMap::iterator it = landingPads.begin(),
+                end = landingPads.end(); it != end; ++it) {
+            if (it->first->getParent()->getParent() == src) {
+                workList.push_back(StateMap::LocPair(it->first, it->second));
+            }
+        }
     } else {
         Instruction* LPadFromStateMap = M->getLandingPad(OSRSrc);
         if (LPadFromStateMap == nullptr) {
@@ -1114,36 +1156,118 @@ void Parser::handleCompCodeCommand() {
         }
     }
 
-    // perform the required action
-    if (action == checkCodeRequired) {
-        bool ret = BuildComp::isBuildCompRequired(M, OSRSrc, LPad, TheHelper->verbose);
-        if (ret) {
-            std::cerr << "Compensation code is required!" << std::endl;
+    // this is required to print info about anonymous values
+    int lineID;
+    IDToValueVec lineIDsForSrc = computeLineIDs(src);
+    IDToValueVec lineIDsForDest = computeLineIDs(dest);
+    int linesForSrc = lineIDsForSrc.size();
+    int linesForDest = lineIDsForDest.size();
+
+    std::string OSRSrcName, LPadName;
+
+    #define LOOK_FOR_LINE_ID_OSRSRC() for (lineID = 0; lineID < \
+            linesForSrc && OSRSrc != lineIDsForSrc[lineID]; ++lineID)
+    #define LOOK_FOR_LINE_ID_LPAD() for (lineID = 0; lineID < \
+            linesForDest && LPad != lineIDsForDest[lineID]; ++lineID)
+
+    std::set<Value*> missingSet;
+    std::set<Value*> keepSet;
+    for (int i = 0, e = workList.size(); i != e; ++i) {
+        OSRSrc = workList[i].first;
+        LPad = workList[i].second;
+
+        // print info about the LocPair being processed
+        if (OSRSrc->hasName()) {
+            OSRSrcName = "%";
+            OSRSrcName += OSRSrc->getName().str();
         } else {
-            std::cerr << "No compensation code is required." << std::endl;
+            OSRSrcName = "$";
+            LOOK_FOR_LINE_ID_OSRSRC();
+            assert (lineID != linesForSrc && "no line ID for OSRSrc?");
+            OSRSrcName += std::to_string(++lineID); // offset by 1
         }
-    } else if (action == buildCode || action == canBuildCode) {
-        bool doBuild = (action == buildCode);
-        std::set<Value*> keepSet;
-        bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                BuildComp::Heuristic::BC_NONE, doBuild, TheHelper->verbose);
-        if (ret) {
-            if (doBuild) {
-                std::cerr << "Compensation code built successfully." << std::endl;
-            } else {
-                std::cerr << "OSRKit can build the required compensation code."
-                          << std::endl;
-            }
+        if (LPad->hasName()) {
+            LPadName = "%";
+            LPadName += LPad->getName().str();
         } else {
-            std::cerr << "Compensation code cannot be built automatically, as "
-                      << "the following values cannot be reconstructed:"
+            LPadName = "$";
+            LOOK_FOR_LINE_ID_LPAD();
+            assert (lineID != linesForDest && "no line ID for LPad?");
+            LPadName += std::to_string(++lineID); // offset by 1
+        }
+
+        if (forAllPairs) {
+            std::cerr << "--> <" << OSRSrcName << ", " << LPadName << ">"
                       << std::endl;
-            for (Value* v: keepSet) {
+        }
+
+        // perform the required action
+
+        if (action == showCode) {
+            // TODO implement dump() method for CompCode
+            std::cerr << "Sorry, this feature hasn't been fully implemented yet!"
+                      << std::endl;
+            continue;
+        }
+
+        // all the remaining actions require isBuildCompRequired()
+        missingSet.clear();
+        bool isCompRequired = BuildComp::isBuildCompRequired(M, OSRSrc, LPad,
+                missingSet, TheHelper->verbose);
+        if (!isCompRequired) {
+            std::cerr << "No compensation code is required." << std::endl;
+            continue;
+        }
+
+        if (action == checkCodeRequired) {
+            std::cerr << "Compensation code is required to reconstruct:"
+                      << std::endl;
+            for (Value* v: missingSet) {
                 v->dump();
             }
+        } else if (action == buildCode || action == canBuildCode) {
+            bool doBuild = (action == buildCode);
+            std::set<Value*> keepSet;
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+                    BuildComp::Heuristic::BC_NONE, doBuild, TheHelper->verbose);
+            if (ret) {
+                if (doBuild) {
+                    std::cerr << "Compensation code built successfully." << std::endl;
+                } else {
+                    std::cerr << "OSRKit can build the required compensation code."
+                              << std::endl;
+                }
+            } else {
+                std::cerr << "Compensation code cannot be built automatically, "
+                          << "as the following values cannot be reconstructed:"
+                          << std::endl;
+                for (Value* v: keepSet) {
+                    v->dump();
+                }
+            }
+        } else if (action == testCode) {
+            keepSet.clear();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+                    BuildComp::Heuristic::BC_NONE, true, TheHelper->verbose);
+            if (!ret) {
+                std::cerr << "Compensation code cannot be built automatically, "
+                          << "as the following values cannot be reconstructed:"
+                          << std::endl;
+                for (Value* v: keepSet) {
+                    v->dump();
+                }
+                continue;
+            }
+
+            // TODO generate function
+            std::cerr << "Sorry, this feature hasn't been fully implemented yet!"
+                      << std::endl;
         }
+
     }
 
+    #undef LOOK_FOR_LINE_ID_OSRSRC
+    #undef LOOK_FOR_LINE_ID_LPAD
     #undef INVALID
 }
 
@@ -1379,8 +1503,8 @@ const llvm::Value* Parser::getValueFromStrID(llvm::Function &F, std::string &Str
         if (!isNumber || !lineIDs) return nullptr;
         int ID = (int)strtol(StrID.c_str()+1, NULL, 10);
 
-        if (ID >= lineIDs->size()) return nullptr;
-        return (*lineIDs)[ID];
+        if (ID == 0 || ID > lineIDs->size() + 1) return nullptr;
+        return (*lineIDs)[ID-1];
     }
 
     // anonymous LLVM Value

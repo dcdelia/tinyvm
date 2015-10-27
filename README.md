@@ -14,7 +14,7 @@ List of available commands:
 	Show the CFG (with instructions) of a given function.
 --> CLONE_FUN <function_name> AS <clone_name>
 	Clone a given function and generate a StateMap for the two functions.
---> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>
+--> COMP_CODE [...]
 	Manipulate compensation code for OSR points.
 	Enter HELP COMP_CODE to find out more.
 --> DUMP [<function_name> | <module_name>]
@@ -28,7 +28,8 @@ List of available commands:
 	Load the dynamic library at the given path.
 --> MAPS [...]
 	Manipulate StateMap objects.
-	Enter HELP MAPS to find out more.--> OPT <function_name> { <opt1> ... }
+	Enter HELP MAPS to find out more.
+--> OPT <function_name> { <opt1> ... }
 	Perform optimization passes on a given function.
 	Enter HELP OPT to find out which optimizations are supported.
 --> OPT_CFG <function_name>
@@ -61,15 +62,21 @@ supported.
 TinyVM> HELP COMP_CODE
 Manipulate compensation code for OSR points:
 --> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>
+--> COMP_CODE <OP> FOR <F1> TO <F2>
 
 where:
-	OP is one of the following actions: CHECK, CAN_BUILD, BUILD
+	OP is one of the following actions: CHECK, CAN_BUILD, BUILD, SHOW, TEST
 	F1 and F2 are existing functions
 	P1 and P2 are locations in F1 and F2 respectively
 
 COMP_CODE can CHECK whether a compensation code is required to perform an OSR
 transition from P1 to P2, verify if OSRKit CAN_BUILD it automatically and
-actually BUILD it.
+actually BUILD it. For debugging purposes, COMP_CODE can SHOW a built
+compensation code and also TEST if an OSR continuation funtion can be
+successfully generated from it.
+
+When P1 and P2 are not specified, the required action is performed on all the
+candidate OSR source locations in F1 encoded in the StateMap.
 
 Program locations can be expressed using an LLVM '%name' (including numerical
 IDs for anonymous values) or a line ID '$i' reported by SHOW_LINE_IDS. When a

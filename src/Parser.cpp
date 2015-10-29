@@ -1035,6 +1035,33 @@ void Parser::handleCloneFunCommand() {
     TheHelper->registerStateMap(src, clonedFun, M);
 }
 
+std::string Parser::getInstrID(Instruction* I, Parser::IDToValueVec &slotIDs,
+        Parser::IDToValueVec &lineIDs) {
+
+    std::string InstName = "%";
+
+    if (I->hasName()) {
+        InstName += I->getName().str();
+    } else {
+        int index, numIndexes;
+
+        for (index = 0, numIndexes = slotIDs.size(); index < numIndexes &&
+                slotIDs[index] != I; ++index);
+
+        if (index != numIndexes) {
+            InstName += std::to_string(index);
+        } else {
+            for (index = 0, numIndexes = lineIDs.size(); index < numIndexes &&
+                    lineIDs[index] != I; ++index);
+            assert(index != numIndexes && "instruction from another function?");
+            InstName = "$";
+            InstName += std::to_string(++index); // offset by 1
+        }
+    }
+
+    return InstName;
+}
+
 void Parser::handleCompCodeCommand() {
     #define INVALID() do { std::cerr << "Invalid syntax for an COMP_CODE command!" << std::endl\
             << "Error at argument " << numToken << ". Enter HELP COMP_CODE to display the right syntax." << std::endl;\
@@ -1156,61 +1183,36 @@ void Parser::handleCompCodeCommand() {
         }
     }
 
+    // this is required for dumping a compensation code to screen
+
+
     // this is required to print info about anonymous values
-    int lineID;
+    IDToValueVec slotIDsForSrc = computeSlotIDs(src);
+    IDToValueVec slotIDsForDest = computeSlotIDs(dest);
     IDToValueVec lineIDsForSrc = computeLineIDs(src);
     IDToValueVec lineIDsForDest = computeLineIDs(dest);
-    int linesForSrc = lineIDsForSrc.size();
-    int linesForDest = lineIDsForDest.size();
+
 
     std::string OSRSrcName, LPadName;
 
-    #define LOOK_FOR_LINE_ID_OSRSRC() for (lineID = 0; lineID < \
-            linesForSrc && OSRSrc != lineIDsForSrc[lineID]; ++lineID)
-    #define LOOK_FOR_LINE_ID_LPAD() for (lineID = 0; lineID < \
-            linesForDest && LPad != lineIDsForDest[lineID]; ++lineID)
-
     std::set<Value*> missingSet;
     std::set<Value*> keepSet;
+    std::vector<std::pair<StateMap::CompCode*, Value*>> compCodeWorkList;
     for (int i = 0, e = workList.size(); i != e; ++i) {
         OSRSrc = workList[i].first;
         LPad = workList[i].second;
 
         // print info about the LocPair being processed
-        if (OSRSrc->hasName()) {
-            OSRSrcName = "%";
-            OSRSrcName += OSRSrc->getName().str();
-        } else {
-            OSRSrcName = "$";
-            LOOK_FOR_LINE_ID_OSRSRC();
-            assert (lineID != linesForSrc && "no line ID for OSRSrc?");
-            OSRSrcName += std::to_string(++lineID); // offset by 1
-        }
-        if (LPad->hasName()) {
-            LPadName = "%";
-            LPadName += LPad->getName().str();
-        } else {
-            LPadName = "$";
-            LOOK_FOR_LINE_ID_LPAD();
-            assert (lineID != linesForDest && "no line ID for LPad?");
-            LPadName += std::to_string(++lineID); // offset by 1
-        }
+        OSRSrcName = getInstrID(OSRSrc, slotIDsForSrc, lineIDsForSrc);
+        LPadName = getInstrID(LPad, slotIDsForDest, lineIDsForDest);
+
 
         if (forAllPairs) {
             std::cerr << "--> <" << OSRSrcName << ", " << LPadName << ">"
                       << std::endl;
         }
 
-        // perform the required action
-
-        if (action == showCode) {
-            // TODO implement dump() method for CompCode
-            std::cerr << "Sorry, this feature hasn't been fully implemented yet!"
-                      << std::endl;
-            continue;
-        }
-
-        // all the remaining actions require isBuildCompRequired()
+        // all the actions require isBuildCompRequired()
         missingSet.clear();
         bool isCompRequired = BuildComp::isBuildCompRequired(M, OSRSrc, LPad,
                 missingSet, TheHelper->verbose);
@@ -1227,7 +1229,7 @@ void Parser::handleCompCodeCommand() {
             }
         } else if (action == buildCode || action == canBuildCode) {
             bool doBuild = (action == buildCode);
-            std::set<Value*> keepSet;
+            keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
                     BuildComp::Heuristic::BC_NONE, doBuild, TheHelper->verbose);
             if (ret) {
@@ -1256,18 +1258,69 @@ void Parser::handleCompCodeCommand() {
                 for (Value* v: keepSet) {
                     v->dump();
                 }
-                continue;
             }
 
             // TODO generate function
             std::cerr << "Sorry, this feature hasn't been fully implemented yet!"
                       << std::endl;
+        } else if (action == showCode) {
+            compCodeWorkList.clear();
+            StateMap::LocPair LP(OSRSrc, LPad);
+            StateMap::LocPairInfo* LPInfo = M->getLocPairInfo(LP);
+            if (LPInfo == nullptr) {
+                std::cerr << "Compensation code has not been generated yet!"
+                          << std::endl;
+                continue;
+            }
+
+            if (LPInfo->globalCompCode != nullptr) {
+                compCodeWorkList.push_back(std::pair<StateMap::CompCode*,
+                        Value*>(LPInfo->globalCompCode, nullptr));
+            }
+
+            for (StateMap::LocPairInfo::ValueInfoMap::iterator it =
+                    LPInfo->valueInfoMap.begin(), end = LPInfo->valueInfoMap.end();
+                    it != end; ++it) {
+                Value* valToSet = it->first;
+                if (it->second->isOneToOneValue()) {
+                    std::cerr << "Value to set at LPad: ";
+                    valToSet->dump();
+                    std::cerr << "Value to fetch (pair-specific): ";
+                    it->second->oneToOneValue->dump();
+                } else {
+                    compCodeWorkList.push_back(std::pair<StateMap::CompCode*,
+                        Value*>(it->second->compCode, valToSet));
+                }
+            }
+
+            for (const std::pair<StateMap::CompCode*, Value*> &compCodePair:
+                    compCodeWorkList) {
+                const StateMap::CompCode* compCode = compCodePair.first;
+                if (compCodePair.second == nullptr) {
+                    std::cerr << "Global compensation code" << std::endl;
+                } else {
+                    std::cerr << "Compensation code" << std::endl;
+                    std::cerr << "Value to set at LPad: ";
+                    compCodePair.second->dump();
+                }
+                std::cerr << "Arguments for the compensation code:";
+                if (compCode->args->size() == 0) {
+                    std::cerr << "No arguments." << std::endl;
+                } else {
+                    for (StateMap::CompCodeArgs::iterator it = compCode->args->begin(),
+                            end = compCode->args->end(); it != end; ++it) {
+                        (*it)->dump();
+                    }
+                }
+                std::cerr << "Instructions to execute:" << std::endl;
+                for (StateMap::CodeSequence::iterator it = compCode->code->begin(),
+                        end = compCode->code->end(); it != end; ++it) {
+                    (*it)->dump();
+                }
+            }
         }
 
     }
-
-    #undef LOOK_FOR_LINE_ID_OSRSRC
-    #undef LOOK_FOR_LINE_ID_LPAD
     #undef INVALID
 }
 

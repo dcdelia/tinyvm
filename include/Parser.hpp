@@ -57,13 +57,15 @@ private:
     static IDToValueVec computeSlotIDs(llvm::Function* F);
     static IDToValueVec computeLineIDs(llvm::Function* F);
     static void dumpFunctionWithLineIDs(llvm::Function* F);
+    static std::string getInstrID(llvm::Instruction* I, IDToValueVec &slotIDs,
+            IDToValueVec &lineIDs);
 
     static const llvm::Instruction* getOSRLocationFromStrIDs(llvm::Function &F,
-        const std::string &LocID);
+            const std::string &LocID);
 
     // works for Argument, BasicBlock and Instruction
     static const llvm::Value* getValueFromStrID(llvm::Function &F, std::string &StrID,
-        IDToValueVec *slotIDs, IDToValueVec *lineIDs);
+            IDToValueVec *slotIDs, IDToValueVec *lineIDs);
 
 };
 

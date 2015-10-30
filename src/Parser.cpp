@@ -1040,6 +1040,8 @@ std::string Parser::getInstrID(Instruction* I, Parser::IDToValueVec &slotIDs,
 
     std::string InstName = "%";
 
+    assert(I->getParent() != nullptr && I->getParent()->getParent() != nullptr);
+
     if (I->hasName()) {
         InstName += I->getName().str();
     } else {
@@ -1053,7 +1055,11 @@ std::string Parser::getInstrID(Instruction* I, Parser::IDToValueVec &slotIDs,
         } else {
             for (index = 0, numIndexes = lineIDs.size(); index < numIndexes &&
                     lineIDs[index] != I; ++index);
-            assert(index != numIndexes && "instruction from another function?");
+            if (index == numIndexes) {
+                std::cerr << "-------> WHD <--------" << std::endl;
+                I->dump();
+            }
+            //assert(index != numIndexes && "instruction from another function?");
             InstName = "$";
             InstName += std::to_string(++index); // offset by 1
         }
@@ -1183,10 +1189,7 @@ void Parser::handleCompCodeCommand() {
         }
     }
 
-    // this is required for dumping a compensation code to screen
-
-
-    // this is required to print info about anonymous values
+    // this is required to print info about unnamed instructions
     IDToValueVec slotIDsForSrc = computeSlotIDs(src);
     IDToValueVec slotIDsForDest = computeSlotIDs(dest);
     IDToValueVec lineIDsForSrc = computeLineIDs(src);

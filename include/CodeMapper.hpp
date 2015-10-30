@@ -55,10 +55,11 @@ private:
     static GlobalMap globalMap;
     std::vector<CMAction*> operations;
 
-    // manipulation of private fields in StateMap objects
+    // helper methods
     static void replaceLandingPads(StateMap* M, llvm::Instruction* OldLPad,
         llvm::Instruction* NewLPad);
     static void discardLandingPads(StateMap* M, llvm::Instruction* OldLPad);
+    static llvm::Instruction* findOtherI(StateMap* M, llvm::Instruction* I);
 };
 
 /* CMAction's derived classes implement LLVM's lightweight RTTI */

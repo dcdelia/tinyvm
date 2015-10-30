@@ -75,6 +75,7 @@ void CodeMapper::replaceAllUsesWith(Instruction* I, Value* V) {
     }
 }
 
+// TODO check if we can come up with a better strategy
 Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {
     if (isa<TerminatorInst>(I)) return nullptr; // TODO unconditional branchs?
 
@@ -91,10 +92,20 @@ Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {
 void CodeMapper::replaceLandingPads(StateMap* M, Instruction* OldLPad,
         Instruction* NewLPad) {
     StateMap::LocMap &landingPadMap = M->getAllLandingPads();
+    /*
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
         if (it->second == OldLPad) {
             it->second = NewLPad;
+        }
+    }
+    */
+    for (StateMap::LocMap::iterator it = landingPadMap.begin(),
+            end = landingPadMap.end(); it != end; ) {
+        if (it->second == OldLPad) {
+            (it++)->second = NewLPad;
+        } else {
+            ++it;
         }
     }
 }
@@ -112,6 +123,30 @@ void CodeMapper::discardLandingPads(StateMap* M, Instruction* OldLPad) {
     }
 }
 
+Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
+    Instruction* otherI = nullptr;
+
+    StateMap::OneToOneValueMap &valMap = M->getAllCorrespondingOneToOneValues();
+    for (StateMap::OneToOneValueMap::iterator it = valMap.begin(),
+            end = valMap.end(); it != end; ++it) {
+        if (it->first == I) {
+            otherI = dyn_cast<Instruction>(it->second);
+            break;
+        } else if (it->second == I) {
+            otherI = dyn_cast<Instruction>(it->second);
+            break;
+        }
+    }
+
+    if (otherI) {
+        if (otherI == M->getLandingPad(I) || I == M->getLandingPad(otherI)) {
+            return otherI;
+        }
+    }
+
+    return nullptr;
+}
+
 /*
  * Original     Updated
  * function     function
@@ -125,7 +160,7 @@ void CodeMapper::discardLandingPads(StateMap* M, Instruction* OldLPad) {
  *
  */
 void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
-    Instruction* LPadForSuccI = M->getLandingPad(SuccI);
+    Instruction* LPadForSuccI = SuccI ? M->getLandingPad(SuccI) : nullptr;
     if (LPadForSuccI) {
         M->registerLandingPad(AddedI, LPadForSuccI, false);
     }
@@ -142,6 +177,7 @@ void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
  * Actions:
  * - remove corresponding 1:1 value info for D
  * - remove information for values for which D is the 1:1 corresponding value
+ * - remove D as source for an OSR
  * - set LPad[D] to LPad[succ(D)] = LPad[I2'] = I2
  * - for each OSRSrc s.t. LPad[OSRSrc] = D do
  *      set LPad[OSRSrc] to LPad[succ(D)] = I2
@@ -150,11 +186,10 @@ void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
 void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
     StateMap::OneToOneValueMap &defaultOneToOneMap =
             M->getAllCorrespondingOneToOneValues();
-    Value* otherD = nullptr;
+    Instruction* otherDeletedI = findOtherI(M, DeletedI);
     for (StateMap::OneToOneValueMap::iterator it = defaultOneToOneMap.begin(),
             end = defaultOneToOneMap.end(); it != end; ) {
         if (it->first == DeletedI) {
-            otherD = it->second;
             defaultOneToOneMap.erase(it++);
         } else if (it->second == DeletedI) {
             defaultOneToOneMap.erase(it++);
@@ -163,12 +198,14 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
         }
     }
 
-    Instruction* LPadForSuccI = M->getLandingPad(SuccI);
+    M->unregisterLandingPad(DeletedI);
+
+    Instruction* LPadForSuccI = SuccI ? M->getLandingPad(SuccI) : nullptr;
     if (LPadForSuccI) {
         // the deleted instruction might have been constant-folded in the other
         // function, so we have to check whether otherD is an Instruction
-        if (Instruction* otherDI = dyn_cast_or_null<Instruction>(otherD)) {
-            M->registerLandingPad(otherDI, LPadForSuccI);
+        if (otherDeletedI) {
+            M->registerLandingPad(otherDeletedI, LPadForSuccI);
         }
         replaceLandingPads(M, DeletedI, LPadForSuccI);
     } else {
@@ -193,35 +230,32 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
  *      set LPad[OSRSrc] to H
  * - set LPad[B'] to H
  * - set LPad[H] to B'
- * - set LPad[H'] to I3
+ * - set LPad[H'] to I3 (TODO: should be redundant at this point...)
  *
  */
 void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
-    replaceLandingPads(M, HoistedI, SuccHoistedI);
+    Instruction* otherBeforeI = findOtherI(M, BeforeI);
+    Instruction* otherHoistedI = findOtherI(M, HoistedI);
+
+    if (SuccHoistedI) {
+        replaceLandingPads(M, HoistedI, SuccHoistedI);
+    } else {
+        discardLandingPads(M, HoistedI);
+    }
     replaceLandingPads(M, BeforeI, HoistedI);
 
-    // TODO when the instruction does not exist, can we do better than this?
-    StateMap::OneToOneValueMap &defaultOneToOneMap =
-            M->getAllCorrespondingOneToOneValues();
-    StateMap::OneToOneValueMap::iterator it = defaultOneToOneMap.find(BeforeI);
-    if (it != defaultOneToOneMap.end()) {
-        Value *otherBefore = it->second;
-        if (Instruction* otherBeforeI = dyn_cast<Instruction>(otherBefore)) {
-            M->registerLandingPad(otherBeforeI, HoistedI, false);
-            M->registerLandingPad(HoistedI, otherBeforeI, false);
-        } else {
-            M->unregisterLandingPad(HoistedI);
-        }
+    if (otherBeforeI) {
+        M->registerLandingPad(HoistedI, otherBeforeI, true); // bidirectional
     } else {
         M->unregisterLandingPad(HoistedI);
     }
 
-    it = defaultOneToOneMap.find(HoistedI);
-    if (it != defaultOneToOneMap.end()) {
-        Value* otherHoisted = it->second;
-        if (Instruction* otherHoistedI = dyn_cast<Instruction>(otherHoisted)) {
+    if (otherHoistedI) {
+        if (SuccHoistedI) {
             M->registerLandingPad(otherHoistedI, SuccHoistedI, false);
-        } // TODO else branch?
+        } else {
+            M->unregisterLandingPad(otherHoistedI);
+        }
     }
 }
 
@@ -243,29 +277,29 @@ void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
  */
 
 void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {
-    replaceLandingPads(M, SunkI, SuccSunkI);
+    Instruction* otherBeforeI = findOtherI(M, BeforeI);
+    Instruction* otherSunkI = findOtherI(M, SunkI);
 
-    // TODO when the instruction does not exist, can we do better than this?
-    StateMap::OneToOneValueMap &defaultOneToOneMap =
-            M->getAllCorrespondingOneToOneValues();
-    StateMap::OneToOneValueMap::iterator it = defaultOneToOneMap.find(SunkI);
-    if (it != defaultOneToOneMap.end()) {
-        Value *otherSunk = it->second;
-        if (Instruction* otherSunkI = dyn_cast<Instruction>(otherSunk)) {
-            M->registerLandingPad(otherSunkI, SuccSunkI, true); // bidirectional
+    if (SuccSunkI) {
+        replaceLandingPads(M, SunkI, SuccSunkI);
+    } else {
+        discardLandingPads(M, SunkI);
+    }
+
+    if (otherSunkI) {
+        if (SuccSunkI) {
+            M->registerLandingPad(SuccSunkI, otherSunkI, true); // bidirectional
         } else {
+            M->unregisterLandingPad(otherSunkI);
+        }
+    } else {
+        if (SuccSunkI) {
             M->unregisterLandingPad(SuccSunkI);
         }
     }
 
-    it = defaultOneToOneMap.find(BeforeI);
-    if (it != defaultOneToOneMap.end()) {
-        Value *otherBefore = it->second;
-        if (Instruction* otherBeforeI = dyn_cast<Instruction>(otherBefore)) {
-            M->registerLandingPad(SunkI, otherBeforeI, false);
-        } else {
-            M->unregisterLandingPad(SunkI);
-        }
+    if (otherBeforeI) {
+        M->registerLandingPad(SunkI, otherBeforeI, false);
     } else {
         M->unregisterLandingPad(SunkI);
     }

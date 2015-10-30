@@ -1260,9 +1260,24 @@ void Parser::handleCompCodeCommand() {
                 }
             }
 
-            // TODO generate function
-            std::cerr << "Sorry, this feature hasn't been fully implemented yet!"
-                      << std::endl;
+            std::unique_ptr<Module> NewModule =
+                    llvm::make_unique<Module>("CompCodeMod", TheHelper->Context);
+            Module* modToUse = NewModule.get();
+            std::string F1NewName = src->getName().str();
+
+            OSRLibrary::OSRPointConfig config(TheHelper->verbose, false, -1,
+                    &F1NewName, modToUse, nullptr, nullptr, modToUse, nullptr);
+            OSRLibrary::OSRCond condOSR = {  TheHelper->generateAlwaysTrueCond() };
+
+            OSRLibrary::OSRPair pairOSR = OSRLibrary::insertResolvedOSR(
+                    TheHelper->Context, *src, *OSRSrc, *dest, *LPad, condOSR,
+                    *M, config);
+
+            std::cerr << "A temporary continuation function was successfully "
+                      << "generated." << std::endl;
+            if (TheHelper->verbose) {
+                pairOSR.second->dump();
+            }
         } else if (action == showCode) {
             compCodeWorkList.clear();
             StateMap::LocPair LP(OSRSrc, LPad);

@@ -133,7 +133,7 @@ Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
             otherI = dyn_cast<Instruction>(it->second);
             break;
         } else if (it->second == I) {
-            otherI = dyn_cast<Instruction>(it->second);
+            otherI = dyn_cast<Instruction>(it->first);
             break;
         }
     }
@@ -200,17 +200,19 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
 
     M->unregisterLandingPad(DeletedI);
 
-    Instruction* LPadForSuccI = SuccI ? M->getLandingPad(SuccI) : nullptr;
-    if (LPadForSuccI) {
-        // the deleted instruction might have been constant-folded in the other
-        // function, so we have to check whether otherD is an Instruction
-        if (otherDeletedI) {
-            M->registerLandingPad(otherDeletedI, LPadForSuccI);
-        }
-        replaceLandingPads(M, DeletedI, LPadForSuccI);
+    if (SuccI) {
+        replaceLandingPads(M, DeletedI, SuccI);
     } else {
-        // we ought to be conservative here
         discardLandingPads(M, DeletedI);
+    }
+
+    // TODO is this block redundant?
+    if (otherDeletedI) {
+        if (SuccI) {
+            M->registerLandingPad(otherDeletedI, SuccI, false);
+        } else {
+            M->unregisterLandingPad(otherDeletedI);
+        }
     }
 }
 

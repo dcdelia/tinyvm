@@ -64,7 +64,7 @@ class LivenessAnalysis {
 
         /// \brief Perform liveness analysis again (use when the function has
         /// been modified).
-        void updateAllLiveValues() { run(); }
+        void updateAllLiveValues() { blockMap.clear(); run(); }
 
         /// \brief Manually update liveness results for a BasicBlock
         void updateLiveValuesForBlock(const llvm::BasicBlock* B,

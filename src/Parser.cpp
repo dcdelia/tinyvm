@@ -1087,6 +1087,8 @@ void Parser::handleCompCodeCommand() {
             << "Error at argument " << numToken << ". Enter HELP COMP_CODE to display the right syntax." << std::endl;\
             return; } while (0);
 
+    bool verbose = TheHelper->verbose;
+
     std::string *tmpStr = TheLexer->getLine();
     std::string LexerStr(std::move(*tmpStr));
     delete tmpStr;
@@ -1209,12 +1211,15 @@ void Parser::handleCompCodeCommand() {
     IDToValueVec lineIDsForSrc = computeLineIDs(src);
     IDToValueVec lineIDsForDest = computeLineIDs(dest);
 
-
     std::string OSRSrcName, LPadName;
-
     std::set<Value*> missingSet;
     std::set<Value*> keepSet;
     std::vector<std::pair<StateMap::CompCode*, Value*>> compCodeWorkList;
+
+    int noCompCodeRequired = 0;
+    int compCodeRequired = 0;
+    int canBuildCompCode = 0;
+
     for (int i = 0, e = workList.size(); i != e; ++i) {
         OSRSrc = workList[i].first;
         LPad = workList[i].second;
@@ -1224,7 +1229,7 @@ void Parser::handleCompCodeCommand() {
         LPadName = getInstrID(LPad, slotIDsForDest, lineIDsForDest);
 
 
-        if (forAllPairs) {
+        if (forAllPairs && verbose) {
             std::cerr << "--> <" << OSRSrcName << ", " << LPadName << ">"
                       << std::endl;
         }
@@ -1232,13 +1237,19 @@ void Parser::handleCompCodeCommand() {
         // all the actions require isBuildCompRequired()
         missingSet.clear();
         bool isCompRequired = BuildComp::isBuildCompRequired(M, OSRSrc, LPad,
-                missingSet, TheHelper->verbose);
+                missingSet, verbose);
         if (!isCompRequired) {
-            std::cerr << "No compensation code is required." << std::endl;
+            if (verbose || !forAllPairs) {
+                std::cerr << "No compensation code is required." << std::endl;
+            }
+            ++noCompCodeRequired;
             continue;
+        } else {
+            ++compCodeRequired;
         }
 
         if (action == checkCodeRequired) {
+            if (forAllPairs && !verbose) continue;
             std::cerr << "Compensation code is required to reconstruct:"
                       << std::endl;
             for (Value* v: missingSet) {
@@ -1248,7 +1259,11 @@ void Parser::handleCompCodeCommand() {
             bool doBuild = (action == buildCode);
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    BuildComp::Heuristic::BC_NONE, doBuild, TheHelper->verbose);
+                    BuildComp::Heuristic::BC_NONE, doBuild, verbose);
+            if (ret) {
+                ++canBuildCompCode;
+            }
+            if (forAllPairs && !verbose) continue;
             if (ret) {
                 if (doBuild) {
                     std::cerr << "Compensation code built successfully." << std::endl;
@@ -1267,22 +1282,28 @@ void Parser::handleCompCodeCommand() {
         } else if (action == testCode) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    BuildComp::Heuristic::BC_NONE, true, TheHelper->verbose);
+                    BuildComp::Heuristic::BC_NONE, true, verbose);
+
             if (!ret) {
-                std::cerr << "Compensation code cannot be built automatically, "
-                          << "as the following values cannot be reconstructed:"
-                          << std::endl;
-                for (Value* v: keepSet) {
-                    v->dump();
+                if (verbose || !forAllPairs) {
+                    std::cerr << "Compensation code cannot be built automatically, "
+                              << "as the following values cannot be reconstructed:"
+                              << std::endl;
+                    for (Value* v: keepSet) {
+                        v->dump();
+                    }
                 }
+                continue;
             }
+
+            ++canBuildCompCode;
 
             std::unique_ptr<Module> NewModule =
                     llvm::make_unique<Module>("CompCodeMod", TheHelper->Context);
             Module* modToUse = NewModule.get();
             std::string F1NewName = src->getName().str();
 
-            OSRLibrary::OSRPointConfig config(TheHelper->verbose, false, -1,
+            OSRLibrary::OSRPointConfig config(verbose, false, -1,
                     &F1NewName, modToUse, nullptr, nullptr, modToUse, nullptr);
             OSRLibrary::OSRCond condOSR = {  TheHelper->generateAlwaysTrueCond() };
 
@@ -1290,11 +1311,11 @@ void Parser::handleCompCodeCommand() {
                     TheHelper->Context, *src, *OSRSrc, *dest, *LPad, condOSR,
                     *M, config);
 
+            if (forAllPairs && !verbose) continue;
+
             std::cerr << "A temporary continuation function was successfully "
-                      << "generated." << std::endl;
-            if (TheHelper->verbose) {
-                pairOSR.second->dump();
-            }
+                      << "generated. Here's its entrypoint:" << std::endl;
+            pairOSR.second->begin()->dump();
         } else if (action == showCode) {
             compCodeWorkList.clear();
             StateMap::LocPair LP(OSRSrc, LPad);
@@ -1351,8 +1372,22 @@ void Parser::handleCompCodeCommand() {
                 }
             }
         }
-
     }
+
+    if (forAllPairs) {
+        std::cerr << "[OSR] " << src->getName().str() << " --> "
+                  << dest->getName().str() << std::endl;
+        std::cerr << "# of OSRSrc locations for which" << std::endl;
+        std::cerr << "- no compensation code is required: " <<
+                noCompCodeRequired << std::endl;
+        std::cerr << "- compensation code is actually required: "
+                  << compCodeRequired << std::endl;
+        if (action == buildCode || action == canBuildCode || action == testCode) {
+            std::cerr << "- compensation code can be built automatically: "
+                      << canBuildCompCode << std::endl;
+        }
+    }
+
     #undef INVALID
 }
 

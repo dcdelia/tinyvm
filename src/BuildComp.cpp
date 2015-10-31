@@ -27,19 +27,23 @@ using namespace llvm;
 
 static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
         &availableValues, std::set<Value*> &missingValues) {
-    for (Use &U : I->operands()) {
-        Value* op = U.get();
+    for (User::op_iterator it = I->op_begin(), end = I->op_end(); it != end;
+            ++it) {
+        Value* op = *it;
+
+        // OSRLibrary takes care of Constant with fixUsesOfFunctionsAndGlobals()
+        if (isa<Constant>(op)) continue;
+
         if (availableValues.count(op) == 0 && missingValues.count(op) == 0) {
-            // OSRLibrary takes care of Constant objects (e.g. constant scalars,
-            // ConstExpr, GlobalVariable, Function) when generating a
-            // continuation function by running fixUsesOfFunctionsAndGlobals()
-            if (isa<Constant>(op)) continue;
             missingValues.insert(op);
             if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                identifyMissingValues(opI, availableValues, missingValues);
+                 // we don't fetch incoming values for PHI nodes
+                if (!isa<PHINode>(opI)) {
+                    identifyMissingValues(opI, availableValues, missingValues);
+                }
             } else {
                 // reconstructInst will take care of Argument operands
-                assert (isa<Argument>(op) && "Metadata operands are unsupported");
+                assert (isa<Argument>(op) && "Metadata operands not supported");
             }
         }
     }
@@ -48,7 +52,7 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
 static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
         &availableValues, std::map<Instruction*, Instruction*> &reconstructedMap,
         std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
-    // TODO heuristics; other instruction types?
+    // TODO heuristics; other instruction types?; LCSSA-like PHI nodes
     if (isa<PHINode>(I) || isa<LoadInst>(I)) return nullptr;
 
     Instruction* RI = I->clone();
@@ -87,6 +91,8 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
 
     if (I->hasName()) {
         RI->setName((I->getName()));
+    } else {
+        RI->setName("CCtmp");
     }
 
     return RI;
@@ -125,10 +131,10 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
                 Value* op = U.get();
                 if (Instruction* opI = dyn_cast<Instruction>(op)) {
                     // a use of a PHI node by itself is legal LLVM
-                    if (opI == op && cast<PHINode>(I)) continue;
+                    if (opI == I && cast<PHINode>(I)) continue;
                     // we cannot insert an instruction before all the missing
                     // instructions it uses as operands have not been inserted
-                    if (instWorkSet.count(opI) > 0) {
+                    if (instWorkSet.count(opI) != 0) {
                         canInsert = false;
                         break;
                     }
@@ -294,15 +300,17 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
 
     StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
+    std::set<Value*> curValuesToKeep;
     bool error = false;
+
     for (Value* valToReconstruct: workList) {
-        std::set<Value*> curValuesToKeep;
         if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
                     curValuesToKeep, opt);
             if (valInfo == nullptr) {
                 error = true;
                 keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());
+                curValuesToKeep.clear();
             } else {
                 valueInfoMap[valToReconstruct] = valInfo;
             }

@@ -75,8 +75,8 @@ void CodeMapper::replaceAllUsesWith(Instruction* I, Value* V) {
     }
 }
 
-// TODO check if we can come up with a better strategy
-Instruction* CodeMapper::CMAction::findSuccessor(Instruction* I) {
+// TODO can we come up with a better strategy?
+Instruction* CodeMapper::findSuccessor(Instruction* I) {
     if (isa<TerminatorInst>(I)) return nullptr; // TODO unconditional branchs?
 
     BasicBlock* B = I->getParent();
@@ -123,6 +123,7 @@ void CodeMapper::discardLandingPads(StateMap* M, Instruction* OldLPad) {
     }
 }
 
+// TODO can we come up with a better strategy?
 Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
     Instruction* otherI = nullptr;
 
@@ -145,6 +146,25 @@ Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
     }
 
     return nullptr;
+}
+
+void CodeMapper::replaceOneToOneValue(StateMap* M, Value* oldValue,
+        Value* newValue) {
+    StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
+    StateMap::OneToOneValueMap::iterator it, end;
+    
+    it = map.find(oldValue);
+    if (it != map.end()) {
+        map[newValue] = it->second;
+    }
+
+    for (it = map.begin(), end = map.end(); it != end; ) {
+        if (it->second == oldValue) {
+            (it++)->second = newValue;
+        } else {
+            ++it;
+        }
+    }
 }
 
 /*
@@ -306,6 +326,25 @@ void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {
         M->unregisterLandingPad(SunkI);
     }
 }
+
+void CodeMapper::RAUWInstWithArg::apply(StateMap* M, bool verbose) {
+    if (sameValue) {
+        replaceOneToOneValue(M, I, A);
+    }
+}
+
+void CodeMapper::RAUWInstWithConst::apply(StateMap* M, bool verbose) {
+    if (sameValue) {
+        replaceOneToOneValue(M, I, C);
+    }
+}
+
+void CodeMapper::RAUWInstWithInst::apply(StateMap* M, bool verbose) {
+    if (sameValue) {
+        replaceOneToOneValue(M, OI, NI);
+    }
+}
+
 
 void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {
     int addedInst = 0, deletedInst = 0, hoistedInst = 0, sunkInst = 0;

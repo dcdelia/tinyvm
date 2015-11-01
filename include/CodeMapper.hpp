@@ -28,7 +28,7 @@ private:
     class RAUWInstWithInst;
 
 public:
-    CodeMapper() {}
+    CodeMapper(llvm::Function &F) : TheFunction(&F) {}
 
     static CodeMapper* getCodeMapper(llvm::Function &F);
     static CodeMapper* createCodeMapper(llvm::Function &F);
@@ -49,6 +49,7 @@ public:
     void updateStateMapping(StateMap* M, bool verbose = false);
 
 private:
+    llvm::Function* TheFunction;
     // Metadata attached to function have been introduced only since LLVM 3.7.0,
     // thus for the time being we rely on a simple static map object.
     typedef std::map<llvm::Function*, CodeMapper*> GlobalMap;

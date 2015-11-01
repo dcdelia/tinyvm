@@ -27,7 +27,7 @@ CodeMapper* CodeMapper::getCodeMapper(Function &F) {
 
 CodeMapper* CodeMapper::createCodeMapper(Function &F) {
     assert(!hasCodeMapper(F) && "a CodeMapper already exists");
-    CodeMapper* LM = new CodeMapper();
+    CodeMapper* LM = new CodeMapper(F);
     globalMap.insert(std::pair<Function*, CodeMapper*>(&F, LM));
 
     return LM;
@@ -334,6 +334,18 @@ void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {
         std::cerr << "RAUW_C instructions: " << instRAUWedwithConst << std::endl;
         std::cerr << "RAUW_A instructions: " << instRAUWedWithArg << std::endl;
     }
+
+    // update Liveness info in M
+    std::pair<LivenessAnalysis&, LivenessAnalysis&> livenessPair =
+                M->getLivenessResults();
+    std::pair<Function*, Function*> funPair = M->getFunctions();
+    LivenessAnalysis *LA;
+    if (funPair.first == TheFunction) {
+        LA = &livenessPair.first;
+    } else {
+        LA = &livenessPair.second;
+    }
+    LA->updateAllLiveValues();
 }
 
 /*

@@ -200,25 +200,12 @@ void Parser::handleMapsCommand() {
     }
 
     if (action == updateMap) {
-        std::pair<LivenessAnalysis&, LivenessAnalysis&> livenessPair =
-                M->getLivenessResults();
-        std::pair<Function*, Function*> funPair = M->getFunctions();
-        LivenessAnalysis *LA_F1, *LA_F2;
-        if (funPair.first == F1) {
-            LA_F1 = &livenessPair.first;
-            LA_F2 = &livenessPair.second;
-        } else {
-            LA_F1 = &livenessPair.second;
-            LA_F2 = &livenessPair.first;
-        }
-
         // process F1
         CodeMapper* CM_F1 = CodeMapper::getCodeMapper(*F1);
         if (CM_F1 == nullptr) {
             std::cerr << "Nothing to do for " << F1Name << "." << std::endl;
         } else {
             CM_F1->updateStateMapping(M, TheHelper->verbose);
-            LA_F1->updateAllLiveValues(); // TODO move into updateStateMapping()
             std::cerr << "StateMap updated to reflect changes in " << F1Name
                       << "." << std::endl;
         }
@@ -229,7 +216,6 @@ void Parser::handleMapsCommand() {
             std::cerr << "Nothing to do for " << F2Name << "." << std::endl;
         } else {
             CM_F2->updateStateMapping(M, TheHelper->verbose);
-            LA_F2->updateAllLiveValues(); // TODO move into updateStateMapping()
             std::cerr << "StateMap updated to reflect changes in " << F2Name
                       << "." << std::endl;
         }
@@ -1380,7 +1366,7 @@ void Parser::handleCompCodeCommand() {
         std::cerr << "# of OSRSrc locations for which" << std::endl;
         std::cerr << "- no compensation code is required: " <<
                 noCompCodeRequired << std::endl;
-        std::cerr << "- compensation code is actually required: "
+        std::cerr << "- compensation code is required: "
                   << compCodeRequired << std::endl;
         if (action == buildCode || action == canBuildCode || action == testCode) {
             std::cerr << "- compensation code can be built automatically: "

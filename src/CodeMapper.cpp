@@ -152,17 +152,19 @@ void CodeMapper::replaceOneToOneValue(StateMap* M, Value* oldValue,
         Value* newValue) {
     StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
     StateMap::OneToOneValueMap::iterator it, end;
-    
-    it = map.find(oldValue);
-    if (it != map.end()) {
-        map[newValue] = it->second;
-    }
 
     for (it = map.begin(), end = map.end(); it != end; ) {
         if (it->second == oldValue) {
             (it++)->second = newValue;
         } else {
             ++it;
+        }
+    }
+
+    if (!isa<Constant>(newValue)) {
+        it = map.find(oldValue);
+        if (it != end) {
+            map[newValue] = it->second;
         }
     }
 }

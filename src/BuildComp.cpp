@@ -8,10 +8,14 @@
 #include "BuildComp.hpp"
 #include "Liveness.hpp"
 #include "StateMap.hpp"
+#include "OptPasses.hpp"
 
+#include <llvm/Pass.h>
+#include <llvm/PassManager.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/Constant.h>
+#include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
@@ -22,11 +26,52 @@
 #include <iostream>
 #include <set>
 #include <vector>
+#include <llvm/IR/Dominators.h>
 
 using namespace llvm;
 
+void initializeBuildCompAnalysisPass(PassRegistry&);
+
+namespace {
+struct BuildCompAnalysis : public FunctionPass {
+    static char ID;
+    DominatorTree* DT;
+    DominatorTree* ptrForMoveDT;
+
+    BuildCompAnalysis() : FunctionPass(ID) {
+        initializeBuildCompAnalysisPass(*PassRegistry::getPassRegistry());
+    }
+
+    bool runOnFunction(Function& F) override;
+
+    void getAnalysisUsage(AnalysisUsage& AU) const override {
+        AU.addRequired<DominatorTreeWrapperPass>();
+    }
+};
+}
+
+char BuildCompAnalysis::ID = 0;
+
+OSR_INITIALIZE_PASS_BEGIN(BuildCompAnalysis, "BuildCompAnalysis", "[OSR] BuildCompAnalysis", false, false)
+OSR_INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+OSR_INITIALIZE_PASS_END(BuildCompAnalysis, "BuildCompAnalysis", "[OSR] BuildCompAnalysis", false, false)
+
+bool BuildCompAnalysis::runOnFunction(Function& F) {
+    DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+    assert (ptrForMoveDT != nullptr && "ppDT uninitialized");
+    (*ptrForMoveDT) = std::move(*DT);
+    return true;
+}
+
+FunctionPass* createBuildCompAnalysisPass(DominatorTree* pDT) {
+    BuildCompAnalysis* BCAP = new BuildCompAnalysis();
+    BCAP->ptrForMoveDT = pDT;
+    return BCAP;
+}
+
 static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
-        &availableValues, std::set<Value*> &missingValues) {
+        &availableValues, std::map<Value*, Value*> &deadAvailableValues,
+        std::set<Value*> &missingValues) {
     for (User::op_iterator it = I->op_begin(), end = I->op_end(); it != end;
             ++it) {
         Value* op = *it;
@@ -34,12 +79,14 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
         // OSRLibrary takes care of Constant with fixUsesOfFunctionsAndGlobals()
         if (isa<Constant>(op)) continue;
 
-        if (availableValues.count(op) == 0 && missingValues.count(op) == 0) {
+        if (availableValues.count(op) == 0 && missingValues.count(op) == 0 &&
+                deadAvailableValues.count(op) == 0) {
             missingValues.insert(op);
             if (Instruction* opI = dyn_cast<Instruction>(op)) {
                  // we don't fetch incoming values for PHI nodes
                 if (!isa<PHINode>(opI)) {
-                    identifyMissingValues(opI, availableValues, missingValues);
+                    identifyMissingValues(opI, availableValues,
+                            deadAvailableValues, missingValues);
                 }
             } else {
                 // reconstructInst will take care of Argument operands
@@ -50,26 +97,39 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
 }
 
 static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
-        &availableValues, std::map<Instruction*, Instruction*> &reconstructedMap,
+        &availableValues, std::map<Value*, Value*> &deadAvailableValues,
+        std::map<Instruction*, Instruction*> &reconstructedMap,
         std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
     // TODO heuristics; other instruction types?; LCSSA-like PHI nodes
     if (isa<PHINode>(I) || isa<LoadInst>(I)) return nullptr;
 
     Instruction* RI = I->clone();
 
+    std::map<Value*, Value*>::iterator availIt, deadAvailIt;
     std::map<Value*, Value*>::iterator availEnd = availableValues.end();
+    std::map<Value*, Value*>::iterator deadAvailEnd = deadAvailableValues.end();
     std::map<Instruction*, Instruction*>::iterator recEnd = reconstructedMap.end();
     for (Use &U: RI->operands()) {
         Value* op = U.get();
 
         if (isa<Constant>(op)) continue;
 
-        std::map<Value*, Value*>::iterator availIt = availableValues.find(op);
+        availIt = availableValues.find(op);
         if (availIt != availEnd) {
             Value* v = availIt->second;
             U.set(v);
             argsForCompCode.insert(v);
             continue;
+        }
+
+        deadAvailIt = deadAvailableValues.find(op);
+        if (deadAvailIt != deadAvailEnd) {
+            Value* v = deadAvailIt->second;
+            U.set(v);
+            argsForCompCode.insert(v);
+            continue;
+        } else {
+            assert(!isa<Argument>(op) && "cannot extend liveness of dead arg?");
         }
 
         if (isa<Argument>(op)) {
@@ -99,8 +159,12 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
 }
 
 static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
-        std::map<Value*, Value*> &availableValues, std::set<Value*> &valuesToKeep,
-        BuildComp::Heuristic opt) {
+        std::map<Value*, Value*> &availableValues,
+        std::map<Value*, Value*> &deadAvailableValues,
+        std::set<Value*> &valuesToKeep, BuildComp::Heuristic opt) {
+
+    assert(deadAvailableValues.count(instToReconstruct) == 0
+            && "attempting to reconstruct a dead available value?");
 
     // TODO: other instructions as well?
     if (isa<PHINode>(instToReconstruct) || isa<LoadInst>(instToReconstruct)) {
@@ -111,7 +175,8 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
 
     // identify which values need to be reconstructed
     std::set<Value*> missingValues;
-    identifyMissingValues(instToReconstruct, availableValues, missingValues);
+    identifyMissingValues(instToReconstruct, availableValues,
+            deadAvailableValues, missingValues);
 
     std::set<Instruction*> instWorkSet;
     for (Value* v: missingValues) {
@@ -165,7 +230,7 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     std::set<Value*> argsForCompCode;
     for (Instruction* currInstToReconstruct: sortedInstructions) {
         Instruction* RI = reconstructInst(currInstToReconstruct, availableValues,
-                reconstructedMap, argsForCompCode, opt);
+                deadAvailableValues, reconstructedMap, argsForCompCode, opt);
         if (RI == nullptr) {
             success = false;
             break;
@@ -247,6 +312,56 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     return ret;
 }
 
+static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc,
+        Function* src, LivenessAnalysis::LiveValues& liveAtOSRSrc,
+        std::map<Value*, Value*> &deadAvailableValues) {
+
+    DominatorTree DT;
+    
+    FunctionPassManager FPM(src->getParent());
+    FPM.add(createBuildCompAnalysisPass(&DT));
+    FPM.doInitialization();
+    FPM.run(*src);
+
+    StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
+        for (StateMap::OneToOneValueMap::iterator it = map.begin(),
+                end = map.end(); it != end; ++it) {
+            Value* valToSet = it->first;
+            Value* valToUse = it->second;
+            if (Instruction* I = dyn_cast<Instruction>(valToSet)) {
+                if (I->getParent()->getParent() == src) continue;
+            } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
+                if (A->getParent() == src) continue;
+            } else {
+                assert(false && "Constant appears as key in the 1:1 map!");
+                continue;
+            }
+
+            // at this point valToUse belongs to src
+
+            if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
+                BasicBlock* BB = instToUse->getParent();
+                BasicBlock* OSRSrcBB = OSRSrc->getParent();
+                if (BB != OSRSrcBB) {
+                    if (DT.dominates(BB, OSRSrcBB)) {
+                        deadAvailableValues[valToSet] = valToUse;
+                    }
+                } else {
+                    BasicBlock::const_iterator bbIt = BB->begin();
+                    for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
+                    if (&*bbIt == instToUse) {
+                        deadAvailableValues[valToSet] = valToUse;
+                    }
+                }
+            } else {
+                // valToUse is either a Constant or an Argument
+                deadAvailableValues[valToSet] = valToUse;
+            }
+
+        }
+}
+
+
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         std::set<Value*> &keepSet, BuildComp::Heuristic opt, bool updateMapping,
         bool verbose) {
@@ -289,7 +404,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         if (oneToOneVal != nullptr) {
             // TODO check option to extend liveness range
             if (liveAtOSRSrc.count(oneToOneVal) > 0) {
-                availableValues[valToSet] = oneToOneVal;
+                availableValues[valToSet] = oneToOneVal; // TODO what about Constant??
                 continue;
             }
         }
@@ -298,15 +413,24 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
     if (workList.empty()) return true;
 
+    std::map<Value*, Value*> deadAvailableValues;
+    if (shouldExtendLiveness(opt)) {
+        computeDeadAvailableValues(M, OSRSrc, src, liveAtOSRSrc,
+                deadAvailableValues);
+    }
 
     StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
     std::set<Value*> curValuesToKeep;
     bool error = false;
 
     for (Value* valToReconstruct: workList) {
-        if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
+        if (deadAvailableValues.count(valToReconstruct) != 0) {
+            Value* valToUse = deadAvailableValues[valToReconstruct];
+            StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
+            valueInfoMap[valToReconstruct] = valInfo;
+        } else if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
-                    curValuesToKeep, opt);
+                    deadAvailableValues, curValuesToKeep, opt);
             if (valInfo == nullptr) {
                 error = true;
                 keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());
@@ -315,7 +439,6 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 valueInfoMap[valToReconstruct] = valInfo;
             }
         } else {
-            // TODO option to extend liveness range of a dead argument
             error = true;
             keepSet.insert(valToReconstruct);
         }

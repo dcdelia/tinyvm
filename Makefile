@@ -71,7 +71,8 @@ $(BUILD)/timer.o: $(SRC)/timer.c $(INCLUDE)/timer.h
 $(BUILD)/CodeMapper.o: $(SRC)/CodeMapper.cpp $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/StateMap.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/CodeMapper.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/CodeMapper.o
 
-$(BUILD)/BuildComp.o: $(SRC)/BuildComp.cpp $(INCLUDE)/BuildComp.hpp $(INCLUDE)/StateMap.hpp
+$(BUILD)/BuildComp.o: $(SRC)/BuildComp.cpp $(INCLUDE)/BuildComp.hpp \
+	    $(INCLUDE)/StateMap.hpp $(INCLUDE)/OptPasses.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/BuildComp.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/BuildComp.o
 
 # Adapted LLVM passes

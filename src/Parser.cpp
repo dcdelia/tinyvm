@@ -45,6 +45,9 @@ using namespace llvm;
 // can be used instead at any point of the function to get subsequent tokens.
 #define INIT_TOKENIZER(cmdLine) int numToken = 1; char* token = strtok((cmdLine), " ");
 #define GET_TOKEN() do { ++numToken; token = strtok(NULL, " "); if (token == NULL) INVALID();} while (0)
+#define GET_TOKEN_OR_NULL() do { ++numToken; token = strtok(NULL, " "); } while(0)
+
+static BuildComp::Heuristic compCodeStrategy = BuildComp::Heuristic::BC_NONE;
 
 int Parser::start(bool displayHelpMsg) {
     if (displayHelpMsg) {
@@ -220,8 +223,7 @@ void Parser::handleMapsCommand() {
                       << "." << std::endl;
         }
     } else if (action == analyzeMap) {
-        BuildComp::printStatistics(M, BuildComp::Heuristic::BC_NONE,
-                TheHelper->verbose);
+        BuildComp::printStatistics(M, compCodeStrategy, TheHelper->verbose);
     }
 
     #undef INVALID
@@ -555,7 +557,8 @@ void Parser::handleHelpCommand() {
     COMP_CODE:
     std::cerr << "Manipulate compensation code for OSR points:" << std::endl
               << "--> COMP_CODE <OP> FOR <F1> AT <P1> TO <F2> AT <P2>" << std::endl
-              << "--> COMP_CODE <OP> FOR <F1> TO <F2>"
+              << "--> COMP_CODE <OP> FOR <F1> TO <F2>" << std::endl
+              << "--> COMP_CODE STRATEGY [<NUM>]"
               << std::endl << std::endl << "where:" << std::endl
               << "\tOP is one of the following actions: CHECK, CAN_BUILD, "
               << "BUILD, SHOW, TEST" << std::endl
@@ -574,7 +577,12 @@ void Parser::handleHelpCommand() {
               << "encoded in the StateMap."
               << std::endl;
     SHOW_HELP_FOR_LOCATIONS();
-
+    std::cerr << std::endl
+              << "Different strategies are available to build compensation code"
+              << ". The STRATEGY option shows the available strategies and the "
+              << "one currently in use, which can be changed by specifying a "
+              << "strategy number as argument to STRATEGY."
+              << std::endl;
     goto EXIT;
 
     INSERT_OSR:
@@ -1082,7 +1090,9 @@ void Parser::handleCompCodeCommand() {
     if (token == NULL) INVALID();
 
     // anonymous enum to encode actions
-    enum { buildCode, canBuildCode, checkCodeRequired, testCode, showCode };
+    enum {
+        buildCode, canBuildCode, checkCodeRequired, testCode, showCode, strategy
+    };
     int action;
 
     if (!strcasecmp(token, "BUILD")) {
@@ -1095,8 +1105,34 @@ void Parser::handleCompCodeCommand() {
         action = testCode;
     } else if (!strcasecmp(token, "SHOW")) {
         action = showCode;
+    } else if (!strcasecmp(token, "STRATEGY")) {
+        action = strategy;
     } else {
         INVALID();
+    }
+
+
+    if (action == strategy) {
+        GET_TOKEN_OR_NULL();
+        if (token == NULL) {
+            std::cerr << "Available strategies:" << std::endl;
+            std::cerr << "(0) Base version of buildComp" << std::endl;
+            std::cerr << "(1) Extend liveness range of values" << std::endl;
+            std::cerr << "Strategy in use: " << compCodeStrategy << std::endl;
+        } else {
+            int strategy = atoi(token);
+            switch (strategy) {
+                case 0:     compCodeStrategy = BuildComp::Heuristic::BC_NONE;
+                            break;
+                case 1:     compCodeStrategy = BuildComp::Heuristic::BC_EXTEND_LIVENESS;
+                            break;
+                default:    std::cerr << "Unknown strategy number!" << std::endl;
+                            return;
+            }
+            std::cerr << "Strategy currently in use changed to " << strategy
+                      << std::endl;
+        }
+        return;
     }
 
     std::string P1Name, P2Name;
@@ -1245,7 +1281,7 @@ void Parser::handleCompCodeCommand() {
             bool doBuild = (action == buildCode);
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    BuildComp::Heuristic::BC_NONE, doBuild, verbose);
+                    compCodeStrategy, doBuild, verbose);
             if (ret) {
                 ++canBuildCompCode;
             }
@@ -1268,7 +1304,7 @@ void Parser::handleCompCodeCommand() {
         } else if (action == testCode) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    BuildComp::Heuristic::BC_NONE, true, verbose);
+                    compCodeStrategy, true, verbose);
 
             if (!ret) {
                 if (verbose || !forAllPairs) {

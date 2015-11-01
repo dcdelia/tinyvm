@@ -203,6 +203,9 @@ public:
                 end = VMap->end(); it != end; ++ it) {
             llvm::Value* src_v = const_cast<llvm::Value*>(it->first);
             llvm::Value* dest_v = it->second;
+            if (!llvm::isa<llvm::Argument>(src_v) && !llvm::isa<llvm::Instruction>(src_v)) {
+                continue;
+            }
             registerOneToOneValue(src_v, dest_v, bidirectional);
             if (llvm::Instruction* OSRSrc = llvm::dyn_cast<llvm::Instruction>(src_v)) {
                 if (!llvm::isa<llvm::PHINode>(OSRSrc)) {

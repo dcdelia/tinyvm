@@ -9,6 +9,8 @@
 
 #include "StateMap.hpp"
 
+#include <llvm/Pass.h>
+#include <llvm/IR/Dominators.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
 
@@ -17,7 +19,7 @@
 class BuildComp {
 public:
     enum Heuristic {
-        BC_NONE = 0, BC_ALIAS = 1 // more to come: use a good enconding scheme
+        BC_NONE = 0, BC_EXTEND_LIVENESS = 1 // more to come: use a good enconding scheme
     };
     static bool buildComp(StateMap *M,
                         llvm::Instruction* OSRSrc,
@@ -36,7 +38,16 @@ public:
     static void printStatistics(StateMap* M,
                         Heuristic opt = BC_NONE,
                         bool verbose = false);
+
+private:
+    static bool shouldExtendLiveness(Heuristic opt) {
+        return (opt == BC_EXTEND_LIVENESS);
+    }
+
 };
+
+// workaround to access LLVM analyses
+llvm::FunctionPass* createBuildCompAnalysisPass(llvm::DominatorTree* pDT);
 
 #endif
 

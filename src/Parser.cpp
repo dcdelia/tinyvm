@@ -1265,6 +1265,7 @@ void Parser::handleCompCodeCommand() {
                 std::cerr << "No compensation code is required." << std::endl;
             }
             ++noCompCodeRequired;
+            //if (action != testCode) continue;
             continue;
         } else {
             ++compCodeRequired;

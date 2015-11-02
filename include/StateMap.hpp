@@ -142,6 +142,13 @@ public:
     /// code information.
     typedef std::map<LocPair, LocPairInfo> LocPairInfoMap;
 
+    /// \brief Map between program locations from different functions.
+    typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
+
+    /// \brief Map between values and their corresponding 1:1 values.
+    /// \sa StateMap()
+    typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap;
+
     /// \brief Construct a StateMap object
     ///
     /// The constructed StateMap object can be either empty, or initialized
@@ -196,10 +203,13 @@ public:
                 end = VMap->end(); it != end; ++ it) {
             llvm::Value* src_v = const_cast<llvm::Value*>(it->first);
             llvm::Value* dest_v = it->second;
-            registerOneToOneValue(src_v, dest_v, bidirectional);
-            if (llvm::Instruction* OSRSrc = llvm::dyn_cast<llvm::Instruction>(src_v)) {
-                if (!llvm::isa<llvm::PHINode>(OSRSrc)) {
-                    registerLandingPad(OSRSrc, llvm::cast<llvm::Instruction>(dest_v), bidirectional);
+            if (llvm::isa<llvm::Argument>(src_v)) {
+                registerOneToOneValue(src_v, dest_v, bidirectional);
+            } else if (llvm::Instruction* src_I = llvm::dyn_cast<llvm::Instruction>(src_v)) {
+                registerOneToOneValue(src_v, dest_v, bidirectional);
+                if (!llvm::isa<llvm::PHINode>(src_I)) {
+                    registerLandingPad(src_I,
+                            llvm::cast<llvm::Instruction>(dest_v), bidirectional);
                 }
             }
         }
@@ -287,6 +297,11 @@ public:
                             llvm::Value* dest_v,
                             bool bidirectional = false);
 
+    /// \brief Discard 1:1 mapping information for a Value.
+    ///
+    /// \param src_v Value for which 1:1 mapping information is to discard.
+    void unregisterOneToOneValue(llvm::Value* src_v);
+
     /// \brief Set the landing pad for an OSR source location.
     ///
     /// \param OSRSrc Location in the OSR source function.
@@ -298,6 +313,11 @@ public:
     void registerLandingPad(llvm::Instruction* OSRSrc,
                             llvm::Instruction* LPad,
                             bool bidirectional = false);
+
+    /// \brief Discard landing pad information for a Value.
+    ///
+    /// \param OSRSrc Location for which landing pad information is to discard.
+    void unregisterLandingPad(llvm::Instruction* OSRSrc);
 
     /// \brief Get mapping information specific to a LocPair
     ///
@@ -322,6 +342,13 @@ public:
     /// \sa StateMap()
     llvm::Value*      getCorrespondingOneToOneValue(llvm::Value *v);
 
+    /// \brief Get all pairs of values and their corresponding 1:1 values.
+    /// \return A reference to the OneToOneValueMap maintained by the object.
+    /// \sa StateMap()
+    OneToOneValueMap& getAllCorrespondingOneToOneValues() {
+        return defaultOneToOneMap;
+    }
+
     /// \brief Get the landing pad for a given OSR source location.
     ///
     /// \param OSRSrc Instruction to use as source of an OSR transition.
@@ -329,6 +356,13 @@ public:
     /// landing pad for the OSR transition, or \c nullptr when an OSR from \a
     /// OSRSrc is not feasible.
     llvm::Instruction* getLandingPad(llvm::Instruction* OSRSrc);
+
+    /// \brief Get all pairs of OSR source locations and corresponding landing
+    /// pads
+    /// \return A reference to the LocMap maintained by the object.
+    LocMap& getAllLandingPads() {
+        return landingPadMap;
+    }
 
     /// \brief Clone a function and generate a StateMap.
     ///
@@ -338,9 +372,7 @@ public:
     static std::pair<llvm::Function*, StateMap*> generateIdentityMapping(llvm::Function *F);
 
 private:
-    typedef std::map<llvm::Instruction*, llvm::Instruction*> LocMap;
     typedef std::map<llvm::Instruction*, std::vector<llvm::Value*>> ValuesToSetCache;
-    typedef std::map<llvm::Value*, llvm::Value*> OneToOneValueMap; // avoid clash with llvm::ValueMap
 
     llvm::Function      *F1, *F2;
     OneToOneValueMap    defaultOneToOneMap;

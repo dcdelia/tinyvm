@@ -161,7 +161,7 @@ std::pair<BasicBlock*, ValueToValueMapTy*> StateMap::genContinuationFunctionEntr
             (*updatedValuesToUse)[dest_v] = fetchedValuesToOSRContArgs[src_v];
             continue;
         }
-        
+
         dest_v->dump();
         llvm::report_fatal_error("[genContinuationFunctionEntryPoint] missing "
                 "mapping information for the Value shown above");
@@ -265,10 +265,24 @@ void StateMap::registerOneToOneValue(Value* src_v, Value* dest_v, bool bidirecti
     }
 }
 
+void StateMap::unregisterOneToOneValue(Value* src_v) {
+    OneToOneValueMap::iterator it = defaultOneToOneMap.find(src_v);
+    if (it != defaultOneToOneMap.end()) {
+        defaultOneToOneMap.erase(it);
+    }
+}
+
 void StateMap::registerLandingPad(Instruction* OSRSrc, Instruction* LPad, bool bidirectional) {
     landingPadMap[OSRSrc] = LPad;
     if (bidirectional) {
         landingPadMap[LPad] = OSRSrc;
+    }
+}
+
+void StateMap::unregisterLandingPad(Instruction* OSRSrc) {
+    LocMap::iterator it = landingPadMap.find(OSRSrc);
+    if (it != landingPadMap.end()) {
+        landingPadMap.erase(it);
     }
 }
 

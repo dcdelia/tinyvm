@@ -354,6 +354,7 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc,
                         deadAvailableValues[valToSet] = valToUse;
                     }
                 } else {
+                    if (instToUse == OSRSrc) continue;
                     BasicBlock::const_iterator bbIt = BB->begin();
                     for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
                     if (&*bbIt == instToUse) {
@@ -409,7 +410,6 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         Value* valToSet = const_cast<Value*>(v);
         Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
         if (oneToOneVal != nullptr) {
-            // TODO check option to extend liveness range
             if (liveAtOSRSrc.count(oneToOneVal) > 0) {
                 availableValues[valToSet] = oneToOneVal; // TODO what about Constant??
                 continue;

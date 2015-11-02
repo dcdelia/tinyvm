@@ -39,7 +39,8 @@ tinyvm_timer_t   my_timer;
 
 using namespace llvm;
 
-#define VERIFYFUN(F)    assert(!verifyFunction(*F, &outs()) && "ill-formed function!")
+#define VERIFYFUN(F)    assert( (!verifyFunction(*F, &outs()) ? true : \
+                                (F->dump(), false)) && "ill-formed function" )
 
 /**
  * Public methods

@@ -11,6 +11,7 @@
 #include "OptPasses.hpp"
 
 #include <llvm/Pass.h>
+#include <llvm/PassAnalysisSupport.h>
 #include <llvm/PassManager.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Argument.h>
@@ -101,7 +102,13 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
         std::map<Instruction*, Instruction*> &reconstructedMap,
         std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
     // TODO heuristics; other instruction types?; LCSSA-like PHI nodes
-    if (isa<PHINode>(I) || isa<LoadInst>(I)) return nullptr;
+    if (isa<PHINode>(I) || isa<LoadInst>(I) || isa<InvokeInst>(I)) {
+        return nullptr;
+    }
+
+    if (CallInst* CI = dyn_cast<CallInst>(I)) {
+        if (CI->mayWriteToMemory()) return nullptr;
+    }
 
     Instruction* RI = I->clone();
 
@@ -317,7 +324,7 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc,
         std::map<Value*, Value*> &deadAvailableValues) {
 
     DominatorTree DT;
-    
+
     FunctionPassManager FPM(src->getParent());
     FPM.add(createBuildCompAnalysisPass(&DT));
     FPM.doInitialization();

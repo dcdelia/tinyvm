@@ -39,7 +39,8 @@ tinyvm_timer_t   my_timer;
 
 using namespace llvm;
 
-#define VERIFYFUN(F)    assert(!verifyFunction(*F, &outs()) && "ill-formed function!")
+#define VERIFYFUN(F)    assert( (!verifyFunction(*F, &outs()) ? true : \
+                                (F->dump(), false)) && "ill-formed function" )
 
 /**
  * Public methods
@@ -776,6 +777,8 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
     std::vector<Value*> SSAUpdaterWorklist;
     bool isLPadFirstNonPHI = (OSRContLPad == OSRContLPadBlock->getFirstNonPHI());
 
+    BasicBlock* splitBlock = nullptr;
+
     if (isLPadFirstNonPHI) {
         for (Value* origValue: valuesToSetAtOrigLPad) {
             if (isa<Argument>(origValue)) continue;
@@ -814,6 +817,13 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
                 SSAUpdaterWorklist.push_back(origValue);
             }
         }
+
+        splitBlock = OSRContLPadBlock->splitBasicBlock(OSRContLPad,
+                "OSRCont_split");
+        TerminatorInst* TI = entryPoint->getTerminator();
+        BranchInst* BI = cast<BranchInst>(TI);
+        assert(BI->getNumSuccessors() == 1 && "cbr in OSR entrypoint?");
+        BI->setSuccessor(0, splitBlock);
     }
 
     if (!SSAUpdaterWorklist.empty()) {
@@ -821,9 +831,10 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
         SSAUpdater updateSSA(insertedPHINodes);
         PHINode* lastInserted = nullptr;
 
-        // split OSRContLPadBlock block at OSRContLPad
-        BasicBlock* splitBlock = OSRContLPadBlock->splitBasicBlock(OSRContLPad,
-                "OSRCont_split");
+        if (isLPadFirstNonPHI) {
+            splitBlock = OSRContLPadBlock->splitBasicBlock(OSRContLPad,
+                    "OSRCont_split");
+        }
 
         for (Value* origValue: SSAUpdaterWorklist) {
             if (verbose) {

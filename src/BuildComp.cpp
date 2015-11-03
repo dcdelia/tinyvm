@@ -20,6 +20,7 @@
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/IntrinsicInst.h>
 #include <llvm/IR/Value.h>
 
 #undef NDEBUG
@@ -60,37 +61,59 @@ OSR_INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 OSR_INITIALIZE_AG_DEPENDENCY(AliasAnalysis);
 OSR_INITIALIZE_PASS_END(BuildCompAnalysis, "BuildCompAnalysis", "[OSR] BuildCompAnalysis", false, false)
 
-static bool processBlockForAvailableLoadAnalysis(BasicBlock* B,
-        AliasAnalysis* AA, BuildComp::AnalysisData::AvailLoadsMap &Map,
-        const BuildComp::AnalysisData::LocationSet &inAvailable,
-        BuildComp::AnalysisData::LocationSet &outAvailable) {
+static void processInstructionsForAvailableLoadAnalysis(AliasAnalysis* AA,
+        BuildComp::AnalysisData::AvailLoadSet &currentSet,
+        BasicBlock::iterator it, const BasicBlock::iterator end) {
 
-    BuildComp::AnalysisData::LocationSet curOutAvailable = inAvailable;
+    #define CHECK_AND_REMOVE_FROM_CUR_OUT(Inst) do \
+        for (BuildComp::AnalysisData::AvailLoadSet::iterator \
+                aIt = currentSet.begin(), aEnd = currentSet.end(); \
+                aIt != aEnd; ) { \
+            LoadInst* LI = *aIt; \
+            AliasAnalysis::Location Loc = AA->getLocation(LI); \
+            if (AA->getModRefInfo(Inst, Loc) & AliasAnalysis::Mod) { \
+                currentSet.erase(aIt++); \
+            } else { \
+                ++aIt; \
+            } \
+        } while(0)
 
-    for (BasicBlock::iterator it = B->begin(), end = B->end(); it != end; ++it) {
+    for (; it != end; ++it) {
         Instruction* I = &*it;
+        // see getLocation() methods from AliasAnalysis.cpp
         if (LoadInst* LI = dyn_cast<LoadInst>(I)) {
-            AliasAnalysis::Location Loc = AA->getLocation(LI);
-            curOutAvailable.insert(Loc.Ptr);
+            currentSet.insert(LI);
         } else if (StoreInst* SI = dyn_cast<StoreInst>(I)) {
-            AliasAnalysis::Location Loc = AA->getLocation(SI);
-            // TODO check aliases as well!
-            BuildComp::AnalysisData::LocationSet::iterator locIt =
-                    curOutAvailable.find(Loc.Ptr);
-            if (locIt != curOutAvailable.end()) {
-                curOutAvailable.erase(locIt);
-            }
+            CHECK_AND_REMOVE_FROM_CUR_OUT(SI);
         } else if (CallInst* CI = dyn_cast<CallInst>(I)) {
             if (!CI->onlyReadsMemory()) {
-                curOutAvailable.clear();
+                currentSet.clear();
             }
         } else if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
             if (!II->onlyReadsMemory()) {
-                curOutAvailable.clear();
+                currentSet.clear();
             }
-        }
-        // TODO AtomicCmpXchg, AtomicRMW, VAArg, Fence
+        } else if (AtomicCmpXchgInst* AI = dyn_cast<AtomicCmpXchgInst>(I)) {
+            CHECK_AND_REMOVE_FROM_CUR_OUT(AI);
+        } else if (AtomicRMWInst* AI = dyn_cast<AtomicRMWInst>(I)) {
+            CHECK_AND_REMOVE_FROM_CUR_OUT(AI);
+        } else if (MemTransferInst* MI = dyn_cast<MemTransferInst>(I)) {
+            CHECK_AND_REMOVE_FROM_CUR_OUT(MI);
+        } // nothing to do for VAArg and Fence
     }
+
+    #undef CHECK_AND_REMOVE_FROM_CUR_OUT
+}
+
+static bool processBlockForAvailableLoadAnalysis(BasicBlock* B,
+        AliasAnalysis* AA, BuildComp::AnalysisData::AvailLoadsMap &Map,
+        const BuildComp::AnalysisData::AvailLoadSet &inAvailable,
+        BuildComp::AnalysisData::AvailLoadSet &outAvailable) {
+
+    BuildComp::AnalysisData::AvailLoadSet curOutAvailable = inAvailable;
+
+    processInstructionsForAvailableLoadAnalysis(AA, curOutAvailable, B->begin(),
+            B->end());
 
     bool hasChanged = (curOutAvailable != outAvailable);
 
@@ -99,8 +122,8 @@ static bool processBlockForAvailableLoadAnalysis(BasicBlock* B,
     if (!hasChanged) return false;
 
     for (succ_iterator it = succ_begin(B), end = succ_end(B); it != end; ++it) {
-        BuildComp::AnalysisData::LocationSet intersection;
-        BuildComp::AnalysisData::LocationSet &succInSet = Map[*it].first;
+        BuildComp::AnalysisData::AvailLoadSet intersection;
+        BuildComp::AnalysisData::AvailLoadSet &succInSet = Map[*it].first;
         std::set_intersection(outAvailable.begin(), outAvailable.end(),
                 succInSet.begin(), succInSet.end(),
                 std::inserter(intersection, intersection.end()));
@@ -144,7 +167,7 @@ bool BuildCompAnalysis::runOnFunction(Function& F) {
     for (Function::BasicBlockListType::iterator it = blocks.begin(),
             end = blocks.end(); it != end; ++it) {
         BasicBlock *B = &*it;
-        AvailMap[B] = BuildComp::AnalysisData::InOutLocations();
+        AvailMap[B] = BuildComp::AnalysisData::InOutAvailLoadSets();
     }
 
     bool hasChanged;
@@ -153,7 +176,7 @@ bool BuildCompAnalysis::runOnFunction(Function& F) {
         for (Function::BasicBlockListType::iterator it = blocks.begin(),
                 end = blocks.end(); it != end; ++it) { // forward analysis
             BasicBlock* B = &*it;
-            BuildComp::AnalysisData::InOutLocations &currPair = AvailMap[B];
+            BuildComp::AnalysisData::InOutAvailLoadSets &currPair = AvailMap[B];
 
             hasChanged |= processBlockForAvailableLoadAnalysis(B, AA, AvailMap,
                 currPair.first, currPair.second);

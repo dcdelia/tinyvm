@@ -27,9 +27,9 @@ public:
 
     struct AnalysisData {
         // we compare the base address only
-        typedef std::set<const llvm::Value*> LocationSet;
-        typedef std::pair<LocationSet, LocationSet> InOutLocations;
-        typedef std::map<llvm::BasicBlock*, InOutLocations> AvailLoadsMap;
+        typedef std::set<llvm::LoadInst*> AvailLoadSet;
+        typedef std::pair<AvailLoadSet, AvailLoadSet> InOutAvailLoadSets;
+        typedef std::map<llvm::BasicBlock*, InOutAvailLoadSets> AvailLoadsMap;
 
         llvm::DominatorTree DT;
         std::set<llvm::CallInst*> Calls;

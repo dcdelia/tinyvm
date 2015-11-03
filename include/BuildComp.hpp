@@ -10,7 +10,10 @@
 #include "StateMap.hpp"
 
 #include <llvm/Pass.h>
+#include <llvm/PassManager.h>
+#include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/IR/Dominators.h>
+#include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
 
@@ -19,13 +22,39 @@
 class BuildComp {
 public:
     enum Heuristic {
-        BC_NONE = 0, BC_EXTEND_LIVENESS = 1 // more to come: use a good enconding scheme
+        BC_NONE = 0, BC_EXTEND_LIVENESS = 1, BC_READONLY_LOADS = 2 // more to come
     };
+
+    struct AnalysisData {
+        // we compare the base address only
+        typedef std::set<const llvm::Value*> LocationSet;
+        typedef std::pair<LocationSet, LocationSet> InOutLocations;
+        typedef std::map<llvm::BasicBlock*, InOutLocations> AvailLoadsMap;
+
+        llvm::DominatorTree DT;
+        std::set<llvm::CallInst*> Calls;
+        std::set<llvm::InvokeInst*> Invokes;
+        std::set<llvm::LoadInst*> Loads;
+        std::set<llvm::LoadInst*> LoadsFromReadOnly;
+        std::set<llvm::StoreInst*> Stores;
+
+        AvailLoadsMap AvailLoadsAnalysis;
+
+        AnalysisData(llvm::Function* F) {
+            assert (F->getParent() != nullptr && "function not in a module");
+            llvm::FunctionPassManager FPM(F->getParent());
+            FPM.add(createBuildCompAnalysisPass(this));
+            FPM.doInitialization();
+            FPM.run(*F);
+        }
+    };
+
     static bool buildComp(StateMap *M,
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
                         std::set<llvm::Value*> &keepSet,
                         Heuristic opt = BC_NONE,
+                        AnalysisData *BCAD = nullptr,
                         bool updateMapping = true,
                         bool verbose = false);
 
@@ -44,10 +73,12 @@ private:
         return (opt == BC_EXTEND_LIVENESS);
     }
 
-};
+    static bool shouldOptimizeReadOnlyLoads(Heuristic opt) {
+        return (opt == BC_READONLY_LOADS);
+    }
 
-// workaround to access LLVM analyses
-llvm::FunctionPass* createBuildCompAnalysisPass(llvm::DominatorTree* pDT);
+    static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);
+};
 
 #endif
 

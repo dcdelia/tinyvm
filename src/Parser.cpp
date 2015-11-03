@@ -1242,6 +1242,11 @@ void Parser::handleCompCodeCommand() {
     int compCodeRequired = 0;
     int canBuildCompCode = 0;
 
+    BuildComp::AnalysisData* BCAD = nullptr;
+    if (action == canBuildCode || action == buildCode || action == testCode) {
+        BCAD = new BuildComp::AnalysisData(src);
+    }
+
     for (int i = 0, e = workList.size(); i != e; ++i) {
         OSRSrc = workList[i].first;
         LPad = workList[i].second;
@@ -1282,7 +1287,7 @@ void Parser::handleCompCodeCommand() {
             bool doBuild = (action == buildCode);
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    compCodeStrategy, doBuild, verbose);
+                    compCodeStrategy, BCAD, doBuild, verbose);
             if (ret) {
                 ++canBuildCompCode;
             }
@@ -1305,7 +1310,7 @@ void Parser::handleCompCodeCommand() {
         } else if (action == testCode) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    compCodeStrategy, true, verbose);
+                    compCodeStrategy, BCAD, true, verbose);
 
             if (!ret) {
                 if (verbose || !forAllPairs) {
@@ -1410,6 +1415,8 @@ void Parser::handleCompCodeCommand() {
                       << canBuildCompCode << std::endl;
         }
     }
+
+    if (BCAD) delete BCAD;
 
     #undef INVALID
 }

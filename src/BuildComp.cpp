@@ -15,6 +15,7 @@
 #include <llvm/PassManager.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Argument.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
@@ -23,6 +24,7 @@
 
 #undef NDEBUG
 #include <cassert>
+#include <algorithm>
 #include <map>
 #include <iostream>
 #include <set>
@@ -36,8 +38,7 @@ void initializeBuildCompAnalysisPass(PassRegistry&);
 namespace {
 struct BuildCompAnalysis : public FunctionPass {
     static char ID;
-    DominatorTree* DT;
-    DominatorTree* ptrForMoveDT;
+    BuildComp::AnalysisData* BCAD;
 
     BuildCompAnalysis() : FunctionPass(ID) {
         initializeBuildCompAnalysisPass(*PassRegistry::getPassRegistry());
@@ -47,6 +48,7 @@ struct BuildCompAnalysis : public FunctionPass {
 
     void getAnalysisUsage(AnalysisUsage& AU) const override {
         AU.addRequired<DominatorTreeWrapperPass>();
+        AU.addRequired<AliasAnalysis>();
     }
 };
 }
@@ -55,18 +57,115 @@ char BuildCompAnalysis::ID = 0;
 
 OSR_INITIALIZE_PASS_BEGIN(BuildCompAnalysis, "BuildCompAnalysis", "[OSR] BuildCompAnalysis", false, false)
 OSR_INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+OSR_INITIALIZE_AG_DEPENDENCY(AliasAnalysis);
 OSR_INITIALIZE_PASS_END(BuildCompAnalysis, "BuildCompAnalysis", "[OSR] BuildCompAnalysis", false, false)
 
+static bool processBlockForAvailableLoadAnalysis(BasicBlock* B,
+        AliasAnalysis* AA, BuildComp::AnalysisData::AvailLoadsMap &Map,
+        const BuildComp::AnalysisData::LocationSet &inAvailable,
+        BuildComp::AnalysisData::LocationSet &outAvailable) {
+
+    BuildComp::AnalysisData::LocationSet curOutAvailable = inAvailable;
+
+    for (BasicBlock::iterator it = B->begin(), end = B->end(); it != end; ++it) {
+        Instruction* I = &*it;
+        if (LoadInst* LI = dyn_cast<LoadInst>(I)) {
+            AliasAnalysis::Location Loc = AA->getLocation(LI);
+            curOutAvailable.insert(Loc.Ptr);
+        } else if (StoreInst* SI = dyn_cast<StoreInst>(I)) {
+            AliasAnalysis::Location Loc = AA->getLocation(SI);
+            // TODO check aliases as well!
+            BuildComp::AnalysisData::LocationSet::iterator locIt =
+                    curOutAvailable.find(Loc.Ptr);
+            if (locIt != curOutAvailable.end()) {
+                curOutAvailable.erase(locIt);
+            }
+        } else if (CallInst* CI = dyn_cast<CallInst>(I)) {
+            if (!CI->onlyReadsMemory()) {
+                curOutAvailable.clear();
+            }
+        } else if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
+            if (!II->onlyReadsMemory()) {
+                curOutAvailable.clear();
+            }
+        }
+        // TODO AtomicCmpXchg, AtomicRMW, VAArg, Fence
+    }
+
+    bool hasChanged = (curOutAvailable != outAvailable);
+
+    outAvailable = curOutAvailable;
+
+    if (!hasChanged) return false;
+
+    for (succ_iterator it = succ_begin(B), end = succ_end(B); it != end; ++it) {
+        BuildComp::AnalysisData::LocationSet intersection;
+        BuildComp::AnalysisData::LocationSet &succInSet = Map[*it].first;
+        std::set_intersection(outAvailable.begin(), outAvailable.end(),
+                succInSet.begin(), succInSet.end(),
+                std::inserter(intersection, intersection.end()));
+        succInSet = intersection;
+    }
+
+    return hasChanged;
+}
+
 bool BuildCompAnalysis::runOnFunction(Function& F) {
-    DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-    assert (ptrForMoveDT != nullptr && "ppDT uninitialized");
-    (*ptrForMoveDT) = std::move(*DT);
+    assert (BCAD != nullptr && "BuildCompAnalysisData uninitialized");
+
+    // alias analysis
+    AliasAnalysis *AA = &getAnalysis<AliasAnalysis>();
+
+    // dominance information
+    DominatorTree* DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+    BCAD->DT = std::move(*DT);
+
+    // identify loads, stores and function calls
+    for (Function::iterator fIt = F.begin(), fEnd = F.end(); fIt != fEnd; ++fIt) {
+        BasicBlock* B = &*fIt;
+        for (BasicBlock::iterator it = B->begin(), end = B->end(); it != end; ++it) {
+            Instruction* I = &*it;
+            if (LoadInst* LI = dyn_cast<LoadInst>(I)) {
+                BCAD->Loads.insert(LI);
+            } else if (StoreInst* SI = dyn_cast<StoreInst>(I)) {
+                BCAD->Stores.insert(SI);
+            } else if (CallInst* CI = dyn_cast<CallInst>(I)) {
+                BCAD->Calls.insert(CI);
+            } else if (InvokeInst* II = dyn_cast<InvokeInst>(I))  {
+                BCAD->Invokes.insert(II);
+            }
+        }
+    }
+
+    // perform available-Load analysis for memory locations
+    Function::BasicBlockListType &blocks = F.getBasicBlockList();
+    BuildComp::AnalysisData::AvailLoadsMap &AvailMap = BCAD->AvailLoadsAnalysis;
+
+    for (Function::BasicBlockListType::iterator it = blocks.begin(),
+            end = blocks.end(); it != end; ++it) {
+        BasicBlock *B = &*it;
+        AvailMap[B] = BuildComp::AnalysisData::InOutLocations();
+    }
+
+    bool hasChanged;
+    do {
+        hasChanged = false;
+        for (Function::BasicBlockListType::iterator it = blocks.begin(),
+                end = blocks.end(); it != end; ++it) { // forward analysis
+            BasicBlock* B = &*it;
+            BuildComp::AnalysisData::InOutLocations &currPair = AvailMap[B];
+
+            hasChanged |= processBlockForAvailableLoadAnalysis(B, AA, AvailMap,
+                currPair.first, currPair.second);
+        }
+    } while (hasChanged);
+
     return true;
 }
 
-FunctionPass* createBuildCompAnalysisPass(DominatorTree* pDT) {
+FunctionPass* BuildComp::createBuildCompAnalysisPass(BuildComp::AnalysisData* BCAD) {
     BuildCompAnalysis* BCAP = new BuildCompAnalysis();
-    BCAP->ptrForMoveDT = pDT;
+    BCAP->BCAD = BCAD;
     return BCAP;
 }
 
@@ -319,16 +418,13 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     return ret;
 }
 
-static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc,
-        Function* src, LivenessAnalysis::LiveValues& liveAtOSRSrc,
-        std::map<Value*, Value*> &deadAvailableValues) {
+static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc, Function*
+        src, LivenessAnalysis::LiveValues& liveAtOSRSrc, BuildComp::AnalysisData*
+        BCAD, std::map<Value*, Value*> &deadAvailableValues) {
 
-    DominatorTree DT;
+    assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
 
-    FunctionPassManager FPM(src->getParent());
-    FPM.add(createBuildCompAnalysisPass(&DT));
-    FPM.doInitialization();
-    FPM.run(*src);
+    DominatorTree &DT = BCAD->DT;
 
     StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
         for (StateMap::OneToOneValueMap::iterator it = map.begin(),
@@ -347,8 +443,24 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc,
             // at this point valToUse belongs to src
 
             if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
+                if (isa<TerminatorInst>(instToUse) || isa<StoreInst>(instToUse)) {
+                    continue;
+                }
+
                 BasicBlock* BB = instToUse->getParent();
                 BasicBlock* OSRSrcBB = OSRSrc->getParent();
+
+                // treat special cases first
+                if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
+                    if (DT.dominates(BB, OSRSrcBB)) {
+                        //AliasAnalysis::Location Loc =
+                    } else {
+
+                    }
+
+                    continue;
+                }
+
                 if (BB != OSRSrcBB) {
                     if (DT.dominates(BB, OSRSrcBB)) {
                         deadAvailableValues[valToSet] = valToUse;
@@ -371,8 +483,8 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc,
 
 
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
-        std::set<Value*> &keepSet, BuildComp::Heuristic opt, bool updateMapping,
-        bool verbose) {
+        std::set<Value*> &keepSet, BuildComp::Heuristic opt,
+        BuildComp::AnalysisData* BCAD, bool updateMapping, bool verbose) {
 
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
@@ -422,7 +534,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
     std::map<Value*, Value*> deadAvailableValues;
     if (shouldExtendLiveness(opt)) {
-        computeDeadAvailableValues(M, OSRSrc, src, liveAtOSRSrc,
+        computeDeadAvailableValues(M, OSRSrc, src, liveAtOSRSrc, BCAD,
                 deadAvailableValues);
     }
 
@@ -524,7 +636,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         if (bcReq) {
             missingSet.clear();
             bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    BuildComp::Heuristic::BC_NONE, false, verbose);
+                    BuildComp::Heuristic::BC_NONE, nullptr, false, verbose); // TODO!!!
             keepSet.clear();
         }
         if (F == F1) {

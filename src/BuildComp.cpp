@@ -61,12 +61,13 @@ OSR_INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 OSR_INITIALIZE_AG_DEPENDENCY(AliasAnalysis);
 OSR_INITIALIZE_PASS_END(BuildCompAnalysis, "BuildCompAnalysis", "[OSR] BuildCompAnalysis", false, false)
 
-static void processInstructionsForAvailableLoadAnalysis(AliasAnalysis* AA,
-        BuildComp::AnalysisData::AvailLoadSet &currentSet,
-        BasicBlock::iterator it, const BasicBlock::iterator end) {
+static void processInstructionsForSafeLoadAnalysis(AliasAnalysis* AA,
+        BuildComp::AnalysisData::SafeLoadSet &currentSet,
+        BasicBlock::iterator it, const BasicBlock::iterator end,
+        BuildComp::AnalysisData::SafeLoadsInstMap &InstMap) {
 
     #define CHECK_AND_REMOVE_FROM_CUR_OUT(Inst) do \
-        for (BuildComp::AnalysisData::AvailLoadSet::iterator \
+        for (BuildComp::AnalysisData::SafeLoadSet::iterator \
                 aIt = currentSet.begin(), aEnd = currentSet.end(); \
                 aIt != aEnd; ) { \
             LoadInst* LI = *aIt; \
@@ -80,6 +81,9 @@ static void processInstructionsForAvailableLoadAnalysis(AliasAnalysis* AA,
 
     for (; it != end; ++it) {
         Instruction* I = &*it;
+
+        InstMap[I] = currentSet; // TODO inefficient, but okay for now...
+
         // see getLocation() methods from AliasAnalysis.cpp
         if (LoadInst* LI = dyn_cast<LoadInst>(I)) {
             currentSet.insert(LI);
@@ -105,26 +109,27 @@ static void processInstructionsForAvailableLoadAnalysis(AliasAnalysis* AA,
     #undef CHECK_AND_REMOVE_FROM_CUR_OUT
 }
 
-static bool processBlockForAvailableLoadAnalysis(BasicBlock* B,
-        AliasAnalysis* AA, BuildComp::AnalysisData::AvailLoadsMap &Map,
-        const BuildComp::AnalysisData::AvailLoadSet &inAvailable,
-        BuildComp::AnalysisData::AvailLoadSet &outAvailable) {
+static bool processBlockForSafeLoadAnalysis(BasicBlock* B,
+        AliasAnalysis* AA, BuildComp::AnalysisData::SafeLoadsBBMap &BBMap,
+        BuildComp::AnalysisData::SafeLoadsInstMap &InstMap,
+        const BuildComp::AnalysisData::SafeLoadSet &inSafe,
+        BuildComp::AnalysisData::SafeLoadSet &outSafe) {
 
-    BuildComp::AnalysisData::AvailLoadSet curOutAvailable = inAvailable;
+    BuildComp::AnalysisData::SafeLoadSet curOutSafe = inSafe;
 
-    processInstructionsForAvailableLoadAnalysis(AA, curOutAvailable, B->begin(),
-            B->end());
+    processInstructionsForSafeLoadAnalysis(AA, curOutSafe, B->begin(),
+            B->end(), InstMap);
 
-    bool hasChanged = (curOutAvailable != outAvailable);
+    bool hasChanged = (curOutSafe != outSafe);
 
-    outAvailable = curOutAvailable;
+    outSafe = curOutSafe;
 
     if (!hasChanged) return false;
 
     for (succ_iterator it = succ_begin(B), end = succ_end(B); it != end; ++it) {
-        BuildComp::AnalysisData::AvailLoadSet intersection;
-        BuildComp::AnalysisData::AvailLoadSet &succInSet = Map[*it].first;
-        std::set_intersection(outAvailable.begin(), outAvailable.end(),
+        BuildComp::AnalysisData::SafeLoadSet intersection;
+        BuildComp::AnalysisData::SafeLoadSet &succInSet = BBMap[*it].first;
+        std::set_intersection(outSafe.begin(), outSafe.end(),
                 succInSet.begin(), succInSet.end(),
                 std::inserter(intersection, intersection.end()));
         succInSet = intersection;
@@ -161,13 +166,15 @@ bool BuildCompAnalysis::runOnFunction(Function& F) {
     }
 
     // perform available-Load analysis for memory locations
+    BuildComp::AnalysisData::SafeLoadsInstMap &InstMap = BCAD->SafeLoadsMap;
+
+    BuildComp::AnalysisData::SafeLoadsBBMap BBMap;
     Function::BasicBlockListType &blocks = F.getBasicBlockList();
-    BuildComp::AnalysisData::AvailLoadsMap &AvailMap = BCAD->AvailLoadsAnalysis;
 
     for (Function::BasicBlockListType::iterator it = blocks.begin(),
             end = blocks.end(); it != end; ++it) {
         BasicBlock *B = &*it;
-        AvailMap[B] = BuildComp::AnalysisData::InOutAvailLoadSets();
+        BBMap[B] = BuildComp::AnalysisData::InOutSafeLoadSets();
     }
 
     bool hasChanged;
@@ -176,10 +183,10 @@ bool BuildCompAnalysis::runOnFunction(Function& F) {
         for (Function::BasicBlockListType::iterator it = blocks.begin(),
                 end = blocks.end(); it != end; ++it) { // forward analysis
             BasicBlock* B = &*it;
-            BuildComp::AnalysisData::InOutAvailLoadSets &currPair = AvailMap[B];
+            BuildComp::AnalysisData::InOutSafeLoadSets &currPair = BBMap[B];
 
-            hasChanged |= processBlockForAvailableLoadAnalysis(B, AA, AvailMap,
-                currPair.first, currPair.second);
+            hasChanged |= processBlockForSafeLoadAnalysis(B, AA, BBMap,
+                    InstMap, currPair.first, currPair.second);
         }
     } while (hasChanged);
 
@@ -447,7 +454,10 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc, Functio
 
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
 
+    BasicBlock* OSRSrcBB = OSRSrc->getParent();
+
     DominatorTree &DT = BCAD->DT;
+    BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
 
     StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
         for (StateMap::OneToOneValueMap::iterator it = map.begin(),
@@ -466,30 +476,25 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc, Functio
             // at this point valToUse belongs to src
 
             if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
+                 // TODO more cases indeed
                 if (isa<TerminatorInst>(instToUse) || isa<StoreInst>(instToUse)) {
                     continue;
                 }
 
                 BasicBlock* BB = instToUse->getParent();
-                BasicBlock* OSRSrcBB = OSRSrc->getParent();
-
-                // treat special cases first
-                if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                    if (DT.dominates(BB, OSRSrcBB)) {
-                        //AliasAnalysis::Location Loc =
-                    } else {
-
-                    }
-
-                    continue;
-                }
 
                 if (BB != OSRSrcBB) {
                     if (DT.dominates(BB, OSRSrcBB)) {
+                        if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
+                            if (safeLoads.count(LI) == 0) continue;
+                        }
                         deadAvailableValues[valToSet] = valToUse;
                     }
                 } else {
                     if (instToUse == OSRSrc) continue;
+                    if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
+                        if (safeLoads.count(LI) == 0) continue;
+                    }
                     BasicBlock::const_iterator bbIt = BB->begin();
                     for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
                     if (&*bbIt == instToUse) {

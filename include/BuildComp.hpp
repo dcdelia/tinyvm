@@ -27,9 +27,10 @@ public:
 
     struct AnalysisData {
         // we compare the base address only
-        typedef std::set<llvm::LoadInst*> AvailLoadSet;
-        typedef std::pair<AvailLoadSet, AvailLoadSet> InOutAvailLoadSets;
-        typedef std::map<llvm::BasicBlock*, InOutAvailLoadSets> AvailLoadsMap;
+        typedef std::set<llvm::LoadInst*> SafeLoadSet;
+        typedef std::pair<SafeLoadSet, SafeLoadSet> InOutSafeLoadSets;
+        typedef std::map<llvm::BasicBlock*, InOutSafeLoadSets> SafeLoadsBBMap;
+        typedef std::map<llvm::Instruction*, SafeLoadSet> SafeLoadsInstMap;
 
         llvm::DominatorTree DT;
         std::set<llvm::CallInst*> Calls;
@@ -38,7 +39,7 @@ public:
         std::set<llvm::LoadInst*> LoadsFromReadOnly;
         std::set<llvm::StoreInst*> Stores;
 
-        AvailLoadsMap AvailLoadsAnalysis;
+        SafeLoadsInstMap SafeLoadsMap;
 
         AnalysisData(llvm::Function* F) {
             assert (F->getParent() != nullptr && "function not in a module");

@@ -1251,10 +1251,16 @@ void Parser::handleCompCodeCommand() {
         OSRSrc = workList[i].first;
         LPad = workList[i].second;
 
+        if (isa<PHINode>(OSRSrc)) {
+            if (!forAllPairs) {
+                std::cerr << "Cannot perform OSR from a PHINode!" << std::endl;
+            }
+            continue;
+        }
+
         // print info about the LocPair being processed
         OSRSrcName = getInstrID(OSRSrc, slotIDsForSrc, lineIDsForSrc);
         LPadName = getInstrID(LPad, slotIDsForDest, lineIDsForDest);
-
 
         if (forAllPairs && verbose) {
             std::cerr << "--> <" << OSRSrcName << ", " << LPadName << ">"
@@ -1329,7 +1335,7 @@ void Parser::handleCompCodeCommand() {
             std::unique_ptr<Module> NewModule =
                     llvm::make_unique<Module>("CompCodeMod", TheHelper->Context);
             Module* modToUse = NewModule.get();
-            std::string F1NewName = src->getName().str();
+            std::string F1NewName = "OSRSourceFun"; // src->getName().str();
 
             OSRLibrary::OSRPointConfig config(verbose, false, -1,
                     &F1NewName, modToUse, nullptr, nullptr, modToUse, nullptr);

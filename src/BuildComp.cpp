@@ -656,6 +656,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
         Instruction* OSRSrc = it->first;
+        if (isa<PHINode>(OSRSrc)) continue;
         Instruction* LPad = it->second;
         Function* F = OSRSrc->getParent()->getParent();
         assert ( (F == F1 || F == F2) && "OSRSrc from unknown function");

@@ -1082,6 +1082,10 @@ bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFu
         for (Value::use_iterator UI = F.use_begin(), UE = F.use_end(); UI != UE; ) {
             Use &U = *(UI++);
             if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
+                if (I->getParent() == nullptr) {
+                    // TODO can happen due to a CompCode block in StateMap!!!
+                    continue;
+                }
                 if (I->getParent()->getParent() != newFun) continue;
                 if (newF == nullptr) {
                     newF = newModule->getOrInsertFunction(F.getName(),

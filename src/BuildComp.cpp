@@ -378,12 +378,13 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
 
     if (success) {
         compCode->value = compCode->code->back();
-        if (!argsForCompCode.empty()) {
-            compCode->args = new SmallVector<Value*, 4>;
-            for (Value* arg: argsForCompCode) {
-                compCode->args->push_back(arg);
-            }
+
+        // args should be initialized even when no arguments are taken
+        compCode->args = new SmallVector<Value*, 4>;
+        for (Value* arg: argsForCompCode) {
+            compCode->args->push_back(arg);
         }
+
         return new StateMap::ValueInfo(compCode);
     } else {
         for (StateMap::CodeSequence::iterator it = compCode->code->begin(),

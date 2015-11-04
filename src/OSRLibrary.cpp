@@ -1054,6 +1054,10 @@ bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFu
             Use &U = *(UI++);
             User* user = U.getUser();
             if (Instruction* I = dyn_cast<Instruction>(user)) {
+                if (I->getParent() == nullptr) {
+                    // TODO can happen due to a CompCode block in StateMap!!!
+                    continue;
+                }
                 if (I->getParent()->getParent() != newFun) continue;
                 if (newG == nullptr) newG = getVisibleDeclaration(&g, newModule);
                 U.set(newG);

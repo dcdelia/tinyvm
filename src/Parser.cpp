@@ -1119,6 +1119,7 @@ void Parser::handleCompCodeCommand() {
             std::cerr << "(0) Base version of buildComp" << std::endl;
             std::cerr << "(1) Extend liveness range of values" << std::endl;
             std::cerr << "(2) Include dead arguments in CompCode" << std::endl;
+            std::cerr << "(3) Strategies 1 and 2 combined together" << std::endl;
             std::cerr << "Strategy in use: " << compCodeStrategy << std::endl;
         } else {
             int strategy = atoi(token);
@@ -1128,6 +1129,8 @@ void Parser::handleCompCodeCommand() {
                 case 1:     compCodeStrategy = BuildComp::Heuristic::BC_EXTEND_LIVENESS;
                             break;
                 case 2:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS;
+                            break;
+                case 3:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS_AND_EXTEND_LIVENESS;
                             break;
                 default:    std::cerr << "Unknown strategy number!" << std::endl;
                             return;
@@ -1444,6 +1447,13 @@ void Parser::handleCompCodeCommand() {
                 for (const std::pair<Value*, int> &pair: valuesToKeepAtPoints) {
                     std::cerr << "(" << pair.second << ") ";
                     pair.first->dump();
+                    if (PHINode* I = dyn_cast<PHINode>(pair.first)) {
+                        Value* constV = I->hasConstantValue();
+                        if (constV) {
+                            std::cerr << "which always yields:" << std::endl;
+                            constV->dump();
+                        }
+                    }
                 }
             }
         }

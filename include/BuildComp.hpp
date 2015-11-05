@@ -22,7 +22,8 @@
 class BuildComp {
 public:
     enum Heuristic {
-        BC_NONE = 0, BC_EXTEND_LIVENESS = 1, BC_DEAD_ARGS = 2 // more to come
+        BC_NONE = 0, BC_EXTEND_LIVENESS = 1, BC_DEAD_ARGS = 2,
+        BC_DEAD_ARGS_AND_EXTEND_LIVENESS = 3 // more to come
     };
 
     struct AnalysisData {
@@ -69,13 +70,18 @@ public:
                         Heuristic opt = BC_NONE,
                         bool verbose = false);
 
-private:
     static bool shouldExtendLiveness(Heuristic opt) {
-        return (opt == BC_EXTEND_LIVENESS);
+        return (opt == BC_EXTEND_LIVENESS ||
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS);
     }
 
     static bool shouldIncludeDeadArgs(Heuristic opt) {
-        return (opt == BC_DEAD_ARGS);
+        return (opt == BC_DEAD_ARGS ||
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS);
+    }
+
+    static bool shouldOptimizeConstantPHI(Heuristic opt) {
+        return true;
     }
 
     static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);

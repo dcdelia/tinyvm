@@ -201,7 +201,7 @@ FunctionPass* BuildComp::createBuildCompAnalysisPass(BuildComp::AnalysisData* BC
 
 static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
         &availableValues, std::map<Value*, Value*> &deadAvailableValues,
-        std::set<Value*> &missingValues) {
+        std::set<Value*> &missingValues, BuildComp::Heuristic opt) {
     for (User::op_iterator it = I->op_begin(), end = I->op_end(); it != end;
             ++it) {
         Value* op = *it;
@@ -213,14 +213,21 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
                 deadAvailableValues.count(op) == 0) {
             missingValues.insert(op);
             if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                 // we don't fetch incoming values for PHI nodes
-                if (!isa<PHINode>(opI)) {
+                // we don't fetch incoming values for non-constant PHI nodes
+                if (PHINode* PHI = dyn_cast<PHINode>(opI)) {
+                    if (BuildComp::shouldOptimizeConstantPHI(opt)) {
+                        Value* constV = PHI->hasConstantValue();
+                        if (Instruction* constI = dyn_cast_or_null<Instruction>(constV)) {
+                            if (constI) {
+                                identifyMissingValues(constI, availableValues,
+                                    deadAvailableValues, missingValues, opt);
+                            }
+                        }
+                    }
+                } else {
                     identifyMissingValues(opI, availableValues,
-                            deadAvailableValues, missingValues);
+                            deadAvailableValues, missingValues, opt);
                 }
-            } else {
-                // reconstructInst will take care of Argument operands
-                assert (isa<Argument>(op) && "Metadata operands not supported");
             }
         }
     }
@@ -228,9 +235,11 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
 
 static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
         &availableValues, std::map<Value*, Value*> &deadAvailableValues,
-        std::map<Instruction*, Instruction*> &reconstructedMap,
+        std::map<Instruction*, Value*> &reconstructedMap,
         std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
     // TODO heuristics; other instruction types?; LCSSA-like PHI nodes
+    assert(!isa<PHINode>(I) && "PHINode should have already been captured?");
+
     if (isa<PHINode>(I) || isa<LoadInst>(I) || isa<InvokeInst>(I)) {
         return nullptr;
     }
@@ -244,7 +253,7 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
     std::map<Value*, Value*>::iterator availIt, deadAvailIt;
     std::map<Value*, Value*>::iterator availEnd = availableValues.end();
     std::map<Value*, Value*>::iterator deadAvailEnd = deadAvailableValues.end();
-    std::map<Instruction*, Instruction*>::iterator recEnd = reconstructedMap.end();
+    std::map<Instruction*, Value*>::iterator recEnd = reconstructedMap.end();
     for (Use &U: RI->operands()) {
         Value* op = U.get();
 
@@ -274,7 +283,7 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
         }
 
         if (Instruction* opI = dyn_cast<Instruction>(op)) {
-            std::map<Instruction*, Instruction*>::iterator recIt =
+            std::map<Instruction*, Value*>::iterator recIt =
                     reconstructedMap.find(opI);
             assert(recIt != recEnd && "unidentified or not in topological order?");
             U.set(recIt->second);
@@ -299,8 +308,10 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
         std::map<Value*, Value*> &deadAvailableValues,
         std::set<Value*> &valuesToKeep, BuildComp::Heuristic opt) {
 
+    // sanity checks
     assert(deadAvailableValues.count(instToReconstruct) == 0
             && "attempting to reconstruct a dead available value?");
+    assert(!isa<PHINode>(instToReconstruct) && "PHI node not treated earlier?");
 
     // TODO: other instructions as well?
     if (isa<PHINode>(instToReconstruct) || isa<LoadInst>(instToReconstruct)) {
@@ -312,12 +323,13 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     // identify which values need to be reconstructed
     std::set<Value*> missingValues;
     identifyMissingValues(instToReconstruct, availableValues,
-            deadAvailableValues, missingValues);
+            deadAvailableValues, missingValues, opt);
 
     std::set<Instruction*> instWorkSet;
     for (Value* v: missingValues) {
-        // TODO check option to extend liveness range for a dead argument
+        // dead arguments should have already been made available at this stage
         if (isa<Argument>(v)) return nullptr;
+
         instWorkSet.insert(cast<Instruction>(v));
     }
 
@@ -362,9 +374,44 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     compCode->code = new SmallVector<Value*, 8>;
 
     bool success = true;
-    std::map<Instruction*, Instruction*> reconstructedMap;
+    std::map<Instruction*, Value*> reconstructedMap;
     std::set<Value*> argsForCompCode;
     for (Instruction* currInstToReconstruct: sortedInstructions) {
+        // special handling for PHI nodes
+        if (PHINode* phi = dyn_cast<PHINode>(currInstToReconstruct)) {
+            if (BuildComp::shouldOptimizeConstantPHI(opt)) {
+                Value* constV = phi->hasConstantValue();
+                if (constV) {
+                    if (Instruction* constI = dyn_cast_or_null<Instruction>(constV)) {
+                        assert(reconstructedMap.count(constI) != 0
+                                && "constI for PHINode not reconstructed yet?");
+                        reconstructedMap[currInstToReconstruct] =
+                                reconstructedMap[constI];
+                        continue;
+                    } else if (Argument* A = dyn_cast<Argument>(constV)) {
+                        Value* valToUse = nullptr;
+                        if (availableValues.count(A) != 0) {
+                            valToUse = availableValues[A];
+                        } else if (deadAvailableValues.count(A) != 0) {
+                            valToUse = availableValues[A];
+                        }
+                        if (valToUse) {
+                            reconstructedMap[currInstToReconstruct] = valToUse;
+                            continue;
+                        }
+                    } else {
+                        assert(isa<Constant>(constV) && "unknown type?");
+                        reconstructedMap[currInstToReconstruct] = constV;
+                        continue;
+                    }
+                }
+            }
+
+            success = false;
+            break;
+        }
+
+
         Instruction* RI = reconstructInst(currInstToReconstruct, availableValues,
                 deadAvailableValues, reconstructedMap, argsForCompCode, opt);
         if (RI == nullptr) {
@@ -590,11 +637,45 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     bool error = false;
 
     for (Value* valToReconstruct: workList) {
+        if (PHINode* phi = dyn_cast<PHINode>(valToReconstruct)) {
+            Value* valToUse = nullptr;
+
+            // constant PHI nodes can be treated as a special case
+            Value* constV = nullptr;
+
+            if (shouldOptimizeConstantPHI(opt)) {
+                constV = phi->hasConstantValue();
+                if (constV) {
+                    if (availableValues.count(constV) != 0) {
+                        valToUse = availableValues[constV];
+                    } else if (deadAvailableValues.count(constV) != 0) {
+                        valToUse = deadAvailableValues[constV];
+                    }
+                }
+            }
+
+            if (!valToUse) {
+                error = true;
+                // TODO: constV would yield more accurate info, but we can let
+                // the front-end inspect phi to see whether hasConstantValue()
+                keepSet.insert(phi);                
+            } else {
+                StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
+                valueInfoMap[valToReconstruct] = valInfo;
+            }
+
+            continue;
+        }
+
         if (deadAvailableValues.count(valToReconstruct) != 0) {
             Value* valToUse = deadAvailableValues[valToReconstruct];
             StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
             valueInfoMap[valToReconstruct] = valInfo;
-        } else if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
+
+            continue;
+        }
+
+        if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
                     deadAvailableValues, curValuesToKeep, opt);
             if (valInfo == nullptr) {
@@ -604,10 +685,12 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             } else {
                 valueInfoMap[valToReconstruct] = valInfo;
             }
-        } else {
-            error = true;
-            keepSet.insert(valToReconstruct);
+
+            continue;
         }
+
+        error = true;
+        keepSet.insert(valToReconstruct);
     }
 
     assert( (error || keepSet.empty()) && "non-empty keepSet on success?");

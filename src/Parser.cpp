@@ -1118,6 +1118,7 @@ void Parser::handleCompCodeCommand() {
             std::cerr << "Available strategies:" << std::endl;
             std::cerr << "(0) Base version of buildComp" << std::endl;
             std::cerr << "(1) Extend liveness range of values" << std::endl;
+            std::cerr << "(2) Include dead arguments in CompCode" << std::endl;
             std::cerr << "Strategy in use: " << compCodeStrategy << std::endl;
         } else {
             int strategy = atoi(token);
@@ -1125,6 +1126,8 @@ void Parser::handleCompCodeCommand() {
                 case 0:     compCodeStrategy = BuildComp::Heuristic::BC_NONE;
                             break;
                 case 1:     compCodeStrategy = BuildComp::Heuristic::BC_EXTEND_LIVENESS;
+                            break;
+                case 2:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS;
                             break;
                 default:    std::cerr << "Unknown strategy number!" << std::endl;
                             return;
@@ -1242,6 +1245,17 @@ void Parser::handleCompCodeCommand() {
     int compCodeRequired = 0;
     int canBuildCompCode = 0;
 
+    std::map<Value*, int> valuesToKeepAtPoints;
+    auto updateValuesToKeepInfo = [&valuesToKeepAtPoints](std::set<Value*> &S) {
+        for (Value* v: S) {
+            std::map<Value*, int>::iterator it = valuesToKeepAtPoints.find(v);
+            if (it == valuesToKeepAtPoints.end()) {
+                it = valuesToKeepAtPoints.insert(std::pair<Value*, int>(v, 1)).first;
+            }
+            ++it->second;
+        }
+    };
+
     BuildComp::AnalysisData* BCAD = nullptr;
     if (action == canBuildCode || action == buildCode || action == testCode) {
         BCAD = new BuildComp::AnalysisData(src);
@@ -1284,6 +1298,7 @@ void Parser::handleCompCodeCommand() {
 
         if (action == checkCodeRequired) {
             if (forAllPairs && !verbose) continue;
+
             std::cerr << "Compensation code is required to reconstruct:"
                       << std::endl;
             for (Value* v: missingSet) {
@@ -1297,6 +1312,8 @@ void Parser::handleCompCodeCommand() {
             if (ret) {
                 ++canBuildCompCode;
             }
+            updateValuesToKeepInfo(keepSet);
+
             if (forAllPairs && !verbose) continue;
             if (ret) {
                 if (doBuild) {
@@ -1317,6 +1334,7 @@ void Parser::handleCompCodeCommand() {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
                     compCodeStrategy, BCAD, true, verbose);
+            updateValuesToKeepInfo(keepSet);
 
             if (!ret) {
                 if (verbose || !forAllPairs) {
@@ -1419,6 +1437,15 @@ void Parser::handleCompCodeCommand() {
         if (action == buildCode || action == canBuildCode || action == testCode) {
             std::cerr << "- compensation code can be built automatically: "
                       << canBuildCompCode << std::endl;
+
+            if (!valuesToKeepAtPoints.empty()) {
+                std::cerr << std::endl << "Values that should have been preserved"
+                          << " (with # of involved OSR points):" << std::endl;
+                for (const std::pair<Value*, int> &pair: valuesToKeepAtPoints) {
+                    std::cerr << "(" << pair.second << ") ";
+                    pair.first->dump();
+                }
+            }
         }
     }
 

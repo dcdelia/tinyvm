@@ -161,7 +161,7 @@ void CodeMapper::replaceOneToOneValue(StateMap* M, Value* oldValue,
         }
     }
 
-    if (!isa<Constant>(newValue)) {
+    if (!isa<Constant>(newValue) && !isa<Argument>(newValue)) {
         it = map.find(oldValue);
         if (it != end) {
             map[newValue] = it->second;

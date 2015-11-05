@@ -551,6 +551,11 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         Value* valToSet = const_cast<Value*>(v);
         Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
         if (oneToOneVal != nullptr) {
+            if (shouldIncludeDeadArgs(opt) && isa<Argument>(oneToOneVal)) {
+                availableValues[valToSet] = oneToOneVal;
+                continue;
+            }
+
             if (liveAtOSRSrc.count(oneToOneVal) > 0) {
                 availableValues[valToSet] = oneToOneVal; // TODO what about Constant??
                 continue;
@@ -560,6 +565,19 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     }
 
     if (workList.empty()) return true;
+
+    if (shouldIncludeDeadArgs(opt)) {
+        // mark as available all values 1:1-mapped to an argument
+        StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
+        for (StateMap::OneToOneValueMap::iterator it = map.begin(),
+                end = map.end(); it != end; ++it) {
+            if (Argument* A = dyn_cast<Argument>(it->second)) {
+                if (A->getParent() == src) {
+                    availableValues[it->first] = A;
+                }
+            }
+        }
+    }
 
     std::map<Value*, Value*> deadAvailableValues;
     if (shouldExtendLiveness(opt)) {

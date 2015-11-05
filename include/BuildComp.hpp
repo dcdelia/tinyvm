@@ -22,7 +22,7 @@
 class BuildComp {
 public:
     enum Heuristic {
-        BC_NONE = 0, BC_EXTEND_LIVENESS = 1, BC_READONLY_LOADS = 2 // more to come
+        BC_NONE = 0, BC_EXTEND_LIVENESS = 1, BC_DEAD_ARGS = 2 // more to come
     };
 
     struct AnalysisData {
@@ -74,8 +74,8 @@ private:
         return (opt == BC_EXTEND_LIVENESS);
     }
 
-    static bool shouldOptimizeReadOnlyLoads(Heuristic opt) {
-        return (opt == BC_READONLY_LOADS);
+    static bool shouldIncludeDeadArgs(Heuristic opt) {
+        return (opt == BC_DEAD_ARGS);
     }
 
     static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);

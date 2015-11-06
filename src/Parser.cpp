@@ -561,7 +561,7 @@ void Parser::handleHelpCommand() {
               << "--> COMP_CODE STRATEGY [<NUM>]"
               << std::endl << std::endl << "where:" << std::endl
               << "\tOP is one of the following actions: CHECK, CAN_BUILD, "
-              << "BUILD, SHOW, TEST" << std::endl
+              << "BUILD, INSPECT, SHOW, TEST" << std::endl
               << "\tF1 and F2 are existing functions" << std::endl
               << "\tP1 and P2 are locations in F1 and F2 respectively"
               << std::endl << std::endl;
@@ -574,7 +574,10 @@ void Parser::handleHelpCommand() {
               << std::endl << std::endl;
     std::cerr << "When P1 and P2 are not specified, the required action is "
               << "performed on all the candidate OSR source locations in F1 "
-              << "encoded in the StateMap."
+              << "encoded in the StateMap. In this scenario, COMP_CODE can also"
+              << " INSPECT which LLVM Values cannot be reconstructed across "
+              << "unfeasible OSR locations, and how many locations per "
+              << "BasicBlock are not feasible."
               << std::endl;
     SHOW_HELP_FOR_LOCATIONS();
     std::cerr << std::endl
@@ -1091,7 +1094,8 @@ void Parser::handleCompCodeCommand() {
 
     // anonymous enum to encode actions
     enum {
-        buildCode, canBuildCode, checkCodeRequired, testCode, showCode, strategy
+        buildCode, canBuildCode, checkCodeRequired, inspect, showCode, strategy,
+        testCode
     };
     int action;
 
@@ -1101,12 +1105,14 @@ void Parser::handleCompCodeCommand() {
         action = canBuildCode;
     } else if (!strcasecmp(token, "CHECK")) {
         action = checkCodeRequired;
-    } else if (!strcasecmp(token, "TEST")) {
-        action = testCode;
+    } else if (!strcasecmp(token, "INSPECT")) {
+        action = inspect;
     } else if (!strcasecmp(token, "SHOW")) {
         action = showCode;
     } else if (!strcasecmp(token, "STRATEGY")) {
         action = strategy;
+    } else if (!strcasecmp(token, "TEST")) {
+        action = testCode;
     } else {
         INVALID();
     }
@@ -1155,6 +1161,12 @@ void Parser::handleCompCodeCommand() {
         forAllPairs = true;
     } else if (strcasecmp(token, "AT")) {
         INVALID();
+    }
+
+    if (!forAllPairs && action == inspect) {
+        std::cerr << "COMP_CODE INSPECT does not apply to specific locations"
+                  << std::endl;
+        return;
     }
 
     if (!forAllPairs) {
@@ -1260,7 +1272,8 @@ void Parser::handleCompCodeCommand() {
     };
 
     BuildComp::AnalysisData* BCAD = nullptr;
-    if (action == canBuildCode || action == buildCode || action == testCode) {
+    if (action == canBuildCode || action == buildCode || action == testCode
+            || action == inspect) {
         BCAD = new BuildComp::AnalysisData(src);
     }
 
@@ -1426,6 +1439,15 @@ void Parser::handleCompCodeCommand() {
                     (*it)->dump();
                 }
             }
+        } else if (action == inspect) {
+            keepSet.clear();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+                    compCodeStrategy, BCAD, false, verbose);
+            if (ret) {
+                ++canBuildCompCode;
+            } else {
+                updateValuesToKeepInfo(keepSet);
+            }
         }
     }
 
@@ -1437,21 +1459,29 @@ void Parser::handleCompCodeCommand() {
                 noCompCodeRequired << std::endl;
         std::cerr << "- compensation code is required: "
                   << compCodeRequired << std::endl;
-        if (action == buildCode || action == canBuildCode || action == testCode) {
+        if (action == buildCode || action == canBuildCode || action == testCode
+                || action == inspect) {
             std::cerr << "- compensation code can be built automatically: "
                       << canBuildCompCode << std::endl;
 
-            if (!valuesToKeepAtPoints.empty()) {
-                std::cerr << std::endl << "Values that should have been preserved"
-                          << " (with # of involved OSR points):" << std::endl;
-                for (const std::pair<Value*, int> &pair: valuesToKeepAtPoints) {
-                    std::cerr << "(" << pair.second << ") ";
-                    pair.first->dump();
-                    if (PHINode* I = dyn_cast<PHINode>(pair.first)) {
-                        Value* constV = I->hasConstantValue();
-                        if (constV) {
-                            std::cerr << "which always yields:" << std::endl;
-                            constV->dump();
+            if (action == inspect) {
+                if (valuesToKeepAtPoints.empty()) {
+                    std::cerr << "Compensation code can be built for all locations."
+                              << std::endl;
+                } else {
+                    std::cerr << std::endl
+                              << "Values that should have been preserved"
+                              << " (with # of involved OSR points):"
+                              << std::endl;
+                    for (const std::pair<Value*, int> &pair: valuesToKeepAtPoints) {
+                        std::cerr << "(" << pair.second << ") ";
+                        pair.first->dump();
+                        if (PHINode* I = dyn_cast<PHINode>(pair.first)) {
+                            Value* constV = I->hasConstantValue();
+                            if (constV) {
+                                std::cerr << "which always yields:" << std::endl;
+                                constV->dump();
+                            }
                         }
                     }
                 }

@@ -1066,11 +1066,7 @@ std::string Parser::getInstrID(Instruction* I, Parser::IDToValueVec &slotIDs,
         } else {
             for (index = 0, numIndexes = lineIDs.size(); index < numIndexes &&
                     lineIDs[index] != I; ++index);
-            if (index == numIndexes) {
-                std::cerr << "-------> WHD <--------" << std::endl;
-                I->dump();
-            }
-            //assert(index != numIndexes && "instruction from another function?");
+            assert(index != numIndexes && "instruction from another function?");
             InstName = "$";
             InstName += std::to_string(++index); // offset by 1
         }
@@ -1126,6 +1122,8 @@ void Parser::handleCompCodeCommand() {
             std::cerr << "(1) Extend liveness range of values" << std::endl;
             std::cerr << "(2) Include dead arguments in CompCode" << std::endl;
             std::cerr << "(3) Strategies 1 and 2 combined together" << std::endl;
+            std::cerr << "(4) Aggressively extend liveness range of values" << std::endl;
+            std::cerr << "(5) Strategies 2 and 4 combined together" << std::endl;
             std::cerr << "Strategy in use: " << compCodeStrategy << std::endl;
         } else {
             int strategy = atoi(token);
@@ -1137,6 +1135,10 @@ void Parser::handleCompCodeCommand() {
                 case 2:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS;
                             break;
                 case 3:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS_AND_EXTEND_LIVENESS;
+                            break;
+                case 4:     compCodeStrategy = BuildComp::Heuristic::BC_EXTEND_LIVENESS_ALWAYS;
+                            break;
+                case 5:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS;
                             break;
                 default:    std::cerr << "Unknown strategy number!" << std::endl;
                             return;
@@ -1260,7 +1262,14 @@ void Parser::handleCompCodeCommand() {
     int compCodeRequired = 0;
     int canBuildCompCode = 0;
 
+    // collecting statistics
     std::map<Value*, int> valuesToKeepAtPoints;
+    std::map<BasicBlock*, std::pair<int, int>> feasibleOSRPointsPerBlock;
+    for (Function::iterator it = src->begin(), end = src->end(); it != end; ++it) {
+        BasicBlock* B = &*it;
+        feasibleOSRPointsPerBlock.insert(std::pair<BasicBlock*, std::pair<int, int>>(
+                B, std::pair<int,int>(0,0)));
+    }
     auto updateValuesToKeepInfo = [&valuesToKeepAtPoints](std::set<Value*> &S) {
         for (Value* v: S) {
             std::map<Value*, int>::iterator it = valuesToKeepAtPoints.find(v);
@@ -1271,6 +1280,8 @@ void Parser::handleCompCodeCommand() {
         }
     };
 
+
+    // compute analysis info required by BuildComp
     BuildComp::AnalysisData* BCAD = nullptr;
     if (action == canBuildCode || action == buildCode || action == testCode
             || action == inspect) {
@@ -1443,8 +1454,13 @@ void Parser::handleCompCodeCommand() {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
                     compCodeStrategy, BCAD, false, verbose);
+            std::map<BasicBlock*, std::pair<int,int>>::iterator bbMapIt =
+                    feasibleOSRPointsPerBlock.find(OSRSrc->getParent());
+            assert (bbMapIt != feasibleOSRPointsPerBlock.end() && "unknown BB");
+            ++(bbMapIt->second.second);
             if (ret) {
                 ++canBuildCompCode;
+                ++(bbMapIt->second.first);
             } else {
                 updateValuesToKeepInfo(keepSet);
             }
@@ -1485,6 +1501,29 @@ void Parser::handleCompCodeCommand() {
                         }
                     }
                 }
+                std::cerr << std::endl
+                          << "Unfeasible OSR locations per BasicBlock:"
+                          << std::endl;
+                int numIndexes = slotIDsForSrc.size();
+                for (const std::pair<BasicBlock*, std::pair<int,int>> &pair:
+                        feasibleOSRPointsPerBlock) {
+                    int unfeasible = pair.second.second - pair.second.first;
+                    assert (pair.second.second >= pair.second.first);
+                    if (unfeasible == 0) continue;
+                    BasicBlock* B = pair.first;
+                    if (B->hasName()) {
+                        std::cerr << "[%" << B->getName().str();
+                    } else {
+                        int index;
+                        for (index = 0; index < numIndexes &&
+                                slotIDsForSrc[index] != B; ++index);
+                        assert(index != numIndexes && "unknown BB?");
+                        std::cerr << "[%" << std::to_string(index);
+                    }
+                    std::cerr << ": " << unfeasible << "/"
+                              << pair.second.second << "] ";
+                }
+                std::cerr << std::endl;
             }
         }
     }

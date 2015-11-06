@@ -83,7 +83,8 @@ public:
     }
 
     static bool shouldAlwaysExtendLiveness(Heuristic opt) {
-        return (opt == BC_EXTEND_LIVENESS_ALWAYS);
+        return (opt == BC_EXTEND_LIVENESS_ALWAYS ||
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS);
     }
 
     static bool shouldIncludeDeadArgs(Heuristic opt) {

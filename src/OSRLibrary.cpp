@@ -866,7 +866,7 @@ void OSRLibrary::replaceUsesAndFixSSA(Function* OSRCont, Instruction* OSRContLPa
             for (Value::use_iterator UI = oldValue->use_begin(),
                     UE = oldValue->use_end(); UI != UE; ) {
                 Use &U = *(UI++);
-                updateSSA.RewriteUse(U);
+                updateSSA.RewriteUseAfterInsertions(U);
             }
 
             ++replacedUses;

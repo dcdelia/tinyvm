@@ -22,8 +22,13 @@
 class BuildComp {
 public:
     enum Heuristic {
-        BC_NONE = 0, BC_EXTEND_LIVENESS = 1, BC_DEAD_ARGS = 2,
-        BC_DEAD_ARGS_AND_EXTEND_LIVENESS = 3 // more to come
+        BC_NONE = 0,
+        BC_EXTEND_LIVENESS = 1,
+        BC_DEAD_ARGS = 2,
+        BC_DEAD_ARGS_AND_EXTEND_LIVENESS = 3,
+        BC_EXTEND_LIVENESS_ALWAYS = 4,
+        BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS = 5
+                // more to come
     };
 
     struct AnalysisData {
@@ -72,12 +77,19 @@ public:
 
     static bool shouldExtendLiveness(Heuristic opt) {
         return (opt == BC_EXTEND_LIVENESS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS);
+                opt == BC_EXTEND_LIVENESS_ALWAYS ||
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS ||
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS);
+    }
+
+    static bool shouldAlwaysExtendLiveness(Heuristic opt) {
+        return (opt == BC_EXTEND_LIVENESS_ALWAYS);
     }
 
     static bool shouldIncludeDeadArgs(Heuristic opt) {
         return (opt == BC_DEAD_ARGS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS);
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS ||
+                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS);
     }
 
     static bool shouldOptimizeConstantPHI(Heuristic opt) {

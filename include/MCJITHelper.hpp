@@ -51,6 +51,7 @@ public:
         std::string ErrStr;
         JIT = EngineBuilder(std::move(InitialModule))
                             .setEngineKind(EngineKind::JIT)
+                            /*.setOptLevel(CodeGenOpt::None)*/
                             .setErrorStr(&ErrStr)
                             .setMCJITMemoryManager(std::move(MemoryManager))
                             .create();

@@ -1328,7 +1328,7 @@ void Parser::handleCompCodeCommand() {
             if (ret) {
                 ++canBuildCompCode;
             }
-            updateValuesToKeepInfo(keepSet);
+            //updateValuesToKeepInfo(keepSet);
 
             if (forAllPairs && !verbose) continue;
             if (ret) {
@@ -1350,7 +1350,7 @@ void Parser::handleCompCodeCommand() {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
                     compCodeStrategy, BCAD, true, verbose);
-            updateValuesToKeepInfo(keepSet);
+            //updateValuesToKeepInfo(keepSet);
 
             if (!ret) {
                 if (verbose || !forAllPairs) {

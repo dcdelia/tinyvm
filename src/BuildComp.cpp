@@ -240,12 +240,16 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
     // TODO heuristics; other instruction types?; LCSSA-like PHI nodes
     assert(!isa<PHINode>(I) && "PHINode should have already been captured?");
 
-    if (isa<PHINode>(I) || isa<LoadInst>(I) || isa<InvokeInst>(I)) {
+    if (isa<PHINode>(I) || isa<LoadInst>(I)) {
         return nullptr;
     }
 
     if (CallInst* CI = dyn_cast<CallInst>(I)) {
         if (CI->mayWriteToMemory()) return nullptr;
+    }
+
+    if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
+        if (II->mayWriteToMemory()) return nullptr;
     }
 
     Instruction* RI = I->clone();
@@ -498,7 +502,8 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
 
 static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc, Function*
         src, LivenessAnalysis::LiveValues& liveAtOSRSrc, BuildComp::AnalysisData*
-        BCAD, std::map<Value*, Value*> &deadAvailableValues) {
+        BCAD, std::map<Value*, Value*> &deadAvailableValues,
+        BuildComp::Heuristic opt) {
 
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
 
@@ -534,14 +539,18 @@ static void computeDeadAvailableValues(StateMap *M, Instruction* OSRSrc, Functio
                 if (BB != OSRSrcBB) {
                     if (DT.dominates(BB, OSRSrcBB)) {
                         if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                            if (safeLoads.count(LI) == 0) continue;
+                            if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                                if (safeLoads.count(LI) == 0) continue;
+                            }
                         }
                         deadAvailableValues[valToSet] = valToUse;
                     }
                 } else {
                     if (instToUse == OSRSrc) continue;
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                        if (safeLoads.count(LI) == 0) continue;
+                        if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                            if (safeLoads.count(LI) == 0) continue;
+                        }
                     }
                     BasicBlock::const_iterator bbIt = BB->begin();
                     for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
@@ -629,7 +638,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     std::map<Value*, Value*> deadAvailableValues;
     if (shouldExtendLiveness(opt)) {
         computeDeadAvailableValues(M, OSRSrc, src, liveAtOSRSrc, BCAD,
-                deadAvailableValues);
+                deadAvailableValues, opt);
     }
 
     StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
@@ -658,7 +667,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 error = true;
                 // TODO: constV would yield more accurate info, but we can let
                 // the front-end inspect phi to see whether hasConstantValue()
-                keepSet.insert(phi);                
+                keepSet.insert(phi);
             } else {
                 StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
                 valueInfoMap[valToReconstruct] = valInfo;

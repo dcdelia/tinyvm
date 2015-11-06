@@ -48,8 +48,12 @@ public:
         std::unique_ptr<CustomMemoryManager> MemoryManager(new CustomMemoryManager(this));
         MManager = MemoryManager.get();
         std::string ErrStr;
+
+        CodeGenOpt::Level optLevel = CodeGenOpt::Level::Default;
+
         JIT = EngineBuilder(std::move(InitialModule))
                             .setEngineKind(EngineKind::JIT)
+                            .setOptLevel(optLevel)
                             .setErrorStr(&ErrStr)
                             .setMCJITMemoryManager(std::move(MemoryManager))
                             .create();

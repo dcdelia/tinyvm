@@ -214,42 +214,76 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
             missingValues.insert(op);
             if (Instruction* opI = dyn_cast<Instruction>(op)) {
                 // we don't fetch incoming values for non-constant PHI nodes
-                if (PHINode* PHI = dyn_cast<PHINode>(opI)) {
-                    if (BuildComp::shouldOptimizeConstantPHI(opt)) {
-                        Value* constV = PHI->hasConstantValue();
-                        if (Instruction* constI = dyn_cast_or_null<Instruction>(constV)) {
-                            if (constI) {
-                                identifyMissingValues(constI, availableValues,
-                                    deadAvailableValues, missingValues, opt);
-                            }
-                        }
+                if (PHINode* phi = dyn_cast<PHINode>(opI)) {
+                    if (!BuildComp::shouldOptimizeConstantPHI(opt) ||
+                        !phi->hasConstantValue()) {
+                        continue;
                     }
-                } else {
-                    identifyMissingValues(opI, availableValues,
-                            deadAvailableValues, missingValues, opt);
                 }
+
+                identifyMissingValues(opI, availableValues,
+                        deadAvailableValues, missingValues, opt);
+
             }
         }
     }
 }
 
-static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
+
+static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
         &availableValues, std::map<Value*, Value*> &deadAvailableValues,
         std::map<Instruction*, Value*> &reconstructedMap,
+        StateMap::CodeSequence* compCodeSequence,
         std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
-    // TODO heuristics; other instruction types?; LCSSA-like PHI nodes
-    assert(!isa<PHINode>(I) && "PHINode should have already been captured?");
 
-    if (isa<PHINode>(I) || isa<LoadInst>(I)) {
-        return nullptr;
+    // TODO heuristics; other instruction types?
+
+    // attempt to reconstruct constant PHI nodes
+    if (PHINode* phi = dyn_cast<PHINode>(I)) {
+        Value* constV = phi->hasConstantValue();
+
+        if (!constV || !BuildComp::shouldOptimizeConstantPHI(opt)) return false;
+
+        if (Instruction* constI = dyn_cast<Instruction>(constV)) {
+            if (reconstructedMap.count(constI) != 0) {
+                reconstructedMap[I] = reconstructedMap[constI];
+                return true;
+            }
+        }
+
+        Value* valToUse = nullptr;
+
+        if (availableValues.count(constV) != 0) {
+            valToUse = availableValues[constV];
+        } else if (deadAvailableValues.count(constV) != 0) {
+            valToUse = deadAvailableValues[constV];
+        }
+
+        if (valToUse) {
+            if (!isa<Constant>(valToUse)) {
+                argsForCompCode.insert(valToUse);
+            }
+            reconstructedMap[I] = valToUse;
+
+            return true;
+        }
+
+        std::cerr << "I HAVE FAILED THIS CITY:";
+
+        return false;
     }
 
+    if (isa<LoadInst>(I)) {
+        return false;
+    }
+
+
     if (CallInst* CI = dyn_cast<CallInst>(I)) {
-        if (CI->mayWriteToMemory()) return nullptr;
+        if (CI->mayWriteToMemory()) return false;
     }
 
     if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
-        if (II->mayWriteToMemory()) return nullptr;
+        if (II->mayWriteToMemory()) return false;
     }
 
     Instruction* RI = I->clone();
@@ -283,19 +317,20 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
 
         if (isa<Argument>(op)) {
             // TODO check option to extend liveness range for a dead argument
-            return nullptr;
+            return false;
         }
 
         if (Instruction* opI = dyn_cast<Instruction>(op)) {
             std::map<Instruction*, Value*>::iterator recIt =
                     reconstructedMap.find(opI);
+
             assert(recIt != recEnd && "unidentified or not in topological order?");
             U.set(recIt->second);
             continue;
         }
 
         assert(false && "Metadata operands are unsupported"); // reachable?
-        return nullptr;
+        return false;
     }
 
     if (I->hasName()) {
@@ -304,7 +339,10 @@ static Instruction* reconstructInst(Instruction* I, std::map<Value*, Value*>
         RI->setName("CCtmp");
     }
 
-    return RI;
+    reconstructedMap[I] = RI;
+    compCodeSequence->push_back(RI);
+
+    return true;
 }
 
 static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
@@ -380,51 +418,13 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     bool success = true;
     std::map<Instruction*, Value*> reconstructedMap;
     std::set<Value*> argsForCompCode;
+
     for (Instruction* currInstToReconstruct: sortedInstructions) {
-        // special handling for PHI nodes
-        if (PHINode* phi = dyn_cast<PHINode>(currInstToReconstruct)) {
-            if (BuildComp::shouldOptimizeConstantPHI(opt)) {
-                Value* constV = phi->hasConstantValue();
-                if (constV) {
-                    if (Instruction* constI = dyn_cast_or_null<Instruction>(constV)) {
-                        assert(reconstructedMap.count(constI) != 0
-                                && "constI for PHINode not reconstructed yet?");
-                        reconstructedMap[currInstToReconstruct] =
-                                reconstructedMap[constI];
-                        continue;
-                    } else if (Argument* A = dyn_cast<Argument>(constV)) {
-                        Value* valToUse = nullptr;
-                        if (availableValues.count(A) != 0) {
-                            valToUse = availableValues[A];
-                        } else if (deadAvailableValues.count(A) != 0) {
-                            valToUse = availableValues[A];
-                        }
-                        if (valToUse) {
-                            reconstructedMap[currInstToReconstruct] = valToUse;
-                            continue;
-                        }
-                    } else {
-                        assert(isa<Constant>(constV) && "unknown type?");
-                        reconstructedMap[currInstToReconstruct] = constV;
-                        continue;
-                    }
-                }
-            }
+        success &= reconstructInst(currInstToReconstruct, availableValues,
+                deadAvailableValues, reconstructedMap, compCode->code,
+                argsForCompCode, opt);
 
-            success = false;
-            break;
-        }
-
-
-        Instruction* RI = reconstructInst(currInstToReconstruct, availableValues,
-                deadAvailableValues, reconstructedMap, argsForCompCode, opt);
-        if (RI == nullptr) {
-            success = false;
-            break;
-        } else {
-            compCode->code->push_back(RI);
-            reconstructedMap[currInstToReconstruct] = RI;
-        }
+        if (!success) break;
     }
 
     if (success) {

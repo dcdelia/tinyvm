@@ -297,12 +297,14 @@ void CodeMapper::RAUWInst::apply(StateMap* M, bool verbose) {
         }
     }
 
-    if (type == LLVMValueType::Instruction) { // TODO this can be disruptive?!?
+    #if 0 // TODO this can be disruptive when map.count(newValue) != 0
+    if (type == LLVMValueType::Instruction) {
         it = map.find(oldValue);
         if (it != end) {
             map[newValue] = it->second;
         }
     }
+    #endif
 }
 
 void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {

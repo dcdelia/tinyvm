@@ -199,8 +199,8 @@ void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
  * Actions:
  * - remove corresponding 1:1 value info for D
  * - remove information for values for which D is the 1:1 corresponding value
+ *   (TODO: what if I do RAUW & delete? do we need a different primitive?)
  * - remove D as source for an OSR
- * - set LPad[D] to LPad[succ(D)] = LPad[I2'] = I2
  * - for each OSRSrc s.t. LPad[OSRSrc] = D do
  *      set LPad[OSRSrc] to LPad[succ(D)] = I2
  *
@@ -208,12 +208,10 @@ void CodeMapper::AddInst::apply(StateMap *M, bool verbose) {
 void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
     StateMap::OneToOneValueMap &defaultOneToOneMap =
             M->getAllCorrespondingOneToOneValues();
-    Instruction* otherDeletedI = findOtherI(M, DeletedI);
+
     for (StateMap::OneToOneValueMap::iterator it = defaultOneToOneMap.begin(),
             end = defaultOneToOneMap.end(); it != end; ) {
-        if (it->first == DeletedI) {
-            defaultOneToOneMap.erase(it++);
-        } else if (it->second == DeletedI) {
+        if (it->first == DeletedI || it->second == DeletedI) {
             defaultOneToOneMap.erase(it++);
         } else {
             ++it;
@@ -226,15 +224,6 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
         replaceLandingPads(M, DeletedI, SuccI);
     } else {
         discardLandingPads(M, DeletedI);
-    }
-
-    // TODO is this block redundant?
-    if (otherDeletedI) {
-        if (SuccI) {
-            M->registerLandingPad(otherDeletedI, SuccI, false);
-        } else {
-            M->unregisterLandingPad(otherDeletedI);
-        }
     }
 }
 
@@ -254,12 +243,10 @@ void CodeMapper::DeleteInst::apply(StateMap *M, bool verbose) {
  *      set LPad[OSRSrc] to H
  * - set LPad[B'] to H
  * - set LPad[H] to B'
- * - set LPad[H'] to I3 (TODO: should be redundant at this point...)
  *
  */
 void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
     Instruction* otherBeforeI = findOtherI(M, BeforeI);
-    Instruction* otherHoistedI = findOtherI(M, HoistedI);
 
     if (SuccHoistedI) {
         replaceLandingPads(M, HoistedI, SuccHoistedI);
@@ -272,14 +259,6 @@ void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
         M->registerLandingPad(HoistedI, otherBeforeI, true); // bidirectional
     } else {
         M->unregisterLandingPad(HoistedI);
-    }
-
-    if (otherHoistedI) {
-        if (SuccHoistedI) {
-            M->registerLandingPad(otherHoistedI, SuccHoistedI, false);
-        } else {
-            M->unregisterLandingPad(otherHoistedI);
-        }
     }
 }
 
@@ -294,7 +273,7 @@ void CodeMapper::HoistInst::apply(StateMap *M, bool verbose) {
  *
  * Actions (order matters!):
  * - for each OSRSrc s.t. LPad[OSRSrc] = S do
- *      set LPad[OSRSrc] to I3
+ *      set LPad[OSRSrc] to I2
  * - set LPad[S'] to I2
  * - set LPad[I2] to S'
  * - set LPad[S] to B'
@@ -312,9 +291,9 @@ void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {
 
     if (otherSunkI) {
         if (SuccSunkI) {
-            M->registerLandingPad(SuccSunkI, otherSunkI, true); // bidirectional
+            M->registerLandingPad(SuccSunkI, otherSunkI, false);
         } else {
-            M->unregisterLandingPad(otherSunkI);
+            M->unregisterLandingPad(SuccSunkI);
         }
     } else {
         if (SuccSunkI) {

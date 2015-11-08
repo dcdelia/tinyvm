@@ -23,9 +23,7 @@ private:
     class DeleteInst;
     class HoistInst;
     class SinkInst;
-    class RAUWInstWithArg;
-    class RAUWInstWithConst;
-    class RAUWInstWithInst;
+    class RAUWInst;
 
 public:
     CodeMapper(llvm::Function &F) : TheFunction(&F) {}
@@ -44,7 +42,8 @@ public:
     void deleteInstruction(llvm::Instruction* I);
     void hoistInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
     void sinkInstruction(llvm::Instruction* I, llvm::Instruction* insertBefore);
-    void replaceAllUsesWith(llvm::Instruction* I, llvm::Value* V);
+    void replaceAllUsesWith(llvm::Instruction* I, llvm::Value* V,
+                            bool alias = true);
 
     void updateStateMapping(StateMap* M, bool verbose = false);
 
@@ -62,8 +61,6 @@ private:
     static void replaceLandingPads(StateMap* M, llvm::Instruction* OldLPad,
         llvm::Instruction* NewLPad);
     static void discardLandingPads(StateMap* M, llvm::Instruction* OldLPad);
-    static void replaceOneToOneValue(StateMap* M, llvm::Value* oldValue,
-        llvm::Value* newValue);
 };
 
 /* CMAction's derived classes implement LLVM's lightweight RTTI */
@@ -72,8 +69,7 @@ public:
     // types are explicitly encoded as I might later delete a pointed object!
     enum CMActionKind {
         CMAK_BeginOpt, CMAK_AddInst, CMAK_DeleteInst, CMAK_HoistInst,
-        CMAK_SinkInst, CMAK_RAUWInstWithArg, CMAK_RAUWInstWithConst,
-        CMAK_RAUWInstWithInst
+        CMAK_SinkInst, CMAK_RAUWInst
     };
     CMActionKind getKind() const { return Kind; }
     CMAction(CMActionKind K) : Kind(K) {}
@@ -162,60 +158,26 @@ public:
     llvm::Instruction* SuccSunkI;
 };
 
-class CodeMapper::RAUWInstWithArg : public CodeMapper::CMAction {
+class CodeMapper::RAUWInst : public CodeMapper::CMAction {
 public:
-    RAUWInstWithArg(llvm::Instruction* I,
-                    llvm::Argument* A,
-                    bool sameValue = true):
-            CMAction(CMAK_RAUWInstWithArg), I(I), A(A), sameValue(sameValue) {}
+    enum LLVMValueType { Argument, Constant, Instruction };
+
+    RAUWInst(llvm::Instruction* I,
+                    llvm::Value* V,
+                    LLVMValueType type,
+                    bool alias = true):
+            CMAction(CMAK_RAUWInst), I(I), V(V), type(type), alias(alias) {}
 
     static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_RAUWInstWithArg;
+        return CMA->getKind() == CMAK_RAUWInst;
     }
 
     void apply(StateMap *M, bool verbose = false);
 
     llvm::Instruction* I;
-    llvm::Argument* A;
-    bool sameValue;
-};
-
-class CodeMapper::RAUWInstWithConst : public CodeMapper::CMAction {
-public:
-    RAUWInstWithConst(llvm::Instruction* I,
-                      llvm::Constant* C,
-                      bool sameValue = true):
-            CMAction(CMAK_RAUWInstWithConst), I(I), C(C), sameValue(sameValue)
-            {}
-
-    static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_RAUWInstWithConst;
-    }
-
-    void apply(StateMap *M, bool verbose = false);
-
-    llvm::Instruction* I;
-    llvm::Constant* C;
-    bool sameValue;
-};
-
-class CodeMapper::RAUWInstWithInst : public CodeMapper::CMAction {
-public:
-    RAUWInstWithInst(llvm::Instruction* oldI,
-                     llvm::Instruction* newI,
-                     bool sameValue = true):
-            CMAction(CMAK_RAUWInstWithInst), OI(oldI), NI(newI),
-            sameValue(sameValue) {}
-
-    static bool classof(const CMAction* CMA) {
-        return CMA->getKind() == CMAK_RAUWInstWithInst;
-    }
-
-    void apply(StateMap *M, bool verbose = false);
-
-    llvm::Instruction* OI;
-    llvm::Instruction* NI;
-    bool sameValue;
+    llvm::Value* V;
+    LLVMValueType type;
+    bool alias;
 };
 
 #endif

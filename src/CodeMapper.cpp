@@ -63,19 +63,24 @@ void CodeMapper::sinkInstruction(Instruction* I, Instruction* insertBefore) {
     operations.push_back(new SinkInst(I, insertBefore));
 }
 
-void CodeMapper::replaceAllUsesWith(Instruction* I, Value* V) {
-    if (Instruction* newI = dyn_cast<Instruction>(V)) {
-        operations.push_back(new RAUWInstWithInst(I, newI));
-    } else if (Constant* C = dyn_cast<Constant>(V)) {
-        operations.push_back(new RAUWInstWithConst(I, C));
-    } else if (Argument* A = dyn_cast<Argument>(V)) {
-        operations.push_back(new RAUWInstWithArg(I, A));
+void CodeMapper::replaceAllUsesWith(Instruction* I, Value* V, bool alias) {
+    CodeMapper::RAUWInst::LLVMValueType type;
+
+    if (isa<Instruction>(V)) {
+        type = CodeMapper::RAUWInst::LLVMValueType::Instruction;
+    } else if (isa<Argument>(V)) {
+        type = CodeMapper::RAUWInst::LLVMValueType::Argument;
+    } else if (isa<Constant>(V)) {
+        type = CodeMapper::RAUWInst::LLVMValueType::Constant;
     } else {
-        assert(false && "[OSR] unknown value type for RAUW");
+        assert(false && "[OSR] Unknown Value type for RAUW");
+        return;
     }
+
+    operations.push_back(new RAUWInst(I,V,type,alias));
 }
 
-// TODO can we come up with a better strategy?
+// TODO there might be a better way to create an iterator
 Instruction* CodeMapper::findSuccessor(Instruction* I) {
     if (isa<TerminatorInst>(I)) return nullptr; // TODO unconditional branchs?
 
@@ -92,20 +97,11 @@ Instruction* CodeMapper::findSuccessor(Instruction* I) {
 void CodeMapper::replaceLandingPads(StateMap* M, Instruction* OldLPad,
         Instruction* NewLPad) {
     StateMap::LocMap &landingPadMap = M->getAllLandingPads();
-    /*
+
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
         if (it->second == OldLPad) {
             it->second = NewLPad;
-        }
-    }
-    */
-    for (StateMap::LocMap::iterator it = landingPadMap.begin(),
-            end = landingPadMap.end(); it != end; ) {
-        if (it->second == OldLPad) {
-            (it++)->second = NewLPad;
-        } else {
-            ++it;
         }
     }
 }
@@ -146,27 +142,6 @@ Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
     }
 
     return nullptr;
-}
-
-void CodeMapper::replaceOneToOneValue(StateMap* M, Value* oldValue,
-        Value* newValue) {
-    StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
-    StateMap::OneToOneValueMap::iterator it, end;
-
-    for (it = map.begin(), end = map.end(); it != end; ) {
-        if (it->second == oldValue) {
-            (it++)->second = newValue;
-        } else {
-            ++it;
-        }
-    }
-
-    if (!isa<Constant>(newValue) && !isa<Argument>(newValue)) {
-        it = map.find(oldValue);
-        if (it != end) {
-            map[newValue] = it->second;
-        }
-    }
 }
 
 /*
@@ -308,24 +283,27 @@ void CodeMapper::SinkInst::apply(StateMap *M, bool verbose) {
     }
 }
 
-void CodeMapper::RAUWInstWithArg::apply(StateMap* M, bool verbose) {
-    if (sameValue) {
-        replaceOneToOneValue(M, I, A);
+void CodeMapper::RAUWInst::apply(StateMap* M, bool verbose) {
+    if (!alias) return;
+
+    Value *oldValue = I, *newValue = V;
+
+    StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
+    StateMap::OneToOneValueMap::iterator it, end;
+
+    for (it = map.begin(), end = map.end(); it != end; ++it) {
+        if (it->second == oldValue) {
+            it->second = newValue;
+        }
+    }
+
+    if (type == LLVMValueType::Instruction) { // TODO this can be disruptive?!?
+        it = map.find(oldValue);
+        if (it != end) {
+            map[newValue] = it->second;
+        }
     }
 }
-
-void CodeMapper::RAUWInstWithConst::apply(StateMap* M, bool verbose) {
-    if (sameValue) {
-        replaceOneToOneValue(M, I, C);
-    }
-}
-
-void CodeMapper::RAUWInstWithInst::apply(StateMap* M, bool verbose) {
-    if (sameValue) {
-        replaceOneToOneValue(M, OI, NI);
-    }
-}
-
 
 void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {
     int addedInst = 0, deletedInst = 0, hoistedInst = 0, sunkInst = 0;
@@ -338,9 +316,17 @@ void CodeMapper::updateStateMapping(StateMap* M, bool verbose) {
             case CMAction::CMAK_DeleteInst:         ++deletedInst; break;
             case CMAction::CMAK_HoistInst:          ++hoistedInst; break;
             case CMAction::CMAK_SinkInst:           ++sunkInst; break;
-            case CMAction::CMAK_RAUWInstWithArg:    ++instRAUWedWithArg; break;
-            case CMAction::CMAK_RAUWInstWithConst:  ++instRAUWedwithConst; break;
-            case CMAction::CMAK_RAUWInstWithInst:   ++instRAUWedWithInst; break;
+            case CMAction::CMAK_RAUWInst:
+                switch (cast<CodeMapper::RAUWInst>(action)->type) {
+                    case CodeMapper::RAUWInst::LLVMValueType::Argument:
+                        ++instRAUWedWithArg; break;
+                    case CodeMapper::RAUWInst::LLVMValueType::Constant:
+                        ++instRAUWedwithConst; break;
+                    case CodeMapper::RAUWInst::LLVMValueType::Instruction:
+                        ++instRAUWedWithInst; break;
+
+                }
+                break;
         }
         action->apply(M, verbose);
     }

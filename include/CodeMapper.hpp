@@ -45,15 +45,25 @@ public:
     void replaceAllUsesWith(llvm::Instruction* I, llvm::Value* V,
                             bool alias = true);
 
-    void updateStateMapping(StateMap* M, bool verbose = false);
+    typedef struct StateMapUpdateInfo {
+        std::map<llvm::Instruction*, std::set<llvm::Value*>> AdditionalOneToOneValues;
+        std::map<llvm::Value*, std::set<llvm::Value*>> RAUWOneToOneLoadInfo;
+        std::map<llvm::Instruction*, llvm::Value*> RAUWMap; // TODO unused for now
+        std::set<llvm::Instruction*> DeletedInstructions;
+    } StateMapUpdateInfo;
+
+    StateMapUpdateInfo& updateStateMapping(StateMap* M, bool verbose = false);
+    StateMapUpdateInfo* getStateMapUpdateInfo(StateMap* M);
 
 private:
     llvm::Function* TheFunction;
+    std::vector<CMAction*> operations;
+    std::map<StateMap*, StateMapUpdateInfo> updateInfoMap;
+
     // Metadata attached to function have been introduced only since LLVM 3.7.0,
     // thus for the time being we rely on a simple static map object.
     typedef std::map<llvm::Function*, CodeMapper*> GlobalMap;
     static GlobalMap globalMap;
-    std::vector<CMAction*> operations;
 
     // helper methods
     static llvm::Instruction* findOtherI(StateMap* M, llvm::Instruction* I);
@@ -71,9 +81,14 @@ public:
         CMAK_BeginOpt, CMAK_AddInst, CMAK_DeleteInst, CMAK_HoistInst,
         CMAK_SinkInst, CMAK_RAUWInst
     };
+
     CMActionKind getKind() const { return Kind; }
+
     CMAction(CMActionKind K) : Kind(K) {}
-    virtual void apply(StateMap *M, bool verbose = false) = 0;
+
+    virtual void apply(StateMap *M,
+                        StateMapUpdateInfo* updateInfo,
+                        bool verbose = false) = 0;
 
 private:
     const CMActionKind Kind;
@@ -87,7 +102,7 @@ public:
         return CMA->getKind() == CMAK_BeginOpt;
     }
 
-    void apply(StateMap *M, bool verbose = false) { } // TODO display message
+    void apply(StateMap *M, StateMapUpdateInfo* updateInfo, bool verbose = false) { } // TODO display message
 
     std::string Name;
 };
@@ -101,7 +116,7 @@ public:
         return CMA->getKind() == CMAK_AddInst;
     }
 
-    void apply(StateMap *M, bool verbose = false);
+    void apply(StateMap *M, StateMapUpdateInfo* updateInfo, bool verbose = false);
 
     llvm::Instruction* AddedI;
     llvm::Instruction* SuccI;
@@ -116,7 +131,7 @@ public:
         return CMA->getKind() == CMAK_DeleteInst;
     }
 
-    void apply(StateMap *M, bool verbose = false);
+    void apply(StateMap *M, StateMapUpdateInfo* updateInfo, bool verbose = false);
 
     llvm::Instruction* DeletedI;
     llvm::Instruction* SuccI;
@@ -133,7 +148,7 @@ public:
         return CMA->getKind() == CMAK_HoistInst;
     }
 
-    void apply(StateMap *M, bool verbose = false);
+    void apply(StateMap *M, StateMapUpdateInfo* updateInfo, bool verbose = false);
 
     llvm::Instruction* HoistedI;
     llvm::Instruction* BeforeI;
@@ -151,7 +166,7 @@ public:
         return CMA->getKind() == CMAK_SinkInst;
     }
 
-    void apply(StateMap *M, bool verbose = false);
+    void apply(StateMap *M, StateMapUpdateInfo* updateInfo, bool verbose = false);
 
     llvm::Instruction* SunkI;
     llvm::Instruction* BeforeI;
@@ -160,24 +175,29 @@ public:
 
 class CodeMapper::RAUWInst : public CodeMapper::CMAction {
 public:
-    enum LLVMValueType { Argument, Constant, Instruction };
+    enum LLVMValueType { ArgumentTy, ConstantTy, InstructionTy };
 
     RAUWInst(llvm::Instruction* I,
                     llvm::Value* V,
                     LLVMValueType type,
                     bool alias = true):
-            CMAction(CMAK_RAUWInst), I(I), V(V), type(type), alias(alias) {}
+            CMAction(CMAK_RAUWInst), I(I), V(V), type(type), alias(alias) {
+        isLoadI = llvm::isa<llvm::LoadInst>(I);
+        isLoadV = type == InstructionTy ? llvm::isa<llvm::LoadInst>(V) : false;
+    }
 
     static bool classof(const CMAction* CMA) {
         return CMA->getKind() == CMAK_RAUWInst;
     }
 
-    void apply(StateMap *M, bool verbose = false);
+    void apply(StateMap *M, StateMapUpdateInfo* updateInfo, bool verbose = false);
 
     llvm::Instruction* I;
     llvm::Value* V;
     LLVMValueType type;
     bool alias;
+    bool isLoadI;
+    bool isLoadV;
 };
 
 #endif

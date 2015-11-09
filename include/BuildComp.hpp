@@ -12,6 +12,7 @@
 #include <llvm/Pass.h>
 #include <llvm/PassManager.h>
 #include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/Passes.h>
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
@@ -50,6 +51,7 @@ public:
         AnalysisData(llvm::Function* F) {
             assert (F->getParent() != nullptr && "function not in a module");
             llvm::FunctionPassManager FPM(F->getParent());
+            FPM.add(llvm::createScalarEvolutionAliasAnalysisPass()); // TODO
             FPM.add(createBuildCompAnalysisPass(this));
             FPM.doInitialization();
             FPM.run(*F);
@@ -94,6 +96,10 @@ public:
     }
 
     static bool shouldOptimizeConstantPHI(Heuristic opt) {
+        return true;
+    }
+
+    static bool shouldUseAdditionalOneToOneInfo(Heuristic opt) {
         return true;
     }
 

@@ -26,7 +26,9 @@ using namespace llvm::PatternMatch;
 
 #define DEBUG_TYPE "early-cse"
 
-OSR_STATISTIC(NumSimplify, "Number of instructions simplified or DCE'd");
+OSR_STATISTIC(NumSimplify, "Number of instructions simplified");
+// [OSR] we further distinguish between simplified and DCE'd instructions
+OSR_STATISTIC(NumDCE,      "Number of instructions DCE'd");
 OSR_STATISTIC(NumCSE,      "Number of instructions CSE'd");
 OSR_STATISTIC(NumCSELoad,  "Number of load instructions CSE'd");
 OSR_STATISTIC(NumCSECall,  "Number of call instructions CSE'd");
@@ -428,7 +430,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
       if (OSR_CM) OSR_CM->deleteInstruction(Inst); /* OSR */
       Inst->eraseFromParent();
       Changed = true;
-      ++NumSimplify;
+      ++NumDCE;
       continue;
     }
 

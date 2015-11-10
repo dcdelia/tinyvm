@@ -702,9 +702,10 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
 
 }
 
-static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc, Function*
-        src, LivenessAnalysis::LiveValues& liveAtOSRSrc, BuildComp::AnalysisData*
-        BCAD, std::map<Value*, Value*> &deadAvailableValues,
+static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
+        Function* src, BuildComp::AnalysisData* BCAD,
+        std::map<Value*, Value*> availableValues,
+        std::map<Value*, Value*> &deadAvailableValues,
         BuildComp::Heuristic opt) {
 
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
@@ -715,59 +716,64 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc, Functio
     BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
 
     StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
-        for (StateMap::OneToOneValueMap::iterator it = map.begin(),
-                end = map.end(); it != end; ++it) {
-            Value* valToSet = it->first;
-            Value* valToUse = it->second;
-            if (Instruction* I = dyn_cast<Instruction>(valToSet)) {
-                if (I->getParent()->getParent() == src) continue;
-            } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
-                if (A->getParent() == src) continue;
-            } else {
-                assert(false && "Constant appears as key in the 1:1 map!");
+    for (StateMap::OneToOneValueMap::iterator it = map.begin(), end = map.end();
+        it != end; ++it) {
+        Value* valToSet = it->first;
+        Value* valToUse = it->second;
+
+        if (availableValues.count(valToSet) > 0) continue;
+
+        if (Instruction* I = dyn_cast<Instruction>(valToSet)) {
+            if (I->getParent()->getParent() == src) continue;
+        } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
+            if (A->getParent() == src) continue;
+        } else {
+            assert(false && "Constant appears as key in the 1:1 map!");
+            continue;
+        }
+
+        if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
+            // TODO skip more cases
+            if (isa<TerminatorInst>(instToUse) || isa<StoreInst>(instToUse)) {
                 continue;
             }
 
-            // at this point valToUse belongs to src
+            BasicBlock* BB = instToUse->getParent();
 
-            if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
-                 // TODO more cases indeed
-                if (isa<TerminatorInst>(instToUse) || isa<StoreInst>(instToUse)) {
-                    continue;
-                }
-
-                BasicBlock* BB = instToUse->getParent();
-
-                if (BB != OSRSrcBB) {
-                    if (DT.dominates(BB, OSRSrcBB)) {
-                        if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                            if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
-                                if (safeLoads.count(LI) == 0) continue;
-                            }
-                        }
-                        deadAvailableValues[valToSet] = valToUse;
-                    }
-                } else {
-                    if (instToUse == OSRSrc) continue;
+            if (BB != OSRSrcBB) {
+                if (DT.dominates(BB, OSRSrcBB)) {
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
                         if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
                             if (safeLoads.count(LI) == 0) continue;
                         }
                     }
-                    BasicBlock::const_iterator bbIt = BB->begin();
-                    for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
-                    if (&*bbIt == instToUse) {
-                        deadAvailableValues[valToSet] = valToUse;
-                    }
+
+                    deadAvailableValues[valToSet] = valToUse;
                 }
             } else {
-                // valToUse is either a Constant or an Argument
-                deadAvailableValues[valToSet] = valToUse;
+                if (instToUse == OSRSrc) continue;
+
+                if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
+                    if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                        if (safeLoads.count(LI) == 0) continue;
+                    }
+                }
+
+                BasicBlock::const_iterator bbIt = BB->begin();
+                for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
+                if (&*bbIt == instToUse) {
+                    deadAvailableValues[valToSet] = valToUse;
+                }
             }
+        } else {
+            assert(isa<Argument>(valToUse));
+            assert(!BuildComp::shouldIncludeDeadArgs(opt)
+                    && "Missed dead argument?");
 
+            deadAvailableValues[valToSet] = valToUse;
         }
+    }
 }
-
 
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         std::set<Value*> &keepSet, BuildComp::Heuristic opt,
@@ -809,6 +815,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     std::map<Value*, Value*> availableValues;
     std::vector<Value*> workList;
 
+    #if 0
     // build map of available values (i.e., 1:1 mapping & both are live)
     for (const Value* v: liveAtLPad) {
         Value* valToSet = const_cast<Value*>(v);
@@ -832,8 +839,32 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         workList.push_back(valToSet);
     }
 
-    // a live value not mapped to a valToSet might come in handy later when we
-    // will have to reconstruct some instruction
+    for (const Value* v: liveAtOSRSrc) {
+
+        Value* liveValue = const_cast<Value*>(v);
+        Value* valAtDest = M->getCorrespondingOneToOneValue(liveValue);
+        if (valAtDest && availableValues.count(valAtDest) == 0) {
+            availableValues[valAtDest] = liveValue;
+        }
+    }
+
+    if (shouldIncludeDeadArgs(opt)) {
+        // mark as available all values 1:1-mapped to an argument
+        StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
+        for (StateMap::OneToOneValueMap::iterator it = map.begin(),
+                end = map.end(); it != end; ++it) {
+            if (Argument* A = dyn_cast<Argument>(it->second)) {
+                if (A->getParent() == src) {
+                    availableValues[it->first] = A;
+                }
+            }
+        }
+    }
+
+    #else
+    // Build the set of available values. Note that a live value not mapped to
+    // a valToSet from liveAtLPad might come in handy later when we might have
+    // to reconstruct some instruction
     StateMap::OneToOneValueMap &OOMap = M->getAllCorrespondingOneToOneValues();
     for (StateMap::OneToOneValueMap::iterator it = OOMap.begin(),
             end = OOMap.end(); it != end; ++it) {
@@ -850,42 +881,30 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             continue;
         }
 
-        if (isa<Constant>(valToUse)) continue;
-
-        if (liveAtOSRSrc.count(valToUse) > 0) {
+        if (isa<Constant>(valToUse) || liveAtOSRSrc.count(valToUse) > 0) {
             availableValues[valToSet] = valToUse;
+            continue;
+        }
+
+        if (shouldIncludeDeadArgs(opt) && isa<Argument>(valToUse)) {
+            availableValues[valToSet] = valToUse;
+            continue;
         }
     }
 
-    #if 0
-    for (const Value* v: liveAtOSRSrc) {
-
-        Value* liveValue = const_cast<Value*>(v);
-        Value* valAtDest = M->getCorrespondingOneToOneValue(liveValue);
-        if (valAtDest && availableValues.count(valAtDest) == 0) {
-            availableValues[valAtDest] = liveValue;
+    for (const Value* v: liveAtLPad) {
+        Value* valToSet = const_cast<Value*>(v);
+        if (availableValues.count(valToSet) == 0) {
+            workList.push_back(valToSet);
         }
     }
     #endif
 
     if (workList.empty()) return true;
 
-    if (shouldIncludeDeadArgs(opt)) {
-        // mark as available all values 1:1-mapped to an argument
-        StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
-        for (StateMap::OneToOneValueMap::iterator it = map.begin(),
-                end = map.end(); it != end; ++it) {
-            if (Argument* A = dyn_cast<Argument>(it->second)) {
-                if (A->getParent() == src) {
-                    availableValues[it->first] = A;
-                }
-            }
-        }
-    }
-
     std::map<Value*, Value*> deadAvailableValues;
     if (shouldExtendLiveness(opt)) {
-        computeDeadAvailableValues(M, OSRSrc, src, liveAtOSRSrc, BCAD,
+        computeDeadAvailableValues(M, OSRSrc, src, BCAD, availableValues,
                 deadAvailableValues, opt);
     }
 

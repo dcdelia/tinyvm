@@ -464,9 +464,8 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
       if (Value *V = AvailableValues->lookup(Inst)) {
         DEBUG(dbgs() << "EarlyCSE CSE: " << *Inst << "  to: " << *V << '\n');
         if (OSR_CM) { /* OSR */
-            assert(isa<Instruction>(V) && "[OSR] unexpected value type");
-            Instruction* tmpInst = cast<Instruction>(V);
-            OSR_CM->replaceAllUsesWith(Inst, tmpInst);
+            assert(isa<Instruction>(V) && "[OSR] unexpected value type"); // TODO still needed?
+            OSR_CM->replaceAllUsesWith(Inst, V);
             OSR_CM->deleteInstruction(Inst);
         }
         Inst->replaceAllUsesWith(V);
@@ -502,7 +501,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
         /* [OSR] if (!Inst->use_empty()) Inst->replaceAllUsesWith(InVal.first);*/
         if (!Inst->use_empty()) {
             if (OSR_CM) {
-                assert(isa<Instruction>(InVal.first) && "[OSR] unexpected value type");
+                assert(isa<Instruction>(InVal.first) && "[OSR] unexpected value type"); // TODO still needed?
                 OSR_CM->replaceAllUsesWith(Inst, InVal.first);
             }
             Inst->replaceAllUsesWith(InVal.first);

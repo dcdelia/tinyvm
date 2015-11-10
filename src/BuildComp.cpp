@@ -498,6 +498,107 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     return ret;
 }
 
+static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
+        BuildComp::AnalysisData* BCAD, CodeMapper::StateMapUpdateInfo* updateInfo,
+        LivenessAnalysis::LiveValues& liveAtOSRSrc,
+        std::map<Value*, Value*> &availableValues,
+        std::map<Value*, Value*> &deadAvailableValues,
+        BuildComp::Heuristic opt) {
+    assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
+    assert(updateInfo != nullptr && "no CompCode::StateMapUpdateInfo provided!");
+
+    BasicBlock* OSRSrcBB = OSRSrc->getParent();
+
+    DominatorTree &DT = BCAD->DT;
+    BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
+
+    int aliasesMadeAvailable = 0;
+
+    for (const std::pair<Value*, std::set<Value*>> &pair:
+            updateInfo->RAUWOneToOneAliasInfo) {
+        Value* valToSet = pair.first;
+
+        if (availableValues.count(valToSet) != 0 ||
+                deadAvailableValues.count(valToSet) != 0) {
+            continue;
+        }
+
+        for (Value* valToUse: pair.second) {
+            // constants are always safe to use
+            if (isa<Constant>(valToUse)) {
+                availableValues[valToSet] = valToUse;
+                //std::cerr << "SUCCESS 1" << std::endl;
+                ++aliasesMadeAvailable;
+                break;
+            }
+
+            // check live values first
+            if (liveAtOSRSrc.count(valToUse) != 0) {
+                availableValues[valToSet] = valToUse;
+                //std::cerr << "SUCCESS 2" << std::endl;
+                ++aliasesMadeAvailable;
+                break;
+            }
+
+            // then try with arguments
+            if (isa<Argument>(valToUse)) {
+                if (BuildComp::shouldIncludeDeadArgs(opt)) {
+                    availableValues[valToSet] = valToUse;
+                    //std::cerr << "SUCCESS 3" << std::endl;
+                    ++aliasesMadeAvailable;
+                    break;
+                } else if (BuildComp::shouldExtendLiveness(opt)) {
+                    deadAvailableValues[valToSet] = valToUse;
+                    //std::cerr << "SUCCESS 4" << std::endl;
+                    ++aliasesMadeAvailable;
+                    break;
+                }
+
+                continue;
+            }
+
+            // at this point we can only check if an Instruction is available
+            if (BuildComp::shouldExtendLiveness(opt)) {
+
+                Instruction* instToUse = cast<Instruction>(valToUse);
+                BasicBlock* BB = instToUse->getParent();
+
+                if (BB != OSRSrcBB) {
+                    if (DT.dominates(BB, OSRSrcBB)) {
+                        if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
+                            if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                                //if (safeLoads.count(LI) == 0) continue;
+                            }
+                        }
+                        deadAvailableValues[valToSet] = valToUse;
+                        //std::cerr << "SUCCESS 5" << std::endl;
+                        ++aliasesMadeAvailable;
+                    }
+                } else {
+                    if (instToUse == OSRSrc) continue;
+                    if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
+                        if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                            //if (safeLoads.count(LI) == 0) continue;
+                        }
+                    }
+                    BasicBlock::const_iterator bbIt = BB->begin();
+                    for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
+                    if (&*bbIt == instToUse) {
+                        deadAvailableValues[valToSet] = valToUse;
+                        //std::cerr << "SUCCESS 6" << std::endl;
+                        ++aliasesMadeAvailable;
+                    }
+                }
+            }
+        }
+    }
+
+    if (aliasesMadeAvailable) {
+        //std::cerr << "Aliases made available: " << aliasesMadeAvailable << std::endl;
+    }
+
+}
+
 static void computeAvailableAdditionalOneToOne(StateMap* M,
         Instruction* OSRSrc, BuildComp::AnalysisData* BCAD,
         CodeMapper::StateMapUpdateInfo* updateInfo,
@@ -593,6 +694,12 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
             }
         }
     }
+
+    if (availAdditionalOneToOne) {
+        std::cerr << "Available additional 1:1 values: " << availAdditionalOneToOne
+                  << std::endl;
+    }
+
 }
 
 static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc, Function*
@@ -712,12 +819,12 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 continue;
             }
 
-            if (shouldIncludeDeadArgs(opt) && isa<Argument>(oneToOneVal)) {
+            if (liveAtOSRSrc.count(oneToOneVal) > 0) {
                 availableValues[valToSet] = oneToOneVal;
                 continue;
             }
 
-            if (liveAtOSRSrc.count(oneToOneVal) > 0) {
+            if (shouldIncludeDeadArgs(opt) && isa<Argument>(oneToOneVal)) {
                 availableValues[valToSet] = oneToOneVal;
                 continue;
             }
@@ -725,18 +832,41 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         workList.push_back(valToSet);
     }
 
-    // a live value not mapped to a valToSet might still be required when we
-    // have to reconstruct other instructions
-    for (const Value* v: liveAtOSRSrc) {
-        Value* liveValue = const_cast<Value*>(v);
-        Value* valAtDest = M->getCorrespondingOneToOneValue(liveValue);
-        if (valAtDest) {
-            if (availableValues.count(valAtDest) == 0) {
-                availableValues[valAtDest] = liveValue;
-            }
+    // a live value not mapped to a valToSet might come in handy later when we
+    // will have to reconstruct some instruction
+    StateMap::OneToOneValueMap &OOMap = M->getAllCorrespondingOneToOneValues();
+    for (StateMap::OneToOneValueMap::iterator it = OOMap.begin(),
+            end = OOMap.end(); it != end; ++it) {
+        Value* valToSet = it->first;
+        Value* valToUse = it->second;
+
+        // skip valToSet if it belongs to src
+        if (Instruction* I = dyn_cast<Instruction>(valToSet)) {
+            if (I->getParent()->getParent() == src) continue;
+        } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
+            if (A->getParent() == src) continue;
+        } else {
+            assert(false && "Constant appears as key in the 1:1 map!");
+            continue;
+        }
+
+        if (isa<Constant>(valToUse)) continue;
+
+        if (liveAtOSRSrc.count(valToUse) > 0) {
+            availableValues[valToSet] = valToUse;
         }
     }
 
+    #if 0
+    for (const Value* v: liveAtOSRSrc) {
+
+        Value* liveValue = const_cast<Value*>(v);
+        Value* valAtDest = M->getCorrespondingOneToOneValue(liveValue);
+        if (valAtDest && availableValues.count(valAtDest) == 0) {
+            availableValues[valAtDest] = liveValue;
+        }
+    }
+    #endif
 
     if (workList.empty()) return true;
 
@@ -760,7 +890,9 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     }
 
     if (shouldUseAdditionalOneToOneInfo(opt) && updateInfo) {
-        computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
+        /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
+                liveAtOSRSrc, availableValues, deadAvailableValues, opt);*/
+        computeAvailableAliases(M, OSRSrc, BCAD, updateInfo,
                 liveAtOSRSrc, availableValues, deadAvailableValues, opt);
     }
 

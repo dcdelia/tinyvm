@@ -169,6 +169,9 @@ void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
     if (LPadForSuccI) {
         M->registerLandingPad(AddedI, LPadForSuccI, false);
     }
+
+    // TODO this is quite crazy
+    AddedI->dump();
 }
 
 /*
@@ -193,7 +196,7 @@ void CodeMapper::DeleteInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
 
     std::map<Value*, std::set<Value*>>::iterator LOOIt, LOOEnd;
     std::map<Value*, std::set<Value*>> &LOOMap =
-            updateInfo->RAUWOneToOneLoadInfo;
+            updateInfo->RAUWOneToOneAliasInfo;
     LOOIt = LOOMap.find(DeletedI);
     if (LOOIt != LOOMap.end()) {
         LOOMap.erase(LOOIt);
@@ -209,7 +212,6 @@ void CodeMapper::DeleteInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
             ++LOOIt;
         }
     }
-
 
     StateMap::OneToOneValueMap &defaultOneToOneMap =
             M->getAllCorrespondingOneToOneValues();
@@ -340,9 +342,9 @@ void CodeMapper::RAUWInst::apply(StateMap* M, StateMapUpdateInfo* updateInfo,
 
     std::map<Value*, std::set<Value*>>::iterator LOOIt;
     std::map<Value*, std::set<Value*>> &LOOMap =
-            updateInfo->RAUWOneToOneLoadInfo;
+            updateInfo->RAUWOneToOneAliasInfo;
 
-    if (isLoadI && (otherI || otherV)) {
+    if (otherI || otherV) {
         LOOIt = LOOMap.find(I);
         if (LOOIt == LOOMap.end()) {
             LOOIt = LOOMap.insert(std::pair<Value*, std::set<Value*>>(I, {})).first;
@@ -351,7 +353,7 @@ void CodeMapper::RAUWInst::apply(StateMap* M, StateMapUpdateInfo* updateInfo,
         if (otherV) LOOIt->second.insert(otherV);
     }
 
-    if (isLoadV) {
+    if (otherI || otherV) {
         LOOIt = LOOMap.find(V);
         if (LOOIt == LOOMap.end()) {
             LOOIt = LOOMap.insert(std::pair<Value*, std::set<Value*>>(V, {})).first;

@@ -47,7 +47,7 @@ public:
 
     typedef struct StateMapUpdateInfo {
         std::map<llvm::Instruction*, std::set<llvm::Value*>> AdditionalOneToOneValues;
-        std::map<llvm::Value*, std::set<llvm::Value*>> RAUWOneToOneLoadInfo;
+        std::map<llvm::Value*, std::set<llvm::Value*>> RAUWOneToOneAliasInfo;
         std::map<llvm::Instruction*, llvm::Value*> RAUWMap; // TODO unused for now
         std::set<llvm::Instruction*> DeletedInstructions;
     } StateMapUpdateInfo;

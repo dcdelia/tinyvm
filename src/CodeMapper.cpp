@@ -169,9 +169,6 @@ void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
     if (LPadForSuccI) {
         M->registerLandingPad(AddedI, LPadForSuccI, false);
     }
-
-    // TODO this is quite crazy
-    AddedI->dump();
 }
 
 /*

@@ -502,7 +502,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
         BuildComp::AnalysisData* BCAD, CodeMapper::StateMapUpdateInfo* updateInfo,
         LivenessAnalysis::LiveValues& liveAtOSRSrc,
         std::map<Value*, Value*> &availableValues,
-        std::map<Value*, Value*> &deadAvailableValues,
+        std::map<Value*, Value*> &extraAvailableValues,
         BuildComp::Heuristic opt) {
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
     assert(updateInfo != nullptr && "no CompCode::StateMapUpdateInfo provided!");
@@ -512,52 +512,42 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
     DominatorTree &DT = BCAD->DT;
     BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
 
-    int aliasesMadeAvailable = 0;
-
     for (const std::pair<Value*, std::set<Value*>> &pair:
             updateInfo->RAUWOneToOneAliasInfo) {
         Value* valToSet = pair.first;
 
-        if (availableValues.count(valToSet) != 0 ||
-                deadAvailableValues.count(valToSet) != 0) {
+        if (availableValues.count(valToSet) > 0 ||
+                extraAvailableValues.count(valToSet) > 0) {
             continue;
         }
 
         for (Value* valToUse: pair.second) {
             // constants are always safe to use
-            if (isa<Constant>(valToUse)) {
-                availableValues[valToSet] = valToUse;
-                //std::cerr << "SUCCESS 1" << std::endl;
-                ++aliasesMadeAvailable;
+            if (isa<Constant>(valToUse)) { // TODO not sure it can happen
+                extraAvailableValues[valToSet] = valToUse;
                 break;
             }
 
             // check live values first
             if (liveAtOSRSrc.count(valToUse) != 0) {
-                availableValues[valToSet] = valToUse;
-                //std::cerr << "SUCCESS 2" << std::endl;
-                ++aliasesMadeAvailable;
+                extraAvailableValues[valToSet] = valToUse;
                 break;
             }
 
-            // then try with arguments
+            // then try with dead arguments
             if (isa<Argument>(valToUse)) {
                 if (BuildComp::shouldIncludeDeadArgs(opt)) {
-                    availableValues[valToSet] = valToUse;
-                    //std::cerr << "SUCCESS 3" << std::endl;
-                    ++aliasesMadeAvailable;
+                    extraAvailableValues[valToSet] = valToUse;
                     break;
                 } else if (BuildComp::shouldExtendLiveness(opt)) {
-                    deadAvailableValues[valToSet] = valToUse;
-                    //std::cerr << "SUCCESS 4" << std::endl;
-                    ++aliasesMadeAvailable;
+                    extraAvailableValues[valToSet] = valToUse;
                     break;
                 }
 
                 continue;
             }
 
-            // at this point we can only check if an Instruction is available
+            // at this point we have to check if the Instruction is available
             if (BuildComp::shouldExtendLiveness(opt)) {
 
                 Instruction* instToUse = cast<Instruction>(valToUse);
@@ -567,36 +557,32 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
                     if (DT.dominates(BB, OSRSrcBB)) {
                         if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
                             if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
-                                //if (safeLoads.count(LI) == 0) continue;
+                                if (safeLoads.count(LI) == 0) continue; // TODO
                             }
                         }
-                        deadAvailableValues[valToSet] = valToUse;
-                        //std::cerr << "SUCCESS 5" << std::endl;
-                        ++aliasesMadeAvailable;
+
+                        extraAvailableValues[valToSet] = valToUse;
+                        break;
                     }
                 } else {
                     if (instToUse == OSRSrc) continue;
+
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
                         if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
-                            //if (safeLoads.count(LI) == 0) continue;
+                            if (safeLoads.count(LI) == 0) continue; // TODO
                         }
                     }
+
                     BasicBlock::const_iterator bbIt = BB->begin();
                     for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
                     if (&*bbIt == instToUse) {
-                        deadAvailableValues[valToSet] = valToUse;
-                        //std::cerr << "SUCCESS 6" << std::endl;
-                        ++aliasesMadeAvailable;
+                        extraAvailableValues[valToSet] = valToUse;
+                        break;
                     }
                 }
             }
         }
     }
-
-    if (aliasesMadeAvailable) {
-        //std::cerr << "Aliases made available: " << aliasesMadeAvailable << std::endl;
-    }
-
 }
 
 static void computeAvailableAdditionalOneToOne(StateMap* M,
@@ -705,7 +691,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
 static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
         Function* src, BuildComp::AnalysisData* BCAD,
         std::map<Value*, Value*> availableValues,
-        std::map<Value*, Value*> &deadAvailableValues,
+        std::map<Value*, Value*> &extraAvailableValues,
         BuildComp::Heuristic opt) {
 
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
@@ -748,7 +734,7 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
                         }
                     }
 
-                    deadAvailableValues[valToSet] = valToUse;
+                    extraAvailableValues[valToSet] = valToUse;
                 }
             } else {
                 if (instToUse == OSRSrc) continue;
@@ -762,7 +748,7 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
                 BasicBlock::const_iterator bbIt = BB->begin();
                 for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
                 if (&*bbIt == instToUse) {
-                    deadAvailableValues[valToSet] = valToUse;
+                    extraAvailableValues[valToSet] = valToUse;
                 }
             }
         } else {
@@ -770,7 +756,7 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
             assert(!BuildComp::shouldIncludeDeadArgs(opt)
                     && "Missed dead argument?");
 
-            deadAvailableValues[valToSet] = valToUse;
+            extraAvailableValues[valToSet] = valToUse;
         }
     }
 }
@@ -812,56 +798,10 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         updateInfo = dest_CM->getStateMapUpdateInfo(M);
     }
 
-    std::map<Value*, Value*> availableValues;
-    std::vector<Value*> workList;
+    std::vector<Value*> workList; // instructions to reconstruct
+    std::map<Value*, Value*> availableValues; // available values
+    std::map<Value*, Value*> extraAvailableValues; // will populate it later...
 
-    #if 0
-    // build map of available values (i.e., 1:1 mapping & both are live)
-    for (const Value* v: liveAtLPad) {
-        Value* valToSet = const_cast<Value*>(v);
-        Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
-        if (oneToOneVal != nullptr) {
-            if (isa<Constant>(oneToOneVal)) {
-                availableValues[valToSet] = oneToOneVal;
-                continue;
-            }
-
-            if (liveAtOSRSrc.count(oneToOneVal) > 0) {
-                availableValues[valToSet] = oneToOneVal;
-                continue;
-            }
-
-            if (shouldIncludeDeadArgs(opt) && isa<Argument>(oneToOneVal)) {
-                availableValues[valToSet] = oneToOneVal;
-                continue;
-            }
-        }
-        workList.push_back(valToSet);
-    }
-
-    for (const Value* v: liveAtOSRSrc) {
-
-        Value* liveValue = const_cast<Value*>(v);
-        Value* valAtDest = M->getCorrespondingOneToOneValue(liveValue);
-        if (valAtDest && availableValues.count(valAtDest) == 0) {
-            availableValues[valAtDest] = liveValue;
-        }
-    }
-
-    if (shouldIncludeDeadArgs(opt)) {
-        // mark as available all values 1:1-mapped to an argument
-        StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
-        for (StateMap::OneToOneValueMap::iterator it = map.begin(),
-                end = map.end(); it != end; ++it) {
-            if (Argument* A = dyn_cast<Argument>(it->second)) {
-                if (A->getParent() == src) {
-                    availableValues[it->first] = A;
-                }
-            }
-        }
-    }
-
-    #else
     // Build the set of available values. Note that a live value not mapped to
     // a valToSet from liveAtLPad might come in handy later when we might have
     // to reconstruct some instruction
@@ -898,21 +838,19 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             workList.push_back(valToSet);
         }
     }
-    #endif
 
     if (workList.empty()) return true;
 
-    std::map<Value*, Value*> deadAvailableValues;
     if (shouldExtendLiveness(opt)) {
         computeDeadAvailableValues(M, OSRSrc, src, BCAD, availableValues,
-                deadAvailableValues, opt);
+                extraAvailableValues, opt);
     }
 
     if (shouldUseAdditionalOneToOneInfo(opt) && updateInfo) {
         /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
-                liveAtOSRSrc, availableValues, deadAvailableValues, opt);*/
+                liveAtOSRSrc, availableValues, additionalAvailableValues, opt);*/
         computeAvailableAliases(M, OSRSrc, BCAD, updateInfo,
-                liveAtOSRSrc, availableValues, deadAvailableValues, opt);
+                liveAtOSRSrc, availableValues, extraAvailableValues, opt);
     }
 
     StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
@@ -920,6 +858,18 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     bool error = false;
 
     for (Value* valToReconstruct: workList) {
+        if (availableValues.count(valToReconstruct) > 0) {
+            std::cerr << "DUDE!!!" << std::endl;
+        }
+
+        if (extraAvailableValues.count(valToReconstruct) > 0) {
+            Value* valToUse = extraAvailableValues[valToReconstruct];
+            StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
+            valueInfoMap[valToReconstruct] = valInfo;
+
+            continue;
+        }
+
         if (PHINode* phi = dyn_cast<PHINode>(valToReconstruct)) {
             Value* valToUse = nullptr;
 
@@ -931,8 +881,8 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 if (constV) {
                     if (availableValues.count(constV) != 0) {
                         valToUse = availableValues[constV];
-                    } else if (deadAvailableValues.count(constV) != 0) {
-                        valToUse = deadAvailableValues[constV];
+                    } else if (extraAvailableValues.count(constV) != 0) {
+                        valToUse = extraAvailableValues[constV];
                     }
                 }
             }
@@ -950,17 +900,9 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             continue;
         }
 
-        if (deadAvailableValues.count(valToReconstruct) != 0) {
-            Value* valToUse = deadAvailableValues[valToReconstruct];
-            StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
-            valueInfoMap[valToReconstruct] = valInfo;
-
-            continue;
-        }
-
         if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
-                    deadAvailableValues, curValuesToKeep, opt);
+                    extraAvailableValues, curValuesToKeep, opt);
             if (valInfo == nullptr) {
                 error = true;
                 keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());

@@ -858,21 +858,15 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     bool error = false;
 
     for (Value* valToReconstruct: workList) {
-        if (availableValues.count(valToReconstruct) > 0) {
-            std::cerr << "DUDE!!!" << std::endl;
-        }
+        assert(availableValues.count(valToReconstruct) == 0
+                && "missed an already-available value?");
+
+        Value* valToUse = nullptr;
 
         if (extraAvailableValues.count(valToReconstruct) > 0) {
-            Value* valToUse = extraAvailableValues[valToReconstruct];
-            StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
-            valueInfoMap[valToReconstruct] = valInfo;
-
-            continue;
-        }
-
-        if (PHINode* phi = dyn_cast<PHINode>(valToReconstruct)) {
-            Value* valToUse = nullptr;
-
+            // such a value in general is not a globally 1:1 corresponding value
+            valToUse = extraAvailableValues[valToReconstruct];
+        } else if (PHINode* phi = dyn_cast<PHINode>(valToReconstruct)) {
             // constant PHI nodes can be treated as a special case
             Value* constV = nullptr;
 
@@ -892,14 +886,18 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 // TODO: constV would yield more accurate info, but we can let
                 // the client inspect phi to see whether hasConstantValue()
                 keepSet.insert(phi);
-            } else {
-                StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
-                valueInfoMap[valToReconstruct] = valInfo;
+                continue;
             }
+        }
 
+        // we have a 1:1 corresponding value that can be used for this LocPair
+        if (valToUse) {
+            StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
+            valueInfoMap[valToReconstruct] = valInfo;
             continue;
         }
 
+        // attempt to reconstruct the instruction using compensation code
         if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
                     extraAvailableValues, curValuesToKeep, opt);
@@ -913,6 +911,9 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
             continue;
         }
+
+        assert(isa<Argument>(valToReconstruct));
+        // TODO insert assert check on heuristics for dead arguments
 
         error = true;
         keepSet.insert(valToReconstruct);

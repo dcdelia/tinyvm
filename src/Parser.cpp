@@ -1118,33 +1118,20 @@ void Parser::handleCompCodeCommand() {
         GET_TOKEN_OR_NULL();
         if (token == NULL) {
             std::cerr << "Available strategies:" << std::endl;
-            std::cerr << "(0) Base version of buildComp" << std::endl;
-            std::cerr << "(1) Extend liveness range of values" << std::endl;
-            std::cerr << "(2) Include dead arguments in CompCode" << std::endl;
-            std::cerr << "(3) Strategies 1 and 2 combined together" << std::endl;
-            std::cerr << "(4) Aggressively extend liveness range of values" << std::endl;
-            std::cerr << "(5) Strategies 2 and 4 combined together" << std::endl;
+            for (int i = 0; i < BuildComp::numHeuristics; ++i) {
+                std::cerr << "(" << i << ") "
+                          << BuildComp::getDescription(BuildComp::Heuristic(i))
+                          << std::endl;
+            }
             std::cerr << "Strategy in use: " << compCodeStrategy << std::endl;
         } else {
             int strategy = atoi(token);
-            switch (strategy) {
-                case 0:     compCodeStrategy = BuildComp::Heuristic::BC_NONE;
-                            break;
-                case 1:     compCodeStrategy = BuildComp::Heuristic::BC_EXTEND_LIVENESS;
-                            break;
-                case 2:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS;
-                            break;
-                case 3:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS_AND_EXTEND_LIVENESS;
-                            break;
-                case 4:     compCodeStrategy = BuildComp::Heuristic::BC_EXTEND_LIVENESS_ALWAYS;
-                            break;
-                case 5:     compCodeStrategy = BuildComp::Heuristic::BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS;
-                            break;
-                default:    std::cerr << "Unknown strategy number!" << std::endl;
-                            return;
+            if (strategy < 0 || strategy >= BuildComp::numHeuristics) {
+                std::cerr << "Unknown strategy number!" << std::endl;
+            } else {
+                compCodeStrategy = BuildComp::Heuristic(strategy);
+                std::cerr << "Strategy changed to " << strategy << std::endl;
             }
-            std::cerr << "Strategy currently in use changed to " << strategy
-                      << std::endl;
         }
         return;
     }

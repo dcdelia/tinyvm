@@ -7,6 +7,7 @@
 #ifndef TINYVM_BUILDCOMP_H
 #define TINYVM_BUILDCOMP_H
 
+#include "CodeMapper.hpp"
 #include "StateMap.hpp"
 
 #include <llvm/Pass.h>
@@ -19,18 +20,23 @@
 #include <llvm/IR/Value.h>
 
 #include <set>
+#include <string>
 
 class BuildComp {
 public:
+    static const int numHeuristics = 7;
+
     enum Heuristic {
         BC_NONE = 0,
-        BC_EXTEND_LIVENESS = 1,
-        BC_DEAD_ARGS = 2,
-        BC_DEAD_ARGS_AND_EXTEND_LIVENESS = 3,
-        BC_EXTEND_LIVENESS_ALWAYS = 4,
-        BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS = 5
-                // more to come
+        BC_BASE_OPTS,
+        BC_ALIASES,
+        BC_DEAD_AVAIL,
+        BC_DEAD_AVAIL_AND_ALIASES,
+        BC_UNSAFE_DEAD_AVAIL,
+        BC_UNSAFE_DEAD_AVAIL_AND_ALIASES
     };
+
+    static std::string getDescription(Heuristic opt);
 
     struct AnalysisData {
         // we compare the base address only
@@ -78,31 +84,48 @@ public:
                         Heuristic opt = BC_NONE,
                         bool verbose = false);
 
-    static bool shouldExtendLiveness(Heuristic opt) {
-        return (opt == BC_EXTEND_LIVENESS ||
-                opt == BC_EXTEND_LIVENESS_ALWAYS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS);
-    }
+private:
+    static void identifyMissingValues(llvm::Instruction* I,
+                    std::map<llvm::Value*, llvm::Value*> &availableValues,
+                    std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
+                    std::set<llvm::Value*> &missingValues,
+                    Heuristic opt);
 
-    static bool shouldAlwaysExtendLiveness(Heuristic opt) {
-        return (opt == BC_EXTEND_LIVENESS_ALWAYS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS);
-    }
+    static bool reconstructInst(llvm::Instruction* I,
+                    std::map<llvm::Value*, llvm::Value*> &availableValues,
+                    std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
+                    std::map<llvm::Instruction*, llvm::Value*> &reconstructedMap,
+                    StateMap::CodeSequence* compCodeSequence,
+                    std::set<llvm::Value*> &argsForCompCode,
+                    Heuristic opt);
 
-    static bool shouldIncludeDeadArgs(Heuristic opt) {
-        return (opt == BC_DEAD_ARGS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS ||
-                opt == BC_DEAD_ARGS_AND_EXTEND_LIVENESS_ALWAYS);
-    }
+    static void computeAvailableAliases(StateMap* M,
+                    llvm::Instruction* OSRSrc,
+                    AnalysisData* BCAD,
+                    CodeMapper::StateMapUpdateInfo* updateInfo,
+                    LivenessAnalysis::LiveValues& liveAtOSRSrc,
+                    std::map<llvm::Value*, llvm::Value*> &availableValues,
+                    std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
+                    Heuristic opt);
 
-    static bool shouldOptimizeConstantPHI(Heuristic opt) {
-        return true;
-    }
+    static void computeDeadAvailableValues(StateMap* M,
+                    llvm::Instruction* OSRSrc,
+                    llvm::Function* src,
+                    AnalysisData* BCAD,
+                    std::map<llvm::Value*, llvm::Value*> availableValues,
+                    std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
+                    Heuristic opt);
 
-    static bool shouldUseAdditionalOneToOneInfo(Heuristic opt) {
-        return true;
-    }
+    static StateMap::ValueInfo* buildCompCode(llvm::Instruction* instToReconstruct,
+                    std::map<llvm::Value*, llvm::Value*> &availableValues,
+                    std::map<llvm::Value*, llvm::Value*> &deadAvailableValues,
+                    std::set<llvm::Value*> &valuesToKeep,
+                    Heuristic opt);
+
+    static bool shouldPerformBaseOpts(Heuristic opt);
+    static bool shouldUseAliases(Heuristic opt);
+    static bool shouldUseDeadValues(Heuristic opt);
+    static bool shouldUseDeadValuesUnsafely(Heuristic opt);
 
     static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);
 };

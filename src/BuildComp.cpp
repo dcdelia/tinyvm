@@ -199,8 +199,77 @@ FunctionPass* BuildComp::createBuildCompAnalysisPass(BuildComp::AnalysisData* BC
     return BCAP;
 }
 
-static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
-        &availableValues, std::map<Value*, Value*> &deadAvailableValues,
+std::string BuildComp::getDescription(Heuristic opt) {
+    std::string desc;
+
+    switch (opt) {
+        case BC_NONE:
+            desc = "Naive version of the BuildComp algorithm";
+            break;
+        case BC_BASE_OPTS:
+            desc = "Basic optimizations (constant PHI nodes, dead arguments)";
+            break;
+        case BC_ALIASES:
+            desc = "Basic opts + RAUW aliasing";
+            break;
+        case BC_DEAD_AVAIL:
+            desc = "Basic opts + dead available values";
+            break;
+        case BC_DEAD_AVAIL_AND_ALIASES:
+            desc = "Basic opts + dead available values + RAUW aliasing";
+            break;
+        case BC_UNSAFE_DEAD_AVAIL:
+            desc = "Basic opts + (unsafe) dead available values";
+            break;
+        case BC_UNSAFE_DEAD_AVAIL_AND_ALIASES:
+            desc = desc = "Basic opts + (unsafe) dead available values + RAUW aliasing";
+            break;
+        default:
+            desc = "Unknown strategy";
+    }
+
+    return desc;
+}
+
+bool BuildComp::shouldPerformBaseOpts(BuildComp::Heuristic opt) {
+    return opt != BC_NONE;
+}
+
+bool BuildComp::shouldUseAliases(Heuristic opt) {
+    switch (opt) {
+        case BC_ALIASES:
+        case BC_DEAD_AVAIL_AND_ALIASES:
+        case BC_UNSAFE_DEAD_AVAIL_AND_ALIASES:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool BuildComp::shouldUseDeadValues(Heuristic opt) {
+    switch (opt) {
+        case  BC_DEAD_AVAIL:
+        case  BC_DEAD_AVAIL_AND_ALIASES:
+        case  BC_UNSAFE_DEAD_AVAIL:
+        case BC_UNSAFE_DEAD_AVAIL_AND_ALIASES:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool BuildComp::shouldUseDeadValuesUnsafely(Heuristic opt) {
+    switch (opt) {
+        case  BC_UNSAFE_DEAD_AVAIL:
+        case BC_UNSAFE_DEAD_AVAIL_AND_ALIASES:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void BuildComp::identifyMissingValues(Instruction* I, std::map<Value*, Value*>
+        &availableValues, std::map<Value*, Value*> &extraAvailableValues,
         std::set<Value*> &missingValues, BuildComp::Heuristic opt) {
     for (User::op_iterator it = I->op_begin(), end = I->op_end(); it != end;
             ++it) {
@@ -210,19 +279,19 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
         if (isa<Constant>(op)) continue;
 
         if (availableValues.count(op) == 0 && missingValues.count(op) == 0 &&
-                deadAvailableValues.count(op) == 0) {
+                extraAvailableValues.count(op) == 0) {
             missingValues.insert(op);
             if (Instruction* opI = dyn_cast<Instruction>(op)) {
                 // we don't fetch incoming values for non-constant PHI nodes
                 if (PHINode* phi = dyn_cast<PHINode>(opI)) {
-                    if (!BuildComp::shouldOptimizeConstantPHI(opt) ||
+                    if (!shouldPerformBaseOpts(opt) ||
                         !phi->hasConstantValue()) {
                         continue;
                     }
                 }
 
                 identifyMissingValues(opI, availableValues,
-                        deadAvailableValues, missingValues, opt);
+                        extraAvailableValues, missingValues, opt);
 
             }
         }
@@ -230,8 +299,8 @@ static void identifyMissingValues(Instruction* I, std::map<Value*, Value*>
 }
 
 
-static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
-        &availableValues, std::map<Value*, Value*> &deadAvailableValues,
+bool BuildComp::reconstructInst(Instruction* I, std::map<Value*, Value*>
+        &availableValues, std::map<Value*, Value*> &extraAvailableValues,
         std::map<Instruction*, Value*> &reconstructedMap,
         StateMap::CodeSequence* compCodeSequence,
         std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
@@ -242,7 +311,7 @@ static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
     if (PHINode* phi = dyn_cast<PHINode>(I)) {
         Value* constV = phi->hasConstantValue();
 
-        if (!constV || !BuildComp::shouldOptimizeConstantPHI(opt)) return false;
+        if (!constV || !shouldPerformBaseOpts(opt)) return false;
 
         if (Instruction* constI = dyn_cast<Instruction>(constV)) {
             if (reconstructedMap.count(constI) != 0) {
@@ -255,8 +324,8 @@ static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
 
         if (availableValues.count(constV) != 0) {
             valToUse = availableValues[constV];
-        } else if (deadAvailableValues.count(constV) != 0) {
-            valToUse = deadAvailableValues[constV];
+        } else if (extraAvailableValues.count(constV) != 0) {
+            valToUse = extraAvailableValues[constV];
         }
 
         if (valToUse) {
@@ -288,8 +357,9 @@ static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
 
     std::map<Value*, Value*>::iterator availIt, deadAvailIt;
     std::map<Value*, Value*>::iterator availEnd = availableValues.end();
-    std::map<Value*, Value*>::iterator deadAvailEnd = deadAvailableValues.end();
+    std::map<Value*, Value*>::iterator extraAvailEnd = extraAvailableValues.end();
     std::map<Instruction*, Value*>::iterator recEnd = reconstructedMap.end();
+
     for (Use &U: RI->operands()) {
         Value* op = U.get();
 
@@ -303,8 +373,8 @@ static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
             continue;
         }
 
-        deadAvailIt = deadAvailableValues.find(op);
-        if (deadAvailIt != deadAvailEnd) {
+        deadAvailIt = extraAvailableValues.find(op);
+        if (deadAvailIt != extraAvailEnd) {
             Value* v = deadAvailIt->second;
             U.set(v);
             argsForCompCode.insert(v);
@@ -343,13 +413,13 @@ static bool reconstructInst(Instruction* I, std::map<Value*, Value*>
     return true;
 }
 
-static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
+StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
         std::map<Value*, Value*> &availableValues,
-        std::map<Value*, Value*> &deadAvailableValues,
+        std::map<Value*, Value*> &extraAvailableValues,
         std::set<Value*> &valuesToKeep, BuildComp::Heuristic opt) {
 
     // sanity checks
-    assert(deadAvailableValues.count(instToReconstruct) == 0
+    assert(extraAvailableValues.count(instToReconstruct) == 0
             && "attempting to reconstruct a dead available value?");
     assert(!isa<PHINode>(instToReconstruct) && "PHI node not treated earlier?");
 
@@ -363,7 +433,7 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
     // identify which values need to be reconstructed
     std::set<Value*> missingValues;
     identifyMissingValues(instToReconstruct, availableValues,
-            deadAvailableValues, missingValues, opt);
+            extraAvailableValues, missingValues, opt);
 
     std::set<Instruction*> instWorkSet;
     for (Value* v: missingValues) {
@@ -419,7 +489,7 @@ static StateMap::ValueInfo* buildCompCode(Instruction* instToReconstruct,
 
     for (Instruction* currInstToReconstruct: sortedInstructions) {
         success &= reconstructInst(currInstToReconstruct, availableValues,
-                deadAvailableValues, reconstructedMap, compCode->code,
+                extraAvailableValues, reconstructedMap, compCode->code,
                 argsForCompCode, opt);
 
         if (!success) break;
@@ -498,7 +568,7 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     return ret;
 }
 
-static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
+void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
         BuildComp::AnalysisData* BCAD, CodeMapper::StateMapUpdateInfo* updateInfo,
         LivenessAnalysis::LiveValues& liveAtOSRSrc,
         std::map<Value*, Value*> &availableValues,
@@ -510,7 +580,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
     BasicBlock* OSRSrcBB = OSRSrc->getParent();
 
     DominatorTree &DT = BCAD->DT;
-    BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
+    AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
 
     for (const std::pair<Value*, std::set<Value*>> &pair:
             updateInfo->RAUWOneToOneAliasInfo) {
@@ -536,10 +606,10 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
 
             // then try with dead arguments
             if (isa<Argument>(valToUse)) {
-                if (BuildComp::shouldIncludeDeadArgs(opt)) {
+                if (shouldPerformBaseOpts(opt)) {
                     extraAvailableValues[valToSet] = valToUse;
                     break;
-                } else if (BuildComp::shouldExtendLiveness(opt)) {
+                } else if (shouldUseDeadValues(opt)) {
                     extraAvailableValues[valToSet] = valToUse;
                     break;
                 }
@@ -548,7 +618,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
             }
 
             // at this point we have to check if the Instruction is available
-            if (BuildComp::shouldExtendLiveness(opt)) {
+            if (shouldUseDeadValues(opt)) {
 
                 Instruction* instToUse = cast<Instruction>(valToUse);
                 BasicBlock* BB = instToUse->getParent();
@@ -556,7 +626,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
                 if (BB != OSRSrcBB) {
                     if (DT.dominates(BB, OSRSrcBB)) {
                         if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                            if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                            if (!shouldUseDeadValuesUnsafely(opt)) {
                                 //if (safeLoads.count(LI) == 0) continue; // TODO
                             }
                         }
@@ -568,7 +638,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
                     if (instToUse == OSRSrc) continue;
 
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                        if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                        if (!shouldUseDeadValuesUnsafely(opt)) {
                             //if (safeLoads.count(LI) == 0) continue; // TODO
                         }
                     }
@@ -585,6 +655,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
     }
 }
 
+#if 0
 static void computeAvailableAdditionalOneToOne(StateMap* M,
         Instruction* OSRSrc, BuildComp::AnalysisData* BCAD,
         CodeMapper::StateMapUpdateInfo* updateInfo,
@@ -630,12 +701,12 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
 
             // then try with arguments
             if (isa<Argument>(valToUse)) {
-                if (BuildComp::shouldIncludeDeadArgs(opt)) {
+                if (BuildComp::shouldPerformBaseOpts(opt)) {
                     extraAvailableValues[valToSet] = valToUse;
                     //std::cerr << "SUCCESS 3" << std::endl;
                     ++availAdditionalOneToOne;
                     break;
-                } else if (BuildComp::shouldExtendLiveness(opt)) {
+                } else if (BuildComp::shouldUseDeadValues(opt)) {
                     extraAvailableValues[valToSet] = valToUse;
                     //std::cerr << "SUCCESS 4" << std::endl;
                     ++availAdditionalOneToOne;
@@ -646,7 +717,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
             }
 
             // at this point we can only check if an Instruction is available
-            if (BuildComp::shouldExtendLiveness(opt)) {
+            if (BuildComp::shouldUseDeadValues(opt)) {
 
                 Instruction* instToUse = cast<Instruction>(valToUse);
                 BasicBlock* BB = instToUse->getParent();
@@ -654,7 +725,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
                 if (BB != OSRSrcBB) {
                     if (DT.dominates(BB, OSRSrcBB)) {
                         if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                            if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                            if (!BuildComp::shouldUseDeadValuesUnsafely(opt)) {
                                 if (safeLoads.count(LI) == 0) continue;
                             }
                         }
@@ -665,7 +736,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
                 } else {
                     if (instToUse == OSRSrc) continue;
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                        if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                        if (!BuildComp::shouldUseDeadValuesUnsafely(opt)) {
                             if (safeLoads.count(LI) == 0) continue;
                         }
                     }
@@ -687,8 +758,9 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
     }
 
 }
+#endif
 
-static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
+void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
         Function* src, BuildComp::AnalysisData* BCAD,
         std::map<Value*, Value*> availableValues,
         std::map<Value*, Value*> &extraAvailableValues,
@@ -729,7 +801,7 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
             if (BB != OSRSrcBB) {
                 if (DT.dominates(BB, OSRSrcBB)) {
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                        if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                        if (!shouldUseDeadValuesUnsafely(opt)) {
                             if (safeLoads.count(LI) == 0) continue;
                         }
                     }
@@ -740,7 +812,7 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
                 if (instToUse == OSRSrc) continue;
 
                 if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                    if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
+                    if (!shouldUseDeadValuesUnsafely(opt)) {
                         if (safeLoads.count(LI) == 0) continue;
                     }
                 }
@@ -753,8 +825,7 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
             }
         } else {
             assert(isa<Argument>(valToUse));
-            assert(!BuildComp::shouldIncludeDeadArgs(opt)
-                    && "Missed dead argument?");
+            assert(!shouldPerformBaseOpts(opt) && "Missed dead argument?");
 
             extraAvailableValues[valToSet] = valToUse;
         }
@@ -828,7 +899,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             continue;
         }
 
-        if (shouldIncludeDeadArgs(opt) && isa<Argument>(valToUse)) {
+        if (shouldPerformBaseOpts(opt) && isa<Argument>(valToUse)) {
             availableValues[valToSet] = valToUse;
             continue;
         }
@@ -843,12 +914,12 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
 
     if (workList.empty()) return true;
 
-    if (shouldExtendLiveness(opt)) {
+    if (shouldUseDeadValues(opt)) {
         computeDeadAvailableValues(M, OSRSrc, src, BCAD, availableValues,
                 extraAvailableValues, opt);
     }
 
-    if (shouldUseAdditionalOneToOneInfo(opt) && updateInfo) {
+    if (shouldUseAliases(opt) && updateInfo) {
         computeAvailableAliases(M, OSRSrc, BCAD, updateInfo,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);
         /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
@@ -872,7 +943,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             // constant PHI nodes can be treated as a special case
             Value* constV = nullptr;
 
-            if (shouldOptimizeConstantPHI(opt)) {
+            if (shouldPerformBaseOpts(opt)) {
                 constV = phi->hasConstantValue();
                 if (constV) {
                     if (availableValues.count(constV) != 0) {

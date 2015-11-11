@@ -557,7 +557,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
                     if (DT.dominates(BB, OSRSrcBB)) {
                         if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
                             if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
-                                if (safeLoads.count(LI) == 0) continue; // TODO
+                                //if (safeLoads.count(LI) == 0) continue; // TODO
                             }
                         }
 
@@ -569,7 +569,7 @@ static void computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
 
                     if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
                         if (!BuildComp::shouldAlwaysExtendLiveness(opt)) {
-                            if (safeLoads.count(LI) == 0) continue; // TODO
+                            //if (safeLoads.count(LI) == 0) continue; // TODO
                         }
                     }
 
@@ -590,7 +590,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
         CodeMapper::StateMapUpdateInfo* updateInfo,
         LivenessAnalysis::LiveValues& liveAtOSRSrc,
         std::map<Value*, Value*> &availableValues,
-        std::map<Value*, Value*> &deadAvailableValues,
+        std::map<Value*, Value*> &extraAvailableValues,
         BuildComp::Heuristic opt) {
 
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
@@ -608,13 +608,13 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
         Instruction* valToSet = pair.first;
 
         if (availableValues.count(valToSet) != 0 ||
-                deadAvailableValues.count(valToSet) != 0) {
+                extraAvailableValues.count(valToSet) != 0) {
             continue;
         }
         for (Value* valToUse: pair.second) {
             // constants are always safe to use
             if (isa<Constant>(valToUse)) {
-                availableValues[valToSet] = valToUse;
+                extraAvailableValues[valToSet] = valToUse;
                 //std::cerr << "SUCCESS 1" << std::endl;
                 ++availAdditionalOneToOne;
                 break;
@@ -622,7 +622,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
 
             // check live values first
             if (liveAtOSRSrc.count(valToUse) != 0) {
-                availableValues[valToSet] = valToUse;
+                extraAvailableValues[valToSet] = valToUse;
                 //std::cerr << "SUCCESS 2" << std::endl;
                 ++availAdditionalOneToOne;
                 break;
@@ -631,12 +631,12 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
             // then try with arguments
             if (isa<Argument>(valToUse)) {
                 if (BuildComp::shouldIncludeDeadArgs(opt)) {
-                    availableValues[valToSet] = valToUse;
+                    extraAvailableValues[valToSet] = valToUse;
                     //std::cerr << "SUCCESS 3" << std::endl;
                     ++availAdditionalOneToOne;
                     break;
                 } else if (BuildComp::shouldExtendLiveness(opt)) {
-                    deadAvailableValues[valToSet] = valToUse;
+                    extraAvailableValues[valToSet] = valToUse;
                     //std::cerr << "SUCCESS 4" << std::endl;
                     ++availAdditionalOneToOne;
                     break;
@@ -658,7 +658,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
                                 if (safeLoads.count(LI) == 0) continue;
                             }
                         }
-                        deadAvailableValues[valToSet] = valToUse;
+                        extraAvailableValues[valToSet] = valToUse;
                         //std::cerr << "SUCCESS 5" << std::endl;
                         ++availAdditionalOneToOne;
                     }
@@ -672,7 +672,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
                     BasicBlock::const_iterator bbIt = BB->begin();
                     for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
                     if (&*bbIt == instToUse) {
-                        deadAvailableValues[valToSet] = valToUse;
+                        extraAvailableValues[valToSet] = valToUse;
                         //std::cerr << "SUCCESS 6" << std::endl;
                         ++availAdditionalOneToOne;
                     }
@@ -762,8 +762,10 @@ static void computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
 }
 
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
-        std::set<Value*> &keepSet, BuildComp::Heuristic opt,
+        std::set<Value*> &keepSet, bool &needPrologue, BuildComp::Heuristic opt,
         BuildComp::AnalysisData* BCAD, bool updateMapping, bool verbose) {
+
+    needPrologue = false;
 
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
@@ -847,10 +849,10 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     }
 
     if (shouldUseAdditionalOneToOneInfo(opt) && updateInfo) {
-        /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
-                liveAtOSRSrc, availableValues, additionalAvailableValues, opt);*/
         computeAvailableAliases(M, OSRSrc, BCAD, updateInfo,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);
+        /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
+                liveAtOSRSrc, availableValues, extraAvailableValues, opt);*/
     }
 
     StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
@@ -907,6 +909,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 curValuesToKeep.clear();
             } else {
                 valueInfoMap[valToReconstruct] = valInfo;
+                needPrologue = true;
             }
 
             continue;
@@ -949,6 +952,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     int OSRSourcesInF1 = 0, OSRSourcesInF2 = 0;
     int buildCompRequiredInF1 = 0, buildCompRequiredInF2 = 0;
     int buildCompFailsInF1 = 0, buildCompFailsInF2 = 0;
+    int isPrologueRequiredInF1 = 0, isPrologueRequiredInF2 = 0;
 
     StateMap::LocMap &landingPadMap = M->getAllLandingPads();
     StateMap::OneToOneValueMap &defaultOneToOneValueMap =
@@ -973,13 +977,14 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
                 assert (F == F2 && "Argument from unknown function");
                 ++oneToOneValuesForF2;
             }
-        } else if (Constant* C = dyn_cast<Constant>(v)) {
-            // TODO
         }
+
+        assert(!isa<Constant>(v) && "Constant appears as key in the 1:1 map!");
     }
 
     std::set<Value*> keepSet;
     std::set<Value*> missingSet;
+    bool needPrologue;
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
         Instruction* OSRSrc = it->first;
@@ -993,7 +998,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         if (bcReq) {
             missingSet.clear();
             bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    BuildComp::Heuristic::BC_NONE, nullptr, false, verbose); // TODO!!!
+                    needPrologue, opt, nullptr, false, verbose);
             keepSet.clear();
         }
         if (F == F1) {
@@ -1002,6 +1007,8 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
                 ++buildCompRequiredInF1;
                 if (bcFails) {
                     ++buildCompFailsInF1;
+                } else if (needPrologue) {
+                    ++isPrologueRequiredInF1;
                 }
             }
         } else {
@@ -1010,6 +1017,8 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
                 ++buildCompRequiredInF2;
                 if (bcFails) {
                     ++buildCompFailsInF2;
+                } else if (needPrologue) {
+                    ++isPrologueRequiredInF2;
                 }
             }
         }
@@ -1024,6 +1033,9 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
               << "a compensation code is required" << std::endl;
     std::cerr << "- " << buildCompFailsInF1 << " OSRSrc locations for which a "
               << "compensation code cannot be built automatically" << std::endl;
+    std::cerr << "- " << isPrologueRequiredInF1 << " OSRSrc locations for which"
+              << " a compensation code can be built and needs a prologue"
+              << std::endl;
 
     std::cerr << "<" << F2Name << ">" << std::endl;
     std::cerr << "- " << oneToOneValuesForF2 << " values for which there is a "
@@ -1034,6 +1046,9 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
               << "a compensation code is required" << std::endl;
     std::cerr << "- " << buildCompFailsInF2 << " OSRSrc locations for which a "
               << "compensation code cannot be built automatically" << std::endl;
+    std::cerr << "- " << isPrologueRequiredInF2 << " OSRSrc locations for which"
+              << " a compensation code can be built and needs a prologue"
+              << std::endl;
 }
 
 

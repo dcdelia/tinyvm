@@ -1261,6 +1261,8 @@ void Parser::handleCompCodeCommand() {
     int noCompCodeRequired = 0;
     int compCodeRequired = 0;
     int canBuildCompCode = 0;
+    bool needPrologue = false;
+    int isPrologueRequired = 0;
 
     // collecting statistics
     std::map<Value*, int> valuesToKeepAtPoints;
@@ -1335,9 +1337,10 @@ void Parser::handleCompCodeCommand() {
             bool doBuild = (action == buildCode);
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    compCodeStrategy, BCAD, doBuild, verbose);
+                    needPrologue, compCodeStrategy, BCAD, doBuild, verbose);
             if (ret) {
                 ++canBuildCompCode;
+                if (needPrologue) ++isPrologueRequired;
             }
             //updateValuesToKeepInfo(keepSet);
 
@@ -1360,7 +1363,7 @@ void Parser::handleCompCodeCommand() {
         } else if (action == testCode) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    compCodeStrategy, BCAD, true, verbose);
+                    needPrologue, compCodeStrategy, BCAD, true, verbose);
             //updateValuesToKeepInfo(keepSet);
 
             if (!ret) {
@@ -1376,6 +1379,7 @@ void Parser::handleCompCodeCommand() {
             }
 
             ++canBuildCompCode;
+            if (needPrologue) ++isPrologueRequired;
 
             std::unique_ptr<Module> NewModule =
                     llvm::make_unique<Module>("CompCodeMod", TheHelper->Context);
@@ -1453,13 +1457,14 @@ void Parser::handleCompCodeCommand() {
         } else if (action == inspect) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    compCodeStrategy, BCAD, false, verbose);
+                    needPrologue, compCodeStrategy, BCAD, false, verbose);
             std::map<BasicBlock*, std::pair<int,int>>::iterator bbMapIt =
                     feasibleOSRPointsPerBlock.find(OSRSrc->getParent());
             assert (bbMapIt != feasibleOSRPointsPerBlock.end() && "unknown BB");
             ++(bbMapIt->second.second);
             if (ret) {
                 ++canBuildCompCode;
+                if (needPrologue) ++isPrologueRequired;
                 ++(bbMapIt->second.first);
             } else {
                 updateValuesToKeepInfo(keepSet);
@@ -1479,6 +1484,8 @@ void Parser::handleCompCodeCommand() {
                 || action == inspect) {
             std::cerr << "- compensation code can be built automatically: "
                       << canBuildCompCode << std::endl;
+            std::cerr << "- compensation code requires a prologue: "
+                      << isPrologueRequired << std::endl;
 
             if (action == inspect) {
                 if (valuesToKeepAtPoints.empty()) {

@@ -62,6 +62,7 @@ public:
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
                         std::set<llvm::Value*> &keepSet,
+                        bool &needPrologue,
                         Heuristic opt = BC_NONE,
                         AnalysisData *BCAD = nullptr,
                         bool updateMapping = true,

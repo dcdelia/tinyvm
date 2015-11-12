@@ -109,7 +109,7 @@ private:
     static void computeAvailableAliases(StateMap* M,
                     llvm::Instruction* OSRSrc,
                     AnalysisData* BCAD,
-                    std::map<llvm::Value*, std::set<llvm::Value*>> &aliasInfoMap,
+                    CodeMapper::OneToManyAliasMap &aliasInfoMap,
                     LivenessAnalysis::LiveValues& liveAtOSRSrc,
                     std::map<llvm::Value*, llvm::Value*> &availableValues,
                     std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,

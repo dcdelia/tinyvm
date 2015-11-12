@@ -32,6 +32,8 @@
 #include <vector>
 #include <llvm/IR/Dominators.h>
 
+#define BUILD_ALIAS_INFO_MAP    1
+
 using namespace llvm;
 
 void initializeBuildCompAnalysisPass(PassRegistry&);
@@ -568,9 +570,63 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     return ret;
 }
 
+#if BUILD_ALIAS_INFO_MAP
+static CodeMapper::OneToManyAliasMap genAliasInfoMap(
+        CodeMapper::StateMapUpdateInfo* src_updateInfo,
+        CodeMapper::StateMapUpdateInfo* dest_updateInfo) {
+
+    CodeMapper::OneToManyAliasMap map;
+
+    // create keys first
+    if (src_updateInfo) {
+        for (const std::pair<Value*, std::set<Value*>> &pair:
+                src_updateInfo->RAUWAliasInfo) {
+            for (Value* v: pair.second) { // each value is a key for map
+                if (map.count(v) == 0) {
+                    map.insert(std::pair<Value*, std::set<Value*>>(v, {}));
+                }
+            }
+        }
+    }
+
+    if (dest_updateInfo) {
+        for (const std::pair<Value*, std::set<Value*>> &pair:
+                dest_updateInfo->RAUWAliasInfo) {
+            Value* v = pair.first;
+            if (map.count(v) == 0) {
+                map.insert(std::pair<Value*, std::set<Value*>>(v, {}));
+            }
+        }
+    }
+
+    // then fill the map
+    if (src_updateInfo) {
+        for (const std::pair<Value*, std::set<Value*>> &pair:
+                src_updateInfo->RAUWAliasInfo) {
+            for (Value* v: pair.second) {
+                map[v].insert((pair.first));
+            }
+        }
+    }
+
+    if (dest_updateInfo) {
+        for (const std::pair<Value*, std::set<Value*>> &pair:
+                dest_updateInfo->RAUWAliasInfo) {
+            for (Value* v: pair.second) {
+                map[pair.first].insert((v));
+            }
+        }
+    }
+
+
+    return map;
+
+}
+#endif
+
 void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
         BuildComp::AnalysisData* BCAD,
-        std::map<Value*, std::set<Value*>> &aliasInfoMap,
+        CodeMapper::OneToManyAliasMap &aliasInfoMap,
         LivenessAnalysis::LiveValues& liveAtOSRSrc,
         std::map<Value*, Value*> &availableValues,
         std::map<Value*, Value*> &extraAvailableValues,
@@ -835,10 +891,15 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
                 LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
 
+    CodeMapper* src_CM = CodeMapper::getCodeMapper(*src);
     CodeMapper* dest_CM = CodeMapper::getCodeMapper(*dest);
-    CodeMapper::StateMapUpdateInfo *updateInfo = nullptr;
+    CodeMapper::StateMapUpdateInfo *src_updateInfo = nullptr;
+    CodeMapper::StateMapUpdateInfo *dest_updateInfo = nullptr;
+    if (src_CM) {
+        src_updateInfo = src_CM->getStateMapUpdateInfo(M);
+    }
     if (dest_CM) {
-        updateInfo = dest_CM->getStateMapUpdateInfo(M);
+        dest_updateInfo = dest_CM->getStateMapUpdateInfo(M);
     }
 
     std::vector<Value*> workList; // instructions to reconstruct
@@ -889,11 +950,18 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 extraAvailableValues, opt);
     }
 
-    if (shouldUseAliases(opt) && updateInfo) {
-        std::map<Value*, std::set<Value*>> &aliasInfoMap =
-                updateInfo->RAUWOneToOneAliasInfo;
+    if (shouldUseAliases(opt) && (src_updateInfo || dest_updateInfo) ) {
+        #if BUILD_ALIAS_INFO_MAP
+        CodeMapper::OneToManyAliasMap aliasInfoMap =
+                genAliasInfoMap(src_updateInfo, dest_updateInfo);
+        #else
+        CodeMapper::OneToManyAliasMap &aliasInfoMap =
+                dest_updateInfo->RAUWAliasInfo;
+        #endif
+
         computeAvailableAliases(M, OSRSrc, src_BCAD, aliasInfoMap,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);
+
         /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);*/
     }

@@ -162,8 +162,6 @@ Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
  */
 void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
         bool verbose) {
-    /*assert(updateInfo->DeletedInstructions.count(AddedI) == 0
-            && "we have a problem with the allocator :-)");*/
 
     Instruction* LPadForSuccI = SuccI ? M->getLandingPad(SuccI) : nullptr;
     if (LPadForSuccI) {
@@ -191,9 +189,8 @@ void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
 void CodeMapper::DeleteInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
         bool verbose) {
 
-    std::map<Value*, std::set<Value*>>::iterator LOOIt, LOOEnd;
-    std::map<Value*, std::set<Value*>> &LOOMap =
-            updateInfo->RAUWOneToOneAliasInfo;
+    OneToManyAliasMap::iterator LOOIt, LOOEnd;
+    OneToManyAliasMap &LOOMap = updateInfo->RAUWAliasInfo;
     LOOIt = LOOMap.find(DeletedI);
     if (LOOIt != LOOMap.end()) {
         LOOMap.erase(LOOIt);
@@ -234,12 +231,12 @@ void CodeMapper::DeleteInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
         discardLandingPads(M, DeletedI);
     }
 
-    updateInfo->DeletedInstructions.insert(DeletedI);
-
+    #if 0
     auto addOneToOneit = updateInfo->AdditionalOneToOneValues.find(DeletedI);
     if (addOneToOneit != updateInfo->AdditionalOneToOneValues.end()) {
         updateInfo->AdditionalOneToOneValues.erase(addOneToOneit);
     }
+    #endif
 }
 
 /*
@@ -337,9 +334,8 @@ void CodeMapper::RAUWInst::apply(StateMap* M, StateMapUpdateInfo* updateInfo,
     Value* otherI = M->getCorrespondingOneToOneValue(I);
     Value* otherV = M->getCorrespondingOneToOneValue(V);
 
-    std::map<Value*, std::set<Value*>>::iterator LOOIt;
-    std::map<Value*, std::set<Value*>> &LOOMap =
-            updateInfo->RAUWOneToOneAliasInfo;
+    OneToManyAliasMap::iterator LOOIt;
+    OneToManyAliasMap &LOOMap = updateInfo->RAUWAliasInfo;
 
     if (otherI || otherV) {
         LOOIt = LOOMap.find(I);
@@ -368,23 +364,16 @@ void CodeMapper::RAUWInst::apply(StateMap* M, StateMapUpdateInfo* updateInfo,
         }
     }
 
-    #if 0 // TODO this can be disruptive when map.count(newValue) != 0
     if (type == LLVMValueType::InstructionTy) {
         it = map.find(oldValue);
         if (it != end) {
-            map[newValue] = it->second;
-        }
-    }
-    #else
-    if (type == LLVMValueType::InstructionTy) { // TODO avoid clash... :-(
-        Instruction* newInst = cast<Instruction>(newValue);
-        it = map.find(oldValue);
-        if (it != end) {
-#if 1
             Value* aliasV = it->second;
             if (map.count(newValue) == 0) {
                 map[newValue] = aliasV;
-            } else {
+            }
+            #if 0
+            else {
+                Instruction* newInst = cast<Instruction>(newValue);
                 if (updateInfo->AdditionalOneToOneValues.count(newInst) == 0) {
                     updateInfo->AdditionalOneToOneValues.insert(std::pair<
                             Instruction*, std::set<Value*>>(newInst, {aliasV}));
@@ -392,22 +381,9 @@ void CodeMapper::RAUWInst::apply(StateMap* M, StateMapUpdateInfo* updateInfo,
                     updateInfo->AdditionalOneToOneValues[newInst].insert(aliasV);
                 }
             }
-#else
-            if (map.count(newValue) != 0) {
-                Value* aliasV = map[newValue];
-                if (updateInfo->AdditionalOneToOneValues.count(newInst) == 0) {
-                    updateInfo->AdditionalOneToOneValues.insert(std::pair<Value*,
-                            std::set<Value*>>(newInst, {aliasV}));
-                } else {
-                    updateInfo->AdditionalOneToOneValues[newInst].insert(aliasV);
-                }
-
-            }
-            map[newValue] = it->second;
-#endif
+            #endif
         }
     }
-    #endif
 }
 
 CodeMapper::StateMapUpdateInfo& CodeMapper::updateStateMapping(StateMap* M,

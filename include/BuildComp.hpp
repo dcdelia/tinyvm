@@ -70,7 +70,8 @@ public:
                         std::set<llvm::Value*> &keepSet,
                         bool &needPrologue,
                         Heuristic opt = BC_NONE,
-                        AnalysisData *BCAD = nullptr,
+                        AnalysisData *BCAD_src = nullptr,
+                        AnalysisData *BCAD_dest = nullptr,
                         bool updateMapping = true,
                         bool verbose = false);
 
@@ -99,10 +100,16 @@ private:
                     std::set<llvm::Value*> &argsForCompCode,
                     Heuristic opt);
 
+    static bool isDeadInstructionAvailable(llvm::Instruction* DI,
+                    llvm::Instruction* I,
+                    llvm::DominatorTree &DT,
+                    AnalysisData::SafeLoadSet &safeLoads,
+                    Heuristic opt);
+
     static void computeAvailableAliases(StateMap* M,
                     llvm::Instruction* OSRSrc,
                     AnalysisData* BCAD,
-                    CodeMapper::StateMapUpdateInfo* updateInfo,
+                    std::map<llvm::Value*, std::set<llvm::Value*>> &aliasInfoMap,
                     LivenessAnalysis::LiveValues& liveAtOSRSrc,
                     std::map<llvm::Value*, llvm::Value*> &availableValues,
                     std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,

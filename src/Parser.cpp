@@ -1271,10 +1271,12 @@ void Parser::handleCompCodeCommand() {
 
 
     // compute analysis info required by BuildComp
-    BuildComp::AnalysisData* BCAD = nullptr;
+    BuildComp::AnalysisData* BCAD_src = nullptr;
+    BuildComp::AnalysisData* BCAD_dest = nullptr;
     if (action == canBuildCode || action == buildCode || action == testCode
             || action == inspect) {
-        BCAD = new BuildComp::AnalysisData(src);
+        BCAD_src = new BuildComp::AnalysisData(src);
+        BCAD_dest = new BuildComp::AnalysisData(dest);
     }
 
     for (int i = 0, e = workList.size(); i != e; ++i) {
@@ -1324,7 +1326,8 @@ void Parser::handleCompCodeCommand() {
             bool doBuild = (action == buildCode);
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    needPrologue, compCodeStrategy, BCAD, doBuild, verbose);
+                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
+                    doBuild, verbose);
             if (ret) {
                 ++canBuildCompCode;
                 if (needPrologue) ++isPrologueRequired;
@@ -1350,7 +1353,8 @@ void Parser::handleCompCodeCommand() {
         } else if (action == testCode) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    needPrologue, compCodeStrategy, BCAD, true, verbose);
+                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
+                    true, verbose);
             //updateValuesToKeepInfo(keepSet);
 
             if (!ret) {
@@ -1444,7 +1448,8 @@ void Parser::handleCompCodeCommand() {
         } else if (action == inspect) {
             keepSet.clear();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    needPrologue, compCodeStrategy, BCAD, false, verbose);
+                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
+                    false, verbose);
             std::map<BasicBlock*, std::pair<int,int>>::iterator bbMapIt =
                     feasibleOSRPointsPerBlock.find(OSRSrc->getParent());
             assert (bbMapIt != feasibleOSRPointsPerBlock.end() && "unknown BB");
@@ -1522,7 +1527,8 @@ void Parser::handleCompCodeCommand() {
         }
     }
 
-    if (BCAD) delete BCAD;
+    if (BCAD_src) delete BCAD_src;
+    if (BCAD_dest) delete BCAD_dest;
 
     #undef INVALID
 }

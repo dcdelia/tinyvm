@@ -569,21 +569,18 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
 }
 
 void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
-        BuildComp::AnalysisData* BCAD, CodeMapper::StateMapUpdateInfo* updateInfo,
+        BuildComp::AnalysisData* BCAD,
+        std::map<Value*, std::set<Value*>> &aliasInfoMap,
         LivenessAnalysis::LiveValues& liveAtOSRSrc,
         std::map<Value*, Value*> &availableValues,
         std::map<Value*, Value*> &extraAvailableValues,
         BuildComp::Heuristic opt) {
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
-    assert(updateInfo != nullptr && "no CompCode::StateMapUpdateInfo provided!");
-
-    BasicBlock* OSRSrcBB = OSRSrc->getParent();
 
     DominatorTree &DT = BCAD->DT;
     AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
 
-    for (const std::pair<Value*, std::set<Value*>> &pair:
-            updateInfo->RAUWOneToOneAliasInfo) {
+    for (const std::pair<Value*, std::set<Value*>> &pair: aliasInfoMap) {
         Value* valToSet = pair.first;
 
         if (availableValues.count(valToSet) > 0 ||
@@ -621,34 +618,11 @@ void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
             if (shouldUseDeadValues(opt)) {
 
                 Instruction* instToUse = cast<Instruction>(valToUse);
-                BasicBlock* BB = instToUse->getParent();
 
-                if (BB != OSRSrcBB) {
-                    if (DT.dominates(BB, OSRSrcBB)) {
-                        if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                            if (!shouldUseDeadValuesUnsafely(opt)) {
-                                //if (safeLoads.count(LI) == 0) continue; // TODO
-                            }
-                        }
-
-                        extraAvailableValues[valToSet] = valToUse;
-                        break;
-                    }
-                } else {
-                    if (instToUse == OSRSrc) continue;
-
-                    if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                        if (!shouldUseDeadValuesUnsafely(opt)) {
-                            //if (safeLoads.count(LI) == 0) continue; // TODO
-                        }
-                    }
-
-                    BasicBlock::const_iterator bbIt = BB->begin();
-                    for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
-                    if (&*bbIt == instToUse) {
-                        extraAvailableValues[valToSet] = valToUse;
-                        break;
-                    }
+                if (isDeadInstructionAvailable(instToUse, OSRSrc, DT,
+                        safeLoads, opt)) {
+                    extraAvailableValues[valToSet] = valToUse;
+                    break;
                 }
             }
         }
@@ -760,6 +734,32 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
 }
 #endif
 
+bool BuildComp::isDeadInstructionAvailable(Instruction* DI, Instruction* I,
+        DominatorTree &DT, BuildComp::AnalysisData::SafeLoadSet &safeLoads,
+        BuildComp::Heuristic opt) {
+
+    if (DI == I || isa<TerminatorInst>(DI) || isa<StoreInst>(DI)) {
+        return false;
+    }
+
+    BasicBlock* blockForDI = DI->getParent();
+    BasicBlock* blockForI = I->getParent();
+
+    if (LoadInst* DLI = dyn_cast<LoadInst>(DI)) {
+        if (!shouldUseDeadValuesUnsafely(opt)) {
+            if (safeLoads.count(DLI) == 0) return false;
+        }
+    }
+
+    if (blockForI != blockForDI) {
+        return DT.dominates(blockForDI, blockForI);
+    } else {
+        BasicBlock::const_iterator bbIt = blockForI->begin();
+        for (; &*bbIt != DI && &*bbIt != I; ++bbIt);
+        return (&*bbIt == DI);
+    }
+}
+
 void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
         Function* src, BuildComp::AnalysisData* BCAD,
         std::map<Value*, Value*> availableValues,
@@ -767,8 +767,6 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
         BuildComp::Heuristic opt) {
 
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
-
-    BasicBlock* OSRSrcBB = OSRSrc->getParent();
 
     DominatorTree &DT = BCAD->DT;
     BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
@@ -791,37 +789,8 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
         }
 
         if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
-            // TODO skip more cases
-            if (isa<TerminatorInst>(instToUse) || isa<StoreInst>(instToUse)) {
-                continue;
-            }
-
-            BasicBlock* BB = instToUse->getParent();
-
-            if (BB != OSRSrcBB) {
-                if (DT.dominates(BB, OSRSrcBB)) {
-                    if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                        if (!shouldUseDeadValuesUnsafely(opt)) {
-                            if (safeLoads.count(LI) == 0) continue;
-                        }
-                    }
-
-                    extraAvailableValues[valToSet] = valToUse;
-                }
-            } else {
-                if (instToUse == OSRSrc) continue;
-
-                if (LoadInst* LI = dyn_cast<LoadInst>(instToUse)) {
-                    if (!shouldUseDeadValuesUnsafely(opt)) {
-                        if (safeLoads.count(LI) == 0) continue;
-                    }
-                }
-
-                BasicBlock::const_iterator bbIt = BB->begin();
-                for (; &*bbIt != instToUse && &*bbIt != OSRSrc; ++bbIt);
-                if (&*bbIt == instToUse) {
-                    extraAvailableValues[valToSet] = valToUse;
-                }
+            if (isDeadInstructionAvailable(instToUse, OSRSrc, DT, safeLoads, opt)) {
+                extraAvailableValues[valToSet] = valToUse;
             }
         } else {
             assert(isa<Argument>(valToUse));
@@ -834,7 +803,8 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
 
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         std::set<Value*> &keepSet, bool &needPrologue, BuildComp::Heuristic opt,
-        BuildComp::AnalysisData* BCAD, bool updateMapping, bool verbose) {
+        BuildComp::AnalysisData* src_BCAD, BuildComp::AnalysisData* dest_BCAD,
+        bool updateMapping, bool verbose) {
 
     needPrologue = false;
 
@@ -915,12 +885,14 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     if (workList.empty()) return true;
 
     if (shouldUseDeadValues(opt)) {
-        computeDeadAvailableValues(M, OSRSrc, src, BCAD, availableValues,
+        computeDeadAvailableValues(M, OSRSrc, src, src_BCAD, availableValues,
                 extraAvailableValues, opt);
     }
 
     if (shouldUseAliases(opt) && updateInfo) {
-        computeAvailableAliases(M, OSRSrc, BCAD, updateInfo,
+        std::map<Value*, std::set<Value*>> &aliasInfoMap =
+                updateInfo->RAUWOneToOneAliasInfo;
+        computeAvailableAliases(M, OSRSrc, src_BCAD, aliasInfoMap,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);
         /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);*/
@@ -1053,6 +1025,8 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         assert(!isa<Constant>(v) && "Constant appears as key in the 1:1 map!");
     }
 
+    AnalysisData* BCAD_F1 = new AnalysisData(F1);
+    AnalysisData* BCAD_F2 = new AnalysisData(F2);
     std::set<Value*> keepSet;
     std::set<Value*> missingSet;
     bool needPrologue;
@@ -1063,13 +1037,15 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         Instruction* LPad = it->second;
         Function* F = OSRSrc->getParent()->getParent();
         assert ( (F == F1 || F == F2) && "OSRSrc from unknown function");
+        AnalysisData* BCAD_src = (F == F1) ? BCAD_F1 : BCAD_F2;
+        AnalysisData* BCAD_dest = (F == F1) ? BCAD_F2 : BCAD_F1;
         bool bcReq = BuildComp::isBuildCompRequired(M, OSRSrc, LPad, missingSet,
                 verbose);
         bool bcFails = false;
         if (bcReq) {
             missingSet.clear();
             bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
-                    needPrologue, opt, nullptr, false, verbose);
+                    needPrologue, opt, BCAD_src, BCAD_dest, false, verbose);
             keepSet.clear();
         }
         if (F == F1) {
@@ -1120,6 +1096,9 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     std::cerr << "- " << isPrologueRequiredInF2 << " OSRSrc locations for which"
               << " a compensation code can be built and needs a prologue"
               << std::endl;
+
+    delete BCAD_F1;
+    delete BCAD_F2;
 }
 
 

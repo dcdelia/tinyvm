@@ -157,7 +157,7 @@ void Parser::handleMapsCommand() {
     if (token == NULL) INVALID();
 
     // anonymous enum to encode actions
-    enum { analyzeMap, showMaps, updateMap };
+    enum { analyzeMap, showMaps, updateMap, showLocs };
     int action;
 
     if (!strcasecmp(token, "SHOW")) {
@@ -166,6 +166,8 @@ void Parser::handleMapsCommand() {
         action = analyzeMap;
     } else if (!strcasecmp(token, "UPDATE")) {
         action = updateMap;
+    } else if (!strcasecmp(token, "LOCS")) {
+        action = showLocs;
     } else {
         INVALID();
     }
@@ -224,6 +226,65 @@ void Parser::handleMapsCommand() {
         }
     } else if (action == analyzeMap) {
         BuildComp::printStatistics(M, compCodeStrategy, TheHelper->verbose);
+    } else if (action == showLocs) {
+        IDToValueVec slotIDsForF1 = computeSlotIDs(F1);
+        IDToValueVec slotIDsForF2 = computeSlotIDs(F2);
+        IDToValueVec lineIDsForF1 = computeLineIDs(F1);
+        IDToValueVec lineIDsForF2 = computeLineIDs(F2);
+        BuildComp::AnalysisData* BCAD_F1 = new BuildComp::AnalysisData(F1);
+        BuildComp::AnalysisData* BCAD_F2 = new BuildComp::AnalysisData(F2);
+
+        std::vector<StateMap::LocPair> fromF1, fromF2;
+        StateMap::LocMap &landingPads = M->getAllLandingPads();
+        for (StateMap::LocMap::iterator it = landingPads.begin(),
+                end = landingPads.end(); it != end; ++it) {
+            if (it->first->getParent()->getParent() == F1) {
+                fromF1.push_back(StateMap::LocPair(it->first, it->second));
+            } else {
+                assert(it->first->getParent()->getParent() == F2);
+                fromF2.push_back(StateMap::LocPair(it->first, it->second));
+            }
+        }
+
+        std::set<Value*> keepSet;
+        bool needPrologue;
+
+        auto processLocPair = [this, &keepSet, &needPrologue](StateMap* M,
+                Instruction* OSRSrc, Instruction* LPad,
+                IDToValueVec& slotIDsForSrc, IDToValueVec& lineIDsForSrc,
+                IDToValueVec& slotIDsForDest, IDToValueVec& lineIDsForDest,
+                BuildComp::AnalysisData* BCAD_src,
+                BuildComp::AnalysisData* BCAD_dest) {
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
+                    false, TheHelper->verbose);
+            keepSet.clear();
+            if (ret) {
+                std::cerr << getInstrID(OSRSrc, slotIDsForSrc, lineIDsForSrc)
+                          << "\t"
+                          << getInstrID(LPad, slotIDsForDest, lineIDsForDest)
+                          << std::endl;
+
+            }
+        };
+        // TODO
+        std::cerr << "Strategy in use: " << compCodeStrategy << std::endl;
+
+        std::cerr << std::endl << "[" << F1->getName().str() << " -> "
+                  << F2->getName().str() << "]" << std::endl;
+        for (StateMap::LocPair &pair: fromF1) {
+            processLocPair(M, pair.first, pair.second, slotIDsForF1,
+                    lineIDsForF1, slotIDsForF2, lineIDsForF2, BCAD_F1, BCAD_F2);
+        }
+
+        std::cerr << std::endl << "[" << F2->getName().str() << " -> "
+                  << F1->getName().str() << "]" << std::endl;
+
+        for (StateMap::LocPair &pair: fromF2) {
+            processLocPair(M, pair.first, pair.second, slotIDsForF2,
+                    lineIDsForF2, slotIDsForF1, lineIDsForF1, BCAD_F2, BCAD_F1);
+        }
+
     }
 
     #undef INVALID
@@ -617,13 +678,16 @@ void Parser::handleHelpCommand() {
     std::cerr << "Manipulate StateMap objects:" << std::endl
               << "--> MAPS SHOW" << std::endl
               << "--> MAPS ANALYZE <F1> <F2>" << std::endl
+              << "--> MAPS LOCS <F1> <F2>" << std::endl
               << "--> MAPS UPDATE <F1> <F2>"
               << std::endl << std::endl;
     std::cerr << "MAPS can SHOW all the available StateMap objects, and for a "
               << "specific StateMap on functions F1 and F2 it can either "
               << "ANALYZE it to show which pairs of locations are feasible for "
               << "OSR, or UPDATE it to reflect changes made to the functions "
-              << "using the OPT command." << std::endl;
+              << "using the OPT command. Additionally, with MAPS LOCS all the "
+              << "OSR-feasible locations from F1 to F2 and viceversa are shown."
+              << std::endl;
     goto EXIT;
 
     OPT:

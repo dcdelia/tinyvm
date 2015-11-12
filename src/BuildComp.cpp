@@ -592,9 +592,8 @@ static CodeMapper::OneToManyAliasMap genAliasInfoMap(
     if (dest_updateInfo) {
         for (const std::pair<Value*, std::set<Value*>> &pair:
                 dest_updateInfo->RAUWAliasInfo) {
-            Value* v = pair.first;
-            if (map.count(v) == 0) {
-                map.insert(std::pair<Value*, std::set<Value*>>(v, {}));
+            if (map.count(pair.first) == 0) {
+                map.insert(std::pair<Value*, std::set<Value*>>(pair.first, {}));
             }
         }
     }
@@ -604,7 +603,7 @@ static CodeMapper::OneToManyAliasMap genAliasInfoMap(
         for (const std::pair<Value*, std::set<Value*>> &pair:
                 src_updateInfo->RAUWAliasInfo) {
             for (Value* v: pair.second) {
-                map[v].insert((pair.first));
+                map[v].insert(pair.first);
             }
         }
     }
@@ -613,7 +612,7 @@ static CodeMapper::OneToManyAliasMap genAliasInfoMap(
         for (const std::pair<Value*, std::set<Value*>> &pair:
                 dest_updateInfo->RAUWAliasInfo) {
             for (Value* v: pair.second) {
-                map[pair.first].insert((v));
+                map[pair.first].insert(v);
             }
         }
     }
@@ -635,6 +634,8 @@ void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
 
     DominatorTree &DT = BCAD->DT;
     AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
+
+    bool useOnlySafeLoads = false;
 
     for (const std::pair<Value*, std::set<Value*>> &pair: aliasInfoMap) {
         Value* valToSet = pair.first;
@@ -676,7 +677,7 @@ void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
                 Instruction* instToUse = cast<Instruction>(valToUse);
 
                 if (isDeadInstructionAvailable(instToUse, OSRSrc, DT,
-                        safeLoads, opt)) {
+                        safeLoads, useOnlySafeLoads)) {
                     extraAvailableValues[valToSet] = valToUse;
                     break;
                 }
@@ -792,7 +793,7 @@ static void computeAvailableAdditionalOneToOne(StateMap* M,
 
 bool BuildComp::isDeadInstructionAvailable(Instruction* DI, Instruction* I,
         DominatorTree &DT, BuildComp::AnalysisData::SafeLoadSet &safeLoads,
-        BuildComp::Heuristic opt) {
+        bool useOnlySafeLoads) {
 
     if (DI == I || isa<TerminatorInst>(DI) || isa<StoreInst>(DI)) {
         return false;
@@ -802,7 +803,7 @@ bool BuildComp::isDeadInstructionAvailable(Instruction* DI, Instruction* I,
     BasicBlock* blockForI = I->getParent();
 
     if (LoadInst* DLI = dyn_cast<LoadInst>(DI)) {
-        if (!shouldUseDeadValuesUnsafely(opt)) {
+        if (useOnlySafeLoads) {
             if (safeLoads.count(DLI) == 0) return false;
         }
     }
@@ -827,6 +828,8 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
     DominatorTree &DT = BCAD->DT;
     BuildComp::AnalysisData::SafeLoadSet &safeLoads = BCAD->SafeLoadsMap[OSRSrc];
 
+    bool useOnlySafeLoads = !shouldUseDeadValuesUnsafely(opt);
+
     StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
     for (StateMap::OneToOneValueMap::iterator it = map.begin(), end = map.end();
         it != end; ++it) {
@@ -845,7 +848,8 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
         }
 
         if (Instruction* instToUse = dyn_cast<Instruction>(valToUse)) {
-            if (isDeadInstructionAvailable(instToUse, OSRSrc, DT, safeLoads, opt)) {
+            if (isDeadInstructionAvailable(instToUse, OSRSrc, DT, safeLoads,
+                    useOnlySafeLoads)) {
                 extraAvailableValues[valToSet] = valToUse;
             }
         } else {

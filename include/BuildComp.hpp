@@ -104,7 +104,7 @@ private:
                     llvm::Instruction* I,
                     llvm::DominatorTree &DT,
                     AnalysisData::SafeLoadSet &safeLoads,
-                    Heuristic opt);
+                    bool useOnlySafeLoads);
 
     static void computeAvailableAliases(StateMap* M,
                     llvm::Instruction* OSRSrc,

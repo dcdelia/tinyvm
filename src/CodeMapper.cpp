@@ -119,7 +119,6 @@ void CodeMapper::discardLandingPads(StateMap* M, Instruction* OldLPad) {
     }
 }
 
-// TODO can we come up with a better strategy?
 Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
     #if 0
     Instruction* otherI = nullptr;
@@ -162,8 +161,8 @@ Instruction* CodeMapper::findOtherI(StateMap* M, Instruction* I) {
  */
 void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
         bool verbose) {
-
     Instruction* LPadForSuccI = SuccI ? M->getLandingPad(SuccI) : nullptr;
+
     if (LPadForSuccI) {
         M->registerLandingPad(AddedI, LPadForSuccI, false);
     }
@@ -180,7 +179,6 @@ void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
  * Actions:
  * - remove corresponding 1:1 value info for D
  * - remove information for values for which D is the 1:1 corresponding value
- *   (TODO: what if I do RAUW & delete? do we need a different primitive?)
  * - remove D as source for an OSR
  * - for each OSRSrc s.t. LPad[OSRSrc] = D do
  *      set LPad[OSRSrc] to LPad[succ(D)] = I2
@@ -188,22 +186,22 @@ void CodeMapper::AddInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
  */
 void CodeMapper::DeleteInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
         bool verbose) {
-
-    OneToManyAliasMap::iterator LOOIt, LOOEnd;
-    OneToManyAliasMap &LOOMap = updateInfo->RAUWAliasInfo;
-    LOOIt = LOOMap.find(DeletedI);
-    if (LOOIt != LOOMap.end()) {
-        LOOMap.erase(LOOIt);
+    // update aliasing information
+    OneToManyAliasMap::iterator OTMIt, OTMEnd;
+    OneToManyAliasMap &OTMMap = updateInfo->RAUWAliasInfo;
+    OTMIt = OTMMap.find(DeletedI);
+    if (OTMIt != OTMMap.end()) {
+        OTMMap.erase(OTMIt);
     }
-    for (LOOIt = LOOMap.begin(), LOOEnd = LOOMap.end(); LOOIt != LOOEnd; ) {
-        std::set<Value*>::iterator it = LOOIt->second.find(DeletedI);
-        if (it != LOOIt->second.end()) {
-            LOOIt->second.erase(it);
+    for (OTMIt = OTMMap.begin(), OTMEnd = OTMMap.end(); OTMIt != OTMEnd; ) {
+        std::set<Value*>::iterator it = OTMIt->second.find(DeletedI);
+        if (it != OTMIt->second.end()) {
+            OTMIt->second.erase(it);
         }
-        if (LOOIt->second.empty()) {
-            LOOMap.erase(LOOIt++);
+        if (OTMIt->second.empty()) {
+            OTMMap.erase(OTMIt++);
         } else {
-            ++LOOIt;
+            ++OTMIt;
         }
     }
 
@@ -217,7 +215,6 @@ void CodeMapper::DeleteInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
         } else if (it->second == DeletedI) {
             // the instruction is likely to be trivially dead
             defaultOneToOneMap.erase(it++);
-            //std::cerr << "Orphan value..." << std::endl;
         } else {
             ++it;
         }
@@ -324,36 +321,37 @@ void CodeMapper::SinkInst::apply(StateMap *M, StateMapUpdateInfo* updateInfo,
 
 void CodeMapper::RAUWInst::apply(StateMap* M, StateMapUpdateInfo* updateInfo,
         bool verbose) {
-    assert(alias && "RAUW for non-alias not implemented yet");
+    assert(alias && "RAUW for non-alias not considered yet");
 
-    if (!alias) return; // TODO
+    if (!alias) return; // TODO anything?
 
-    Value *oldValue = I, *newValue = V;
-
-    // for better handling of LoadInst
+    // update aliasing information
     Value* otherI = M->getCorrespondingOneToOneValue(I);
     Value* otherV = M->getCorrespondingOneToOneValue(V);
 
-    OneToManyAliasMap::iterator LOOIt;
-    OneToManyAliasMap &LOOMap = updateInfo->RAUWAliasInfo;
+    OneToManyAliasMap::iterator OTMIt;
+    OneToManyAliasMap &OTMMap = updateInfo->RAUWAliasInfo;
 
     if (otherI || otherV) {
-        LOOIt = LOOMap.find(I);
-        if (LOOIt == LOOMap.end()) {
-            LOOIt = LOOMap.insert(std::pair<Value*, std::set<Value*>>(I, {})).first;
+        // process I
+        OTMIt = OTMMap.find(I);
+        if (OTMIt == OTMMap.end()) {
+            OTMIt = OTMMap.insert(std::pair<Value*, std::set<Value*>>(I, {})).first;
         }
-        if (otherI) LOOIt->second.insert(otherI);
-        if (otherV) LOOIt->second.insert(otherV);
+        if (otherI) OTMIt->second.insert(otherI);
+        if (otherV) OTMIt->second.insert(otherV);
+
+        // process V
+        OTMIt = OTMMap.find(V);
+        if (OTMIt == OTMMap.end()) {
+            OTMIt = OTMMap.insert(std::pair<Value*, std::set<Value*>>(V, {})).first;
+        }
+        if (otherI) OTMIt->second.insert(otherI);
+        if (otherV) OTMIt->second.insert(otherV);
     }
 
-    if (otherI || otherV) {
-        LOOIt = LOOMap.find(V);
-        if (LOOIt == LOOMap.end()) {
-            LOOIt = LOOMap.insert(std::pair<Value*, std::set<Value*>>(V, {})).first;
-        }
-        if (otherI) LOOIt->second.insert(otherI);
-        if (otherV) LOOIt->second.insert(otherV);
-    }
+    // then update StateMap
+    Value *oldValue = I, *newValue = V;
 
     StateMap::OneToOneValueMap &map = M->getAllCorrespondingOneToOneValues();
     StateMap::OneToOneValueMap::iterator it, end;

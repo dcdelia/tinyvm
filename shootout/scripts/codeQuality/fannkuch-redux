@@ -1,5 +1,5 @@
-LOAD_IR shootout/fannkuch-redux/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN tk AT %B28 CLONE
+LOAD_IR shootout/fannkuch-redux/bench.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN tk AT %28 CLONE
 bench(12)
 REPEAT 10 bench(12)
 QUIT

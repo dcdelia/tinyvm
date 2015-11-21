@@ -1,5 +1,5 @@
-LOAD_IR shootout/mandelbrot/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B13 CLONE
+LOAD_IR shootout/mandelbrot/bench.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %13 CLONE
 bench(32000)
 REPEAT 10 bench(32000)
 QUIT

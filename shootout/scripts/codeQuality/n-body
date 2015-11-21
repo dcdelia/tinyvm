@@ -1,5 +1,5 @@
-LOAD_IR shootout/n-body/codeQuality.ll
-INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %B8 CLONE
+LOAD_IR shootout/n-body/bench.ll
+INSERT_OSR 5 NEVER OPEN UPDATE IN bench AT %8 CLONE
 bench(50000000)
 REPEAT 10 bench(50000000)
 QUIT

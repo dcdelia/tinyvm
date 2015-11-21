@@ -94,16 +94,24 @@ public:
     static std::string prototypeToString(Function& F);
 
     /* Code generation for open OSR transitions */
-    typedef struct DynamicInlinerInfo {
+    typedef struct OpenCodeGeneratorInfo {
         MCJITHelper*    TheHelper;
-        Value*          valToInline;
-    } DynamicInlinerInfo;
+        Value*          profDataVal;
+        Function*       clonedFun;
+        Instruction*    clonedOSRSrc;
+        Value*          clonedProfDataVal;
+        std::vector<Value*>* liveValsVecInClone;
+    } OpenCodeGeneratorInfo;
 
-    static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
-    static void* dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
+    static std::pair<Function*, Value*> genContFunForOpenOSRGenerator(
+            Function* F1, OpenCodeGeneratorInfo* extraInfo);
+    static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc,
+            void* extra, void* profDataAddr);
+    static void* dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc,
+            void* extra, void* profDataAddr);
 
-    typedef std::pair<Function*, std::map<Value*, Value*>> DynInlinerPair;
-    static std::map<Function*, DynInlinerPair> dynInlinerMap;
+    typedef std::pair<Function*, std::map<Value*, Value*>> OpenCodeGeneratorPair;
+    static std::map<Function*, OpenCodeGeneratorPair> openCodeGeneratorPairMap;
 
 private:
     typedef std::pair<uint64_t, std::string> AddrSymPair;

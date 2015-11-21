@@ -323,35 +323,40 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     bool verbose = TheHelper->verbose;
     OSRLibrary::DestFunGenerator generator;
     Value* profDataVal;
-    void* extra;
+
+    MCJITHelper::OpenCodeGeneratorInfo* extraInfo =
+            new MCJITHelper::OpenCodeGeneratorInfo();
+
+    ValueToValueMapTy VMap;
+    extraInfo->TheHelper = TheHelper;
+
+    Function* clonedSrc = CloneFunction(src, VMap, false);
+    extraInfo->clonedFun = clonedSrc;
+    extraInfo->clonedOSRSrc = cast<Instruction>(VMap[OSRSrc]);
+
+    LivenessAnalysis LA(src);
+    std::vector<Value*> *liveValsVec = OSRLibrary::getLiveValsVecAtInstr(OSRSrc, LA);
+    extraInfo->liveValsVecInClone = new std::vector<Value*>();
+    for (Value* v: *liveValsVec) {
+        extraInfo->liveValsVecInClone->push_back(VMap[v]);
+    }
 
     if (dynInline) {
         generator = MCJITHelper::dynamicInlinerForOpenOSR;
         profDataVal = valToDynInline;
-        MCJITHelper::DynamicInlinerInfo* extraInfo = new MCJITHelper::DynamicInlinerInfo();
-        extraInfo->TheHelper = TheHelper;
-        extraInfo->valToInline = valToDynInline;
-        extra = (void*)extraInfo;
 
-        MCJITHelper::DynInlinerPair dynInlinerPair;
-        ValueToValueMapTy VMap;
-        dynInlinerPair.first = CloneFunction(src, VMap, false);
-        dynInlinerPair.second.insert(std::pair<Value*, Value*>(OSRSrc,
-                VMap[OSRSrc]));
-        dynInlinerPair.second.insert(std::pair<Value*, Value*>(valToDynInline,
-                VMap[valToDynInline]));
-
-        bool ret = MCJITHelper::dynInlinerMap.insert(std::pair<Function*,
-                MCJITHelper::DynInlinerPair>(src, dynInlinerPair)).second;
-
-        assert(ret && "Function was already cloned for the dynamic inliner!");
+        extraInfo->profDataVal = valToDynInline;
+        extraInfo->clonedProfDataVal = VMap[valToDynInline];
     } else {
         generator = MCJITHelper::identityGeneratorForOpenOSR;
         profDataVal = nullptr;
-        extra = TheHelper;
+        
+        extraInfo->profDataVal = nullptr;
+        extraInfo->clonedProfDataVal = nullptr;
     }
 
-    // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1, ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
+    // (verbose, updateF1, branchTakenProb, nameForNewF1, modForNewF1,
+    //  ptrForF1NewToF1Map, nameForNewF2, nameForNewF2, ptrForF2NewToF2Map)
     StateMap* F1NewToF1Map;
 
     Module* modToUse = src->getParent();
@@ -375,10 +380,9 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 
     OSRLibrary::OSRPointConfig config(verbose, update, branchTakenProb,
             F1NewName, modToUse, &F1NewToF1Map, nullptr, nullptr, nullptr);
-    LivenessAnalysis LA(src);
 
     OSRLibrary::OSRPair pair = OSRLibrary::insertOpenOSR(TheHelper->Context, *src,
-        *OSRSrc, extra, cond, profDataVal, generator, nullptr, &LA, config);
+        *OSRSrc, extraInfo, cond, profDataVal, generator, liveValsVec, nullptr, config);
 
     std::cerr << "insertOpenOSR succeded!" << std::endl;
 
@@ -398,6 +402,7 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     }
 
     if (!update) delete F1NewToF1Map;
+    delete liveValsVec;
 }
 
 void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,

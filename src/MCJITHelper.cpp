@@ -44,7 +44,7 @@
 
 using namespace llvm;
 
-std::map<Function*, MCJITHelper::DynInlinerPair> MCJITHelper::dynInlinerMap;
+std::map<Function*, MCJITHelper::OpenCodeGeneratorPair> MCJITHelper::openCodeGeneratorPairMap;
 
 MCJITHelper::~MCJITHelper() {
     delete JIT;
@@ -375,11 +375,50 @@ std::string& MCJITHelper::LLVMTypeToString(Type* type) {
     return type_rso.str();
 }
 
-void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr) {
-    MCJITHelper* TheHelper = (MCJITHelper*) extra;
+std::pair<Function*, Value*> MCJITHelper::genContFunForOpenOSRGenerator(
+        Function* F1, OpenCodeGeneratorInfo* extraInfo) {
+    MCJITHelper* TheHelper = extraInfo->TheHelper;
     bool verbose = TheHelper->verbose;
 
-    assert(OSRSrc->getParent()->getParent() == F1 && "MCJIT messed up the objects");
+    Function* orig = extraInfo->clonedFun;
+    Instruction* origLoc = extraInfo->clonedOSRSrc;
+    Value* origProfDataVal = extraInfo->clonedProfDataVal;
+    std::vector<Value*>* origLiveValsVec = extraInfo->liveValsVecInClone;
+
+    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(orig);
+
+    Function* F2 = identityPair.first;
+    StateMap* M = identityPair.second;
+
+    Value* profDataValInF2 = (origProfDataVal)
+            ? M->getCorrespondingOneToOneValue(origProfDataVal)
+            : nullptr;
+
+    StateMap* M_F2toOSRContFun;
+
+    Instruction* LPad = M->getLandingPad(origLoc);
+
+    std::string OSRDestFunName = (F2->getName().str()).append("to");
+    Function* OSRContFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
+            *orig, *F2, *origLoc, *LPad, *origLiveValsVec, *M, &OSRDestFunName, verbose, &M_F2toOSRContFun);
+
+    Value* profDataVal = (origProfDataVal)
+            ? M_F2toOSRContFun->getCorrespondingOneToOneValue(profDataValInF2)
+            : nullptr;
+    assert (profDataVal != nullptr && "broken state map for continuation function");
+
+    delete F2;
+    delete M;
+    delete M_F2toOSRContFun;
+
+    return std::pair<Function*, Value*>(OSRContFun, profDataVal);
+}
+
+
+void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr) {
+    OpenCodeGeneratorInfo* extraInfo = (OpenCodeGeneratorInfo*) extra;
+    MCJITHelper* TheHelper = extraInfo->TheHelper;
+    bool verbose = TheHelper->verbose;
 
     if (verbose) {
         std::cerr << "Value for F1 is " << F1 << std::endl;
@@ -388,105 +427,54 @@ void* MCJITHelper::identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc
         std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
     }
 
-    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(F1);
-
-    Function* F2 = identityPair.first;
-    StateMap* M = identityPair.second;
-
-    Instruction* OSRSrcInF2 = cast<Instruction>(M->getCorrespondingOneToOneValue(OSRSrc));
-    if (OSRLibrary::removeOSRPoint(*OSRSrcInF2) && verbose) {
-        std::cerr << "OSR point removed after cloning F1" << std::endl;
-    }
-
-    Instruction* LPad = M->getLandingPad(OSRSrc);
-
-    LivenessAnalysis LA(F1);
-    std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(OSRSrc, LA);
-    std::string OSRDestFunName = (F2->getName().str()).append("OSRCont");
-    Function* OSRDestFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
-            *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName, verbose);
-    delete valuesToPass;
-    delete F2;
-    delete M;
+    std::pair<Function*, Value*> contPair = genContFunForOpenOSRGenerator(F1,
+            extraInfo);
+    Function* OSRContFun = contPair.first;
+    assert(contPair.second == nullptr && "expected null profDataVal!");
+    std::string OSRContFunName = OSRContFun->getName().str();
 
     // put the generated code into a module
     std::string modForJITName = "OpenOSRClone";
-    modForJITName.append(OSRDestFunName);
+    modForJITName.append(OSRContFunName);
     std::unique_ptr<Module> modForJIT = llvm::make_unique<Module>(modForJITName, TheHelper->Context);
     Module* modForJIT_ptr = modForJIT.get();
-    modForJIT_ptr->getFunctionList().push_back(OSRDestFun);
-    verifyFunction(*OSRDestFun, &outs());
+    modForJIT_ptr->getFunctionList().push_back(OSRContFun);
+    verifyFunction(*OSRContFun, &outs());
 
     // remove dead code
     FunctionPassManager FPM(modForJIT_ptr);
     FPM.add(createCFGSimplificationPass());
     FPM.doInitialization();
-    FPM.run(*OSRDestFun);
+    FPM.run(*OSRContFun);
 
     // compile code
     TheHelper->addModule(std::move(modForJIT));
-    return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
+    return (void*)TheHelper->JIT->getFunctionAddress(OSRContFunName);
 }
 
 void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr) {
-    DynamicInlinerInfo* inlineInfo = (DynamicInlinerInfo*) extra;
-    MCJITHelper* TheHelper = inlineInfo->TheHelper;
+    OpenCodeGeneratorInfo* extraInfo = (OpenCodeGeneratorInfo*) extra;
+    MCJITHelper* TheHelper = extraInfo->TheHelper;
     bool verbose = TheHelper->verbose;
 
-    assert(dynInlinerMap.count(F1) > 0 && "Missing entry in dynInlinerMap!");
-    DynInlinerPair &dynInlinerPair = dynInlinerMap[F1];
-
-    Function* orig = dynInlinerPair.first;
-    Instruction* origLoc = cast<Instruction>(dynInlinerPair.second[OSRSrc]);
-    Value* origValToInline = dynInlinerPair.second[inlineInfo->valToInline];
-
-    assert(origLoc && "Missing entry for OSRSrc");
-    assert(origValToInline && "Missing entry for valToInline");
-
     if (verbose) {
-        std::cerr << "Value for F1 is " << orig << std::endl;
-        std::cerr << "Value for OSRSrc is " << origLoc << std::endl;
+        std::cerr << "Value for F1 is " << F1 << std::endl;
+        std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
         std::cerr << "Value for extra is " << extra << std::endl;
         std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
     }
 
-    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(orig);
-
-    Function* F2 = identityPair.first;
-    StateMap* M = identityPair.second;
-
-    Value* valToInlineInF2 = M->getCorrespondingOneToOneValue(origValToInline);
-
-    #if 0
-    // this should not be necessary anymore, as we clone before OSR point insertion!
-    Instruction* OSRSrcInF2 = cast<Instruction>(M->getCorrespondingOneToOneValue(origLoc));
-    assert (OSRSrcInF2 != nullptr && "TODO cannot find corresponding OSRSrc in temporary F2");
-    if (OSRLibrary::removeOSRPoint(*OSRSrcInF2) && verbose) {
-        std::cerr << "OSR point removed after cloning F1" << std::endl;
-    }
-    #endif
-
-    Instruction* LPad = M->getLandingPad(origLoc);
-
-    StateMap* M_F2toOSRContFun;
-    LivenessAnalysis LA(orig);
-    std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(origLoc, LA);
-    std::string OSRDestFunName = (F2->getName().str()).append("OSRCont");
-    Function* OSRContFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
-            *orig, *F2, *origLoc, *LPad, *valuesToPass, *M, &OSRDestFunName, verbose, &M_F2toOSRContFun);
-
-    Value* valToInline = M_F2toOSRContFun->getCorrespondingOneToOneValue(valToInlineInF2);
-    assert (valToInline != nullptr && "broken state map for continuation function");
-
-    delete valuesToPass;
-    delete F2;
-    delete M;
-    delete M_F2toOSRContFun;
+    std::pair<Function*, Value*> contPair = genContFunForOpenOSRGenerator(F1,
+            extraInfo);
+    Function* OSRContFun = contPair.first;
+    Value* valToInline = contPair.second;
+    std::string OSRContFunName = OSRContFun->getName().str();
 
     // create a module for generated code
     std::string modForJITName = "OpenOSRDynInline";
-    modForJITName.append(OSRDestFunName);
-    std::unique_ptr<Module> modForJIT = llvm::make_unique<Module>(modForJITName, TheHelper->Context);
+    modForJITName.append(OSRContFunName);
+    std::unique_ptr<Module> modForJIT = llvm::make_unique<Module>(modForJITName,
+            TheHelper->Context);
     Module* modForJIT_ptr = modForJIT.get();
 
     // determine which function is called
@@ -546,7 +534,7 @@ void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, v
 
     // compile code
     TheHelper->addModule(std::move(modForJIT));
-    return (void*)TheHelper->JIT->getFunctionAddress(OSRDestFunName);
+    return (void*)TheHelper->JIT->getFunctionAddress(OSRContFunName);
 }
 
 void MCJITHelper::SymListener::NotifyObjectEmitted(const object::ObjectFile &Obj,

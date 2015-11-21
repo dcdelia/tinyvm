@@ -33,51 +33,50 @@ define i32 @isord(i64* %v, i64 %n, i32 (i8*, i8*)* %c) #0 {
   store i64* %v, i64** %2, align 8
   store i64 %n, i64* %3, align 8
   store i32 (i8*, i8*)* %c, i32 (i8*, i8*)** %4, align 8
-  store i64 0, i64* %i, align 8
+  store i64 1, i64* %i, align 8
   br label %5
 
-; <label>:5                                       ; preds = %25, %0
+; <label>:5                                       ; preds = %24, %0
   %6 = load i64* %i, align 8
   %7 = load i64* %3, align 8
-  %8 = sub nsw i64 %7, 1
-  %9 = icmp slt i64 %6, %8
-  br i1 %9, label %10, label %28
+  %8 = icmp slt i64 %6, %7
+  br i1 %8, label %9, label %27
 
-; <label>:10                                      ; preds = %5
-  %11 = load i32 (i8*, i8*)** %4, align 8
-  %12 = load i64** %2, align 8
-  %13 = load i64* %i, align 8
-  %14 = getelementptr inbounds i64* %12, i64 %13
+; <label>:9                                       ; preds = %5
+  %10 = load i32 (i8*, i8*)** %4, align 8
+  %11 = load i64** %2, align 8
+  %12 = load i64* %i, align 8
+  %13 = getelementptr inbounds i64* %11, i64 %12
+  %14 = getelementptr inbounds i64* %13, i64 -1
   %15 = bitcast i64* %14 to i8*
   %16 = load i64** %2, align 8
   %17 = load i64* %i, align 8
   %18 = getelementptr inbounds i64* %16, i64 %17
-  %19 = getelementptr inbounds i64* %18, i64 1
-  %20 = bitcast i64* %19 to i8*
-  %21 = call i32 %11(i8* %15, i8* %20)
-  %22 = icmp sgt i32 %21, 0
-  br i1 %22, label %23, label %24
+  %19 = bitcast i64* %18 to i8*
+  %20 = call i32 %10(i8* %15, i8* %19)
+  %21 = icmp sgt i32 %20, 0
+  br i1 %21, label %22, label %23
 
-; <label>:23                                      ; preds = %10
+; <label>:22                                      ; preds = %9
   store i32 0, i32* %1
-  br label %29
+  br label %28
 
-; <label>:24                                      ; preds = %10
-  br label %25
+; <label>:23                                      ; preds = %9
+  br label %24
 
-; <label>:25                                      ; preds = %24
-  %26 = load i64* %i, align 8
-  %27 = add nsw i64 %26, 1
-  store i64 %27, i64* %i, align 8
+; <label>:24                                      ; preds = %23
+  %25 = load i64* %i, align 8
+  %26 = add nsw i64 %25, 1
+  store i64 %26, i64* %i, align 8
   br label %5
 
-; <label>:28                                      ; preds = %5
+; <label>:27                                      ; preds = %5
   store i32 1, i32* %1
-  br label %29
+  br label %28
 
-; <label>:29                                      ; preds = %28, %23
-  %30 = load i32* %1
-  ret i32 %30
+; <label>:28                                      ; preds = %27, %22
+  %29 = load i32* %1
+  ret i32 %29
 }
 
 ; Function Attrs: nounwind uwtable

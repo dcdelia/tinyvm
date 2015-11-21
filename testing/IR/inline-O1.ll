@@ -13,28 +13,27 @@ define i32 @longCmp(i8* %a, i8* %b) #0 {
 
 ; Function Attrs: nounwind uwtable
 define i32 @isord(i64* %v, i64 %n, i32 (i8*, i8*)* nocapture %c) #1 {
-  %1 = add nsw i64 %n, -1
-  %2 = icmp sgt i64 %n, 1
-  br i1 %2, label %.lr.ph, label %._crit_edge
+  %1 = icmp sgt i64 %n, 1
+  br i1 %1, label %.lr.ph, label %._crit_edge
 
-; <label>:3                                       ; preds = %.lr.ph
-  %4 = icmp slt i64 %11, %1
-  br i1 %4, label %.lr.ph, label %._crit_edge
+; <label>:2                                       ; preds = %.lr.ph
+  %3 = icmp slt i64 %10, %n
+  br i1 %3, label %.lr.ph, label %._crit_edge
 
-.lr.ph:                                           ; preds = %0, %3
-  %i.01 = phi i64 [ %11, %3 ], [ 0, %0 ]
-  %5 = getelementptr inbounds i64* %v, i64 %i.01
+.lr.ph:                                           ; preds = %0, %2
+  %i.01 = phi i64 [ %10, %2 ], [ 1, %0 ]
+  %4 = getelementptr inbounds i64* %v, i64 %i.01
+  %.sum = add nsw i64 %i.01, -1
+  %5 = getelementptr inbounds i64* %v, i64 %.sum
   %6 = bitcast i64* %5 to i8*
-  %.sum = add nuw nsw i64 %i.01, 1
-  %7 = getelementptr inbounds i64* %v, i64 %.sum
-  %8 = bitcast i64* %7 to i8*
-  %9 = tail call i32 %c(i8* %6, i8* %8) #3
-  %10 = icmp sgt i32 %9, 0
-  %11 = add nuw nsw i64 %i.01, 1
-  br i1 %10, label %._crit_edge, label %3
+  %7 = bitcast i64* %4 to i8*
+  %8 = tail call i32 %c(i8* %6, i8* %7) #3
+  %9 = icmp sgt i32 %8, 0
+  %10 = add nuw nsw i64 %i.01, 1
+  br i1 %9, label %._crit_edge, label %2
 
-._crit_edge:                                      ; preds = %.lr.ph, %3, %0
-  %.0 = phi i32 [ 1, %0 ], [ 0, %.lr.ph ], [ 1, %3 ]
+._crit_edge:                                      ; preds = %.lr.ph, %2, %0
+  %.0 = phi i32 [ 1, %0 ], [ 0, %.lr.ph ], [ 1, %2 ]
   ret i32 %.0
 }
 

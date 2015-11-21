@@ -90,7 +90,6 @@ public:
     bool canModifyModule(Module* M);
     std::vector<Module*>& getLoadedModules() { return Modules; };
 
-    static ValueToValueMapTy* generateIdentityMapping(Function* F);
     static std::string& LLVMTypeToString(Type* type);
     static std::string prototypeToString(Function& F);
 
@@ -100,8 +99,13 @@ public:
         Value*          valToInline;
     } DynamicInlinerInfo;
 
+    static ValueToValueMapTy* generateIdentityMapping(Function* F); // TODO dead?
+
     static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
     static void* dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
+
+    typedef std::pair<Function*, std::map<Value*, Value*>> DynInlinerPair;
+    static std::map<Function*, DynInlinerPair> dynInlinerMap;
 
 private:
     typedef std::pair<uint64_t, std::string> AddrSymPair;

@@ -44,6 +44,8 @@
 
 using namespace llvm;
 
+std::map<Function*, MCJITHelper::DynInlinerPair> MCJITHelper::dynInlinerMap;
+
 MCJITHelper::~MCJITHelper() {
     delete JIT;
     delete Builder;
@@ -458,36 +460,47 @@ void* MCJITHelper::dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, v
     MCJITHelper* TheHelper = inlineInfo->TheHelper;
     bool verbose = TheHelper->verbose;
 
-    assert(OSRSrc->getParent()->getParent() == F1 && "MCJIT messed up the objects");
+    assert(dynInlinerMap.count(F1) > 0 && "Missing entry in dynInlinerMap!");
+    DynInlinerPair &dynInlinerPair = dynInlinerMap[F1];
+
+    Function* orig = dynInlinerPair.first;
+    Instruction* origLoc = cast<Instruction>(dynInlinerPair.second[OSRSrc]);
+    Value* origValToInline = dynInlinerPair.second[inlineInfo->valToInline];
+
+    assert(origLoc && "Missing entry for OSRSrc");
+    assert(origValToInline && "Missing entry for valToInline");
 
     if (verbose) {
-        std::cerr << "Value for F1 is " << F1 << std::endl;
-        std::cerr << "Value for OSRSrc is " << OSRSrc << std::endl;
+        std::cerr << "Value for F1 is " << orig << std::endl;
+        std::cerr << "Value for OSRSrc is " << origLoc << std::endl;
         std::cerr << "Value for extra is " << extra << std::endl;
         std::cerr << "Value for profDataAddr is " << profDataAddr << std::endl;
     }
 
-    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(F1);
+    std::pair<Function*, StateMap*> identityPair = StateMap::generateIdentityMapping(orig);
 
     Function* F2 = identityPair.first;
     StateMap* M = identityPair.second;
 
-    Value* valToInlineInF2 = M->getCorrespondingOneToOneValue(inlineInfo->valToInline);
+    Value* valToInlineInF2 = M->getCorrespondingOneToOneValue(origValToInline);
 
-    Instruction* OSRSrcInF2 = cast<Instruction>(M->getCorrespondingOneToOneValue(OSRSrc));
+    #if 0
+    // this should not be necessary anymore, as we clone before OSR point insertion!
+    Instruction* OSRSrcInF2 = cast<Instruction>(M->getCorrespondingOneToOneValue(origLoc));
     assert (OSRSrcInF2 != nullptr && "TODO cannot find corresponding OSRSrc in temporary F2");
     if (OSRLibrary::removeOSRPoint(*OSRSrcInF2) && verbose) {
         std::cerr << "OSR point removed after cloning F1" << std::endl;
     }
+    #endif
 
-    Instruction* LPad = M->getLandingPad(OSRSrc);
+    Instruction* LPad = M->getLandingPad(origLoc);
 
     StateMap* M_F2toOSRContFun;
-    LivenessAnalysis LA(F1);
-    std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(OSRSrc, LA);
+    LivenessAnalysis LA(orig);
+    std::vector<Value*>* valuesToPass = OSRLibrary::getLiveValsVecAtInstr(origLoc, LA);
     std::string OSRDestFunName = (F2->getName().str()).append("OSRCont");
     Function* OSRContFun = OSRLibrary::genContinuationFunc(TheHelper->Context,
-            *F1, *F2, *OSRSrc, *LPad, *valuesToPass, *M, &OSRDestFunName, verbose, &M_F2toOSRContFun);
+            *orig, *F2, *origLoc, *LPad, *valuesToPass, *M, &OSRDestFunName, verbose, &M_F2toOSRContFun);
 
     Value* valToInline = M_F2toOSRContFun->getCorrespondingOneToOneValue(valToInlineInF2);
     assert (valToInline != nullptr && "broken state map for continuation function");

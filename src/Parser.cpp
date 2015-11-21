@@ -19,6 +19,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 
 #undef NDEBUG
 #include <cassert>
@@ -332,6 +333,19 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
         extraInfo->TheHelper = TheHelper;
         extraInfo->valToInline = valToDynInline;
         extra = (void*)extraInfo;
+
+        MCJITHelper::DynInlinerPair dynInlinerPair;
+        ValueToValueMapTy VMap;
+        dynInlinerPair.first = CloneFunction(src, VMap, false);
+        dynInlinerPair.second.insert(std::pair<Value*, Value*>(OSRSrc,
+                VMap[OSRSrc]));
+        dynInlinerPair.second.insert(std::pair<Value*, Value*>(valToDynInline,
+                VMap[valToDynInline]));
+
+        bool ret = MCJITHelper::dynInlinerMap.insert(std::pair<Function*,
+                MCJITHelper::DynInlinerPair>(src, dynInlinerPair)).second;
+
+        assert(ret && "Function was already cloned for the dynamic inliner!");
     } else {
         generator = MCJITHelper::identityGeneratorForOpenOSR;
         profDataVal = nullptr;

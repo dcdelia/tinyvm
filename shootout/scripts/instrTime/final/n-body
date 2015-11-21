@@ -1,3 +1,3 @@
-LOAD_IR shootout/n-body/codeQuality.ll
-INSERT_OSR 5 NEVER SLVD UPDATE IN bench AT %B8 TO bench AT %B8 AS bench_OSR
+LOAD_IR shootout/n-body/bench.ll
+INSERT_OSR 5 NEVER SLVD UPDATE IN bench AT %8 TO bench AT %8 AS bench_OSR
 QUIT

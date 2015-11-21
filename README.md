@@ -24,8 +24,6 @@ List of available commands:
 	Performs several optimization passes over a given function.
 --> REPEAT <iterations> <function call>
 	Performs a function call (see next paragraph) repeatedly.
---> TRACK_ASM
-	Enable/disable logging of generated x86-64 assembly code.
 --> SHOW_ADDR <function_name>
 	Shows compiled-code address for a given function symbol.
 --> SHOW_LINE_IDS <function_name>

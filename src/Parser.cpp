@@ -276,7 +276,6 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> OPT_CFG <function_name>" << std::endl << "\tPerforms a CFG simplification pass over a given function." << std::endl;
     std::cerr << "--> OPT_FULL <function_name>" << std::endl << "\tPerforms several optimization passes over a given function." << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
-    std::cerr << "--> TRACK_ASM" << std::endl << "\tEnable/disable logging of generated x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address for a given function symbol." << std::endl;
     std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl << "\tShows by-line IR identifiers for a given function." << std::endl;
     std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
@@ -709,13 +708,8 @@ void Parser::handleShowCFGCommand(bool showInstructions) {
 }
 
 void Parser::handleTrackAsmCommand() {
-    bool enabled = TheHelper->toggleTrackAsm();
-    if (enabled) {
-        std::cerr << "Current status: tracking is enabled. Now disabling it!" << std::endl;
-    } else {
-        std::cerr << "Current status: tracking is disabled. Now enabling it!" << std::endl;
-    }
-    std::cerr << "Notice that only modules loaded from now on will be affected by this change." << std::endl;
+    std::cerr << "Sorry, tracking of native code has not been implemented yet!"
+              << std::endl; // TODO
 }
 
 void Parser::handleVerboseCommand() {

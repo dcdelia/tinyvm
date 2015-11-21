@@ -80,12 +80,15 @@ FunctionPassManager MCJITHelper::createFPM(Module* M, bool CFGSimplificationOnly
 
 void MCJITHelper::trackAsmCodeUtil(Module* M) {
     if (trackAsmCode) {
+        // TODO
+        #if 0
         formatted_raw_ostream formAsmFdStream(*asmFdStream);
         legacy::PassManager PM;
         PM.add(new DataLayoutPass());
         TargetMachine *TM = JIT->getTargetMachine();
         TM->addPassesToEmitFile(PM, formAsmFdStream, TargetMachine::CGFT_AssemblyFile);
         PM.run(*M);
+        #endif
     }
 }
 
@@ -197,11 +200,15 @@ int (*MCJITHelper::createAnonFunctionForCall(const std::string &FunctionName,
 }
 
 bool MCJITHelper::toggleTrackAsm() {
+    #if 0
     if (asmFdStream == nullptr) {
         asmFdStream = initializeFdStream(asmFileName);
     }
 
     return !(trackAsmCode = !trackAsmCode); // return the old status
+    #endif
+
+    return false; // TODO
 }
 
 void MCJITHelper::registerFunction(Function* F) {

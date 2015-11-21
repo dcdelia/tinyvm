@@ -15,36 +15,37 @@ define i32 @longCmp(i8* %a, i8* %b) #0 {
 define i32 @isord(i64* %v, i64 %n, i32 (i8*, i8*)* %c) #0 {
   br label %1
 
-; <label>:1                                       ; preds = %13, %0
-  %i.0 = phi i64 [ 1, %0 ], [ %14, %13 ]
-  %2 = icmp slt i64 %i.0, %n
-  br i1 %2, label %3, label %15
+; <label>:1                                       ; preds = %14, %0
+  %i.0 = phi i64 [ 0, %0 ], [ %15, %14 ]
+  %2 = sub nsw i64 %n, 1
+  %3 = icmp slt i64 %i.0, %2
+  br i1 %3, label %4, label %16
 
-; <label>:3                                       ; preds = %1
-  %4 = getelementptr inbounds i64* %v, i64 %i.0
-  %5 = getelementptr inbounds i64* %4, i64 -1
+; <label>:4                                       ; preds = %1
+  %5 = getelementptr inbounds i64* %v, i64 %i.0
   %6 = bitcast i64* %5 to i8*
   %7 = getelementptr inbounds i64* %v, i64 %i.0
-  %8 = bitcast i64* %7 to i8*
-  %9 = call i32 %c(i8* %6, i8* %8)
-  %10 = icmp sgt i32 %9, 0
-  br i1 %10, label %11, label %12
+  %8 = getelementptr inbounds i64* %7, i64 1
+  %9 = bitcast i64* %8 to i8*
+  %10 = call i32 %c(i8* %6, i8* %9)
+  %11 = icmp sgt i32 %10, 0
+  br i1 %11, label %12, label %13
 
-; <label>:11                                      ; preds = %3
-  br label %16
+; <label>:12                                      ; preds = %4
+  br label %17
 
-; <label>:12                                      ; preds = %3
-  br label %13
+; <label>:13                                      ; preds = %4
+  br label %14
 
-; <label>:13                                      ; preds = %12
-  %14 = add nsw i64 %i.0, 1
+; <label>:14                                      ; preds = %13
+  %15 = add nsw i64 %i.0, 1
   br label %1
 
-; <label>:15                                      ; preds = %1
-  br label %16
+; <label>:16                                      ; preds = %1
+  br label %17
 
-; <label>:16                                      ; preds = %15, %11
-  %.0 = phi i32 [ 0, %11 ], [ 1, %15 ]
+; <label>:17                                      ; preds = %16, %12
+  %.0 = phi i32 [ 0, %12 ], [ 1, %16 ]
   ret i32 %.0
 }
 

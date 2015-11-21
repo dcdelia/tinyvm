@@ -68,6 +68,7 @@ public:
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
                         std::set<llvm::Value*> &keepSet,
+                        std::set<llvm::Instruction*> &recSet,
                         bool &needPrologue,
                         Heuristic opt = BC_NONE,
                         AnalysisData *BCAD_src = nullptr,
@@ -96,6 +97,7 @@ private:
                     std::map<llvm::Value*, llvm::Value*> &availableValues,
                     std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
                     std::map<llvm::Instruction*, llvm::Value*> &reconstructedMap,
+                    std::set<llvm::Instruction*> &recSet,
                     StateMap::CodeSequence* compCodeSequence,
                     std::set<llvm::Value*> &argsForCompCode,
                     Heuristic opt);
@@ -127,6 +129,7 @@ private:
                     std::map<llvm::Value*, llvm::Value*> &availableValues,
                     std::map<llvm::Value*, llvm::Value*> &deadAvailableValues,
                     std::set<llvm::Value*> &valuesToKeep,
+                    std::set<llvm::Instruction*> &recSet,
                     Heuristic opt);
 
     static bool shouldPerformBaseOpts(Heuristic opt);

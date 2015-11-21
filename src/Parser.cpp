@@ -247,18 +247,20 @@ void Parser::handleMapsCommand() {
         }
 
         std::set<Value*> keepSet;
+        std::set<Instruction*> recSet;
         bool needPrologue;
 
-        auto processLocPair = [this, &keepSet, &needPrologue](StateMap* M,
-                Instruction* OSRSrc, Instruction* LPad,
+        auto processLocPair = [this, &keepSet, &recSet, &needPrologue](
+                StateMap* M, Instruction* OSRSrc, Instruction* LPad,
                 IDToValueVec& slotIDsForSrc, IDToValueVec& lineIDsForSrc,
                 IDToValueVec& slotIDsForDest, IDToValueVec& lineIDsForDest,
                 BuildComp::AnalysisData* BCAD_src,
                 BuildComp::AnalysisData* BCAD_dest) {
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
                     needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
                     false, TheHelper->verbose);
             keepSet.clear();
+            recSet.clear();
             if (ret) {
                 std::cerr << getInstrID(OSRSrc, slotIDsForSrc, lineIDsForSrc)
                           << "\t"
@@ -456,6 +458,22 @@ void Parser::handleDumpCommand(bool showLineIDs) {
     } else {
         F->dump();
     }
+
+    // count the number of instructions in F
+    int numInstructions = 0;
+    int numPHI = 0;
+    for (Function::iterator bbIt = F->begin(), bbEnd = F->end(); bbIt != bbEnd;
+            ++bbIt) {
+        BasicBlock* B = &*bbIt;
+        for (BasicBlock::iterator it = B->begin(), end = B->end(); it != end;
+                ++it) {
+            ++numInstructions;
+            if (isa<PHINode>(&*it)) ++numPHI;
+        }
+    }
+
+    std::cerr << "Number of instructions: " << numInstructions << std::endl;
+    std::cerr << "Number of PHI nodes: " << numPHI << std::endl;
 
     delete tmp;
 }
@@ -1307,6 +1325,7 @@ void Parser::handleCompCodeCommand() {
     std::string OSRSrcName, LPadName;
     std::set<Value*> missingSet;
     std::set<Value*> keepSet;
+    std::set<Instruction*> recSet;
     std::vector<std::pair<StateMap::CompCode*, Value*>> compCodeWorkList;
 
     int noCompCodeRequired = 0;
@@ -1314,6 +1333,9 @@ void Parser::handleCompCodeCommand() {
     int canBuildCompCode = 0;
     bool needPrologue = false;
     int isPrologueRequired = 0;
+    int totalRecInstructions = 0;
+    int maxRecInstructions = 0;
+
 
     // collecting statistics
     std::map<Value*, int> valuesToKeepAtPoints;
@@ -1389,12 +1411,23 @@ void Parser::handleCompCodeCommand() {
         } else if (action == buildCode || action == canBuildCode) {
             bool doBuild = (action == buildCode);
             keepSet.clear();
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+            recSet.clear();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
                     needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
                     doBuild, verbose);
             if (ret) {
                 ++canBuildCompCode;
-                if (needPrologue) ++isPrologueRequired;
+                if (needPrologue) {
+                    ++isPrologueRequired;
+                    assert(!recSet.empty());
+                    int recInstructions = recSet.size();
+                    totalRecInstructions += recInstructions;
+                    if (recInstructions > maxRecInstructions) {
+                        maxRecInstructions = recInstructions;
+                    }
+                } else {
+                    assert(recSet.empty() && "reconstructed instruction missed");
+                }
             }
             //updateValuesToKeepInfo(keepSet);
 
@@ -1416,7 +1449,8 @@ void Parser::handleCompCodeCommand() {
             }
         } else if (action == testCode) {
             keepSet.clear();
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+            recSet.clear();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
                     needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
                     true, verbose);
             //updateValuesToKeepInfo(keepSet);
@@ -1434,7 +1468,17 @@ void Parser::handleCompCodeCommand() {
             }
 
             ++canBuildCompCode;
-            if (needPrologue) ++isPrologueRequired;
+            if (needPrologue) {
+                    ++isPrologueRequired;
+                    assert(!recSet.empty());
+                    int recInstructions = recSet.size();
+                    totalRecInstructions += recInstructions;
+                    if (recInstructions > maxRecInstructions) {
+                        maxRecInstructions = recInstructions;
+                    }
+                } else {
+                    assert(recSet.empty() && "reconstructed instruction missed");
+                }
 
             std::unique_ptr<Module> NewModule =
                     llvm::make_unique<Module>("CompCodeMod", TheHelper->Context);
@@ -1511,7 +1555,8 @@ void Parser::handleCompCodeCommand() {
             }
         } else if (action == inspect) {
             keepSet.clear();
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+            recSet.clear();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
                     needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
                     false, verbose);
             std::map<BasicBlock*, std::pair<int,int>>::iterator bbMapIt =
@@ -1520,7 +1565,17 @@ void Parser::handleCompCodeCommand() {
             ++(bbMapIt->second.second);
             if (ret) {
                 ++canBuildCompCode;
-                if (needPrologue) ++isPrologueRequired;
+                if (needPrologue) {
+                    ++isPrologueRequired;
+                    assert(!recSet.empty());
+                    int recInstructions = recSet.size();
+                    totalRecInstructions += recInstructions;
+                    if (recInstructions > maxRecInstructions) {
+                        maxRecInstructions = recInstructions;
+                    }
+                } else {
+                    assert(recSet.empty() && "reconstructed instruction missed");
+                }
                 ++(bbMapIt->second.first);
             } else {
                 updateValuesToKeepInfo(keepSet);
@@ -1542,6 +1597,12 @@ void Parser::handleCompCodeCommand() {
                       << canBuildCompCode << std::endl;
             std::cerr << "- compensation code requires a prologue: "
                       << isPrologueRequired << std::endl;
+            float avgRecInst = (isPrologueRequired == 0) ? 0 :
+                                totalRecInstructions/(float)isPrologueRequired;
+            std::cerr << "- avg number of instructions in a prologue: "
+                      << avgRecInst << std::endl;
+            std::cerr << "- max number of instructions in a prologue: "
+                      << maxRecInstructions << std::endl;
 
             if (action == inspect) {
                 if (valuesToKeepAtPoints.empty()) {

@@ -1,0 +1,2 @@
+To generate IR:
+clang -S -emit-llvm -DNO_JPEG -DNO_LCMS dcraw.c

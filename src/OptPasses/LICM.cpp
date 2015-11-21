@@ -35,8 +35,9 @@ using namespace llvm;
 
 #define DEBUG_TYPE "licm"
 
-// [OSR] added NumDCE
+// [OSR] added NumDCE and NumFolded
 OSR_STATISTIC(NumDCE       , "Number of instructions DCE'd");
+OSR_STATISTIC(NumFolded    , "Number of instructions constant-folded");
 OSR_STATISTIC(NumSunk      , "Number of instructions sunk out of loop");
 OSR_STATISTIC(NumHoisted   , "Number of instructions hoisted out of loop");
 OSR_STATISTIC(NumMovedLoads, "Number of load insts hoisted or sunk");
@@ -382,6 +383,7 @@ void OSR_LICM::HoistRegion(DomTreeNode *N) {
         }
         I.replaceAllUsesWith(C);
         I.eraseFromParent();
+        ++NumFolded;
         continue;
       }
 

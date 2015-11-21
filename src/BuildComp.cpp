@@ -224,7 +224,7 @@ std::string BuildComp::getDescription(Heuristic opt) {
             desc = "Basic opts + (unsafe) dead available values";
             break;
         case BC_UNSAFE_DEAD_AVAIL_AND_ALIASES:
-            desc = desc = "Basic opts + (unsafe) dead available values + RAUW aliasing";
+            desc = "Basic opts + (unsafe) dead available values + RAUW aliasing";
             break;
         default:
             desc = "Unknown strategy";
@@ -301,11 +301,14 @@ void BuildComp::identifyMissingValues(Instruction* I, std::map<Value*, Value*>
 }
 
 
-bool BuildComp::reconstructInst(Instruction* I, std::map<Value*, Value*>
-        &availableValues, std::map<Value*, Value*> &extraAvailableValues,
+bool BuildComp::reconstructInst(Instruction* I,
+        std::map<Value*, Value*> &availableValues,
+        std::map<Value*, Value*> &extraAvailableValues,
         std::map<Instruction*, Value*> &reconstructedMap,
+        std::set<Instruction*> &recSet,
         StateMap::CodeSequence* compCodeSequence,
-        std::set<Value*> &argsForCompCode, BuildComp::Heuristic opt) {
+        std::set<Value*> &argsForCompCode,
+        BuildComp::Heuristic opt) {
 
     // TODO heuristics; other instruction types?
 
@@ -356,6 +359,7 @@ bool BuildComp::reconstructInst(Instruction* I, std::map<Value*, Value*>
     }
 
     Instruction* RI = I->clone();
+    recSet.insert(I);
 
     std::map<Value*, Value*>::iterator availIt, deadAvailIt;
     std::map<Value*, Value*>::iterator availEnd = availableValues.end();
@@ -418,7 +422,9 @@ bool BuildComp::reconstructInst(Instruction* I, std::map<Value*, Value*>
 StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
         std::map<Value*, Value*> &availableValues,
         std::map<Value*, Value*> &extraAvailableValues,
-        std::set<Value*> &valuesToKeep, BuildComp::Heuristic opt) {
+        std::set<Value*> &valuesToKeep,
+        std::set<Instruction*> &recSet,
+        BuildComp::Heuristic opt) {
 
     // sanity checks
     assert(extraAvailableValues.count(instToReconstruct) == 0
@@ -491,7 +497,7 @@ StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
 
     for (Instruction* currInstToReconstruct: sortedInstructions) {
         success &= reconstructInst(currInstToReconstruct, availableValues,
-                extraAvailableValues, reconstructedMap, compCode->code,
+                extraAvailableValues, reconstructedMap, recSet, compCode->code,
                 argsForCompCode, opt);
 
         if (!success) break;
@@ -862,7 +868,8 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
 }
 
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
-        std::set<Value*> &keepSet, bool &needPrologue, BuildComp::Heuristic opt,
+        std::set<Value*> &keepSet, std::set<Instruction*> &recSet,
+        bool &needPrologue, BuildComp::Heuristic opt,
         BuildComp::AnalysisData* src_BCAD, BuildComp::AnalysisData* dest_BCAD,
         bool updateMapping, bool verbose) {
 
@@ -1017,7 +1024,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         // attempt to reconstruct the instruction using compensation code
         if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
-                    extraAvailableValues, curValuesToKeep, opt);
+                    extraAvailableValues, curValuesToKeep, recSet, opt);
             if (valInfo == nullptr) {
                 error = true;
                 keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());
@@ -1100,6 +1107,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     AnalysisData* BCAD_F1 = new AnalysisData(F1);
     AnalysisData* BCAD_F2 = new AnalysisData(F2);
     std::set<Value*> keepSet;
+    std::set<Instruction*> recSet;
     std::set<Value*> missingSet;
     bool needPrologue;
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
@@ -1116,7 +1124,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         bool bcFails = false;
         if (bcReq) {
             missingSet.clear();
-            bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet,
+            bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
                     needPrologue, opt, BCAD_src, BCAD_dest, false, verbose);
             keepSet.clear();
         }

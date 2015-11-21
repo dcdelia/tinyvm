@@ -1,0 +1,7 @@
+LOAD_IR Phoronix/c-ray/code.ll
+CLONE_FUN ray_sphere AS basefun
+CLONE_FUN basefun AS optfun
+VERBOSE
+OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
+MAPS UPDATE basefun optfun
+VERBOSE

@@ -99,8 +99,6 @@ public:
         Value*          valToInline;
     } DynamicInlinerInfo;
 
-    static ValueToValueMapTy* generateIdentityMapping(Function* F); // TODO dead?
-
     static void* identityGeneratorForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
     static void* dynamicInlinerForOpenOSR(Function* F1, Instruction* OSRSrc, void* extra, void* profDataAddr);
 

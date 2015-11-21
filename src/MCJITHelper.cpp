@@ -360,40 +360,6 @@ CmpInst* MCJITHelper::generateAlwaysFalseCond() {
     return new FCmpInst(CmpInst::FCMP_FALSE, zeroConst, zeroConst, "neverOSR");
 }
 
-ValueToValueMapTy* MCJITHelper::generateIdentityMapping(Function* F) {
-    ValueToValueMapTy* VMap = new ValueToValueMapTy();
-
-    // arguments
-    for (Function::arg_iterator argIt = F->arg_begin(), argEnd = F->arg_end(); argIt != argEnd; ++argIt) {
-        (*VMap)[argIt] = argIt;
-    }
-
-    // TODO: metadata (also in the body?)
-
-    for (Function::iterator bbIt = F->begin(), bbEnd = F->end(); bbIt != bbEnd; ++bbIt) {
-        // basic blocks
-        (*VMap)[bbIt] = bbIt;
-
-        // TODO: BB.hasAddressTaken() ?
-
-        for (BasicBlock::iterator insIt = bbIt->begin(), insEnd = bbIt->end(); insIt != insEnd; ++insIt) {
-            // instructions
-            (*VMap)[insIt] = insIt;
-
-            /** Code adapted from MapValue() called by RemapInstruction() **/
-            // operators
-            for (User::op_iterator opIt = insIt->op_begin(), opEnd = insIt->op_end(); opIt != opEnd; ++opIt) {
-                Value* v = *opIt;
-                ValueToValueMapTy::iterator I = VMap->find(v);
-                if (I != VMap->end() && I->second) continue; // value already exists in VMap
-                (*VMap)[v] = v;
-            }
-        }
-    }
-
-    return VMap;
-}
-
 std::string& MCJITHelper::LLVMTypeToString(Type* type) {
     static std::string type_str;
     static llvm::raw_string_ostream type_rso(type_str);

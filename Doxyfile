@@ -38,7 +38,7 @@ PROJECT_NAME           = "TinyVM + OSRKit"
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         = "CGO'16 Artifact Evaluation"
+PROJECT_NUMBER         = "CGO 2016 Artifact"
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a

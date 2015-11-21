@@ -1,4 +1,0 @@
-VERBOSE
-LOAD_IR testing/IR/block_sequence_SSA.ll
-TRACK_ASM
-INSERT_OSR 95 ALWAYS OPEN UPDATE IN block_sequence AT %B1 CLONE

@@ -1,3 +1,0 @@
-VERBOSE
-LOAD_IR testing/IR/block_sequence_SSA.ll
-INSERT_OSR 95 ALWAYS SLVD COPY IN block_sequence AT %B2 AS bs1 TO block_sequence AT %B2 AS bs2

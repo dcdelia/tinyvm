@@ -450,6 +450,7 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 
     // dirty stuff for dest
     modForNewDest->getFunctionList().push_back(dest);
+
     bool usesFixedInDest = OSRLibrary::fixUsesOfFunctionsAndGlobals(src, dest);
     if (usesFixedInDest && TheHelper->verbose) {
         std::cerr << "Creating declarations to update references to globals and functions..." << std::endl;
@@ -467,6 +468,23 @@ void Parser::resolvedOSRHelper(Function* src, Instruction* OSRSrc, bool update,
 
     std::cerr << "First function generated: " << src_new->getName().str() << std::endl;
     std::cerr << "Second function generated: " << dest_new->getName().str() << std::endl;
+
+    // TODO we use a dirty trick for recursive functions
+    dest->setName("tmpAboutToRemove");
+    Constant* proto = nullptr;
+    Module* M_for_dest_new = dest_new->getParent();
+    for (Value::use_iterator UI = dest->use_begin(), UE = dest->use_end();
+            UI != UE; ) {
+        Use &U = *(UI++);
+        if (Instruction* I = dyn_cast<Instruction>(U.getUser())) {
+            if (I->getParent()->getParent() != dest_new) continue;
+            if (proto == nullptr) {
+                proto = M_for_dest_new->getOrInsertFunction(src->getName(),
+                        dest->getFunctionType(), dest->getAttributes());
+            }
+            U.set(proto);
+        }
+    }
 
     dest->eraseFromParent();
 

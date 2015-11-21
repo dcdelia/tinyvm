@@ -405,7 +405,8 @@ std::pair<Function*, Value*> MCJITHelper::genContFunForOpenOSRGenerator(
     Value* profDataVal = (origProfDataVal)
             ? M_F2toOSRContFun->getCorrespondingOneToOneValue(profDataValInF2)
             : nullptr;
-    assert (profDataVal != nullptr && "broken state map for continuation function");
+    assert ((origProfDataVal == nullptr || profDataVal != nullptr)
+            && "broken state map for continuation function");
 
     delete F2;
     delete M;

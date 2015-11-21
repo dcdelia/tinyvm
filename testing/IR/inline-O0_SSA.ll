@@ -1,14 +1,16 @@
-; ModuleID = 'inline-O0.ll'
+; ModuleID = 'inline.ll'
 target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 ; Function Attrs: nounwind uwtable
-define i32 @longCmp(i8* %a, i8* %b) #0 {
-  %1 = ptrtoint i8* %a to i64
-  %2 = ptrtoint i8* %b to i64
-  %3 = sub nsw i64 %1, %2
-  %4 = trunc i64 %3 to i32
-  ret i32 %4
+define i32 @cmp(i8* %a, i8* %b) #0 {
+  %1 = bitcast i8* %a to i64*
+  %2 = load i64* %1, align 8
+  %3 = bitcast i8* %b to i64*
+  %4 = load i64* %3, align 8
+  %5 = sub nsw i64 %2, %4
+  %6 = trunc i64 %5 to i32
+  ret i32 %6
 }
 
 ; Function Attrs: nounwind uwtable
@@ -74,7 +76,7 @@ define i32 @driver(i32 %n) #0 {
 
 ; <label>:13                                      ; preds = %5
   %14 = sext i32 %n to i64
-  %15 = call i32 @isord(i64* %4, i64 %14, i32 (i8*, i8*)* @longCmp)
+  %15 = call i32 @isord(i64* %4, i64 %14, i32 (i8*, i8*)* @cmp)
   %16 = bitcast i64* %4 to i8*
   call void @free(i8* %16) #2
   ret i32 %15

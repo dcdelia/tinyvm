@@ -2,13 +2,15 @@
 target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-; Function Attrs: nounwind readnone uwtable
-define i32 @longCmp(i8* %a, i8* %b) #0 {
-  %1 = ptrtoint i8* %a to i64
-  %2 = ptrtoint i8* %b to i64
-  %3 = sub nsw i64 %1, %2
-  %4 = trunc i64 %3 to i32
-  ret i32 %4
+; Function Attrs: nounwind readonly uwtable
+define i32 @cmp(i8* nocapture readonly %a, i8* nocapture readonly %b) #0 {
+  %1 = bitcast i8* %a to i64*
+  %2 = load i64* %1, align 8, !tbaa !1
+  %3 = bitcast i8* %b to i64*
+  %4 = load i64* %3, align 8, !tbaa !1
+  %5 = sub nsw i64 %2, %4
+  %6 = trunc i64 %5 to i32
+  ret i32 %6
 }
 
 ; Function Attrs: nounwind uwtable
@@ -60,7 +62,7 @@ define i32 @driver(i32 %n) #1 {
   br i1 %exitcond, label %._crit_edge, label %7
 
 ._crit_edge:                                      ; preds = %7, %0
-  %9 = tail call i32 @isord(i64* %4, i64 %1, i32 (i8*, i8*)* @longCmp)
+  %9 = tail call i32 @isord(i64* %4, i64 %1, i32 (i8*, i8*)* @cmp)
   tail call void @free(i8* %3) #3
   ret i32 %9
 }
@@ -71,7 +73,7 @@ declare noalias i8* @malloc(i64) #2
 ; Function Attrs: nounwind
 declare void @free(i8* nocapture) #2
 
-attributes #0 = { nounwind readnone uwtable "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #0 = { nounwind readonly uwtable "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #1 = { nounwind uwtable "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #2 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #3 = { nounwind }

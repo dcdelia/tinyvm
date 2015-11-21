@@ -3,22 +3,18 @@ target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 ; Function Attrs: nounwind uwtable
-define i32 @longCmp(i8* %a, i8* %b) #0 {
+define i32 @cmp(i8* %a, i8* %b) #0 {
   %1 = alloca i8*, align 8
   %2 = alloca i8*, align 8
-  %la = alloca i64, align 8
-  %lb = alloca i64, align 8
   store i8* %a, i8** %1, align 8
   store i8* %b, i8** %2, align 8
   %3 = load i8** %1, align 8
-  %4 = ptrtoint i8* %3 to i64
-  store i64 %4, i64* %la, align 8
-  %5 = load i8** %2, align 8
-  %6 = ptrtoint i8* %5 to i64
-  store i64 %6, i64* %lb, align 8
-  %7 = load i64* %la, align 8
-  %8 = load i64* %lb, align 8
-  %9 = sub nsw i64 %7, %8
+  %4 = bitcast i8* %3 to i64*
+  %5 = load i64* %4, align 8
+  %6 = load i8** %2, align 8
+  %7 = bitcast i8* %6 to i64*
+  %8 = load i64* %7, align 8
+  %9 = sub nsw i64 %5, %8
   %10 = trunc i64 %9 to i32
   ret i32 %10
 }
@@ -121,7 +117,7 @@ define i32 @driver(i32 %n) #0 {
   %22 = load i64** %v, align 8
   %23 = load i32* %1, align 4
   %24 = sext i32 %23 to i64
-  %25 = call i32 @isord(i64* %22, i64 %24, i32 (i8*, i8*)* @longCmp)
+  %25 = call i32 @isord(i64* %22, i64 %24, i32 (i8*, i8*)* @cmp)
   store i32 %25, i32* %res, align 4
   %26 = load i64** %v, align 8
   %27 = bitcast i64* %26 to i8*

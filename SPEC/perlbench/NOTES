@@ -1,0 +1,3 @@
+STATIC keyword removed from proto.h and regexec.c for S_regmatch
+To generate IR source file:
+clang -DSPEC_CPU -DSPEC_CPU_LINUX_X64 -DSPEC_CPU_LP64 -S -emit-llvm regexec.c

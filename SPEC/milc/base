@@ -1,0 +1,7 @@
+LOAD_IR SPEC/milc/code.ll
+CLONE_FUN mult_su3_na AS basefun
+CLONE_FUN basefun AS optfun
+VERBOSE
+OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
+MAPS UPDATE basefun optfun
+VERBOSE

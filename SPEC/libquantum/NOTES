@@ -1,0 +1,2 @@
+To generate IR source file:
+clang -DSPEC_CPU -DSPEC_CPU_LINUX -include config.h -S -emit-llvm gates.c

@@ -300,6 +300,10 @@ void Parser::handleHelpCommand() {
               << std::endl << "where:" << std::endl
               << "\tPROB is either -1 (no branch weight) or an integer in {0, ..., 100}" << std::endl
               << "\tCOND is either ALWAYS or NEVER" << std::endl
+              << "\tOPEN (open OSR) means the continuation function is generated when the OSR is fired" << std::endl
+              << "\tSLVD (resolved OSR) generates the continuation function right away" << std::endl
+              << "\tUPDATE instruments the original function" << std::endl
+              << "\tCOPY instruments a copy of the original function" << std::endl
               << "\tF1 and F2 are existing functions" << std::endl
               << "\tP1 and P2 are locations in F1 and F2 respectively" << std::endl
               << "\tV1 is the target of one or more calls in F1" << std::endl;

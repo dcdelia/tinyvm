@@ -57,7 +57,8 @@ int Parser::start(bool displayHelpMsg) {
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_show_addr:     handleShowAddrCommand(); break;
-            case tok_show_asm:      TheHelper->showTrackedAsm(); break;
+            //case tok_show_asm:      TheHelper->showTrackedAsm(); break;
+            case tok_show_asm:      break; // TODO
             case tok_show_mods:     TheHelper->showModules(); break;
             case tok_show_funs:     TheHelper->showFunctions(); break;
             case tok_load_lib:      handleLoadLibCommand(); break;
@@ -278,7 +279,6 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl << "\tPerforms a function call (see next paragraph) repeatedly." << std::endl;
     std::cerr << "--> SHOW_ADDR <function_name>" << std::endl << "\tShows compiled-code address for a given function symbol." << std::endl;
     std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl << "\tShows by-line IR identifiers for a given function." << std::endl;
-    std::cerr << "--> SHOW_ASM" << std::endl << "\tShow logged x86-64 assembly code." << std::endl;
     std::cerr << "--> SHOW_FUNS" << std::endl << "\tShow function symbols tracked by MCJITHelper." << std::endl;
     std::cerr << "--> SHOW_MODS" << std::endl << "\tShow loaded modules and their symbols." << std::endl;
     std::cerr << "--> VERBOSE" << std::endl << "\tEnable/disable verbose mode." << std::endl;
@@ -350,7 +350,7 @@ void Parser::openOSRHelper(Function* src, Instruction* OSRSrc, bool update,
     } else {
         generator = MCJITHelper::identityGeneratorForOpenOSR;
         profDataVal = nullptr;
-        
+
         extraInfo->profDataVal = nullptr;
         extraInfo->clonedProfDataVal = nullptr;
     }

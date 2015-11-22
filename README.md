@@ -2,7 +2,6 @@
 
 A simple VM to play with LLVM's MCJIT compiler and exercise a new OSR technique.
 ```diff
-pctips@xubuntu64:~/OSR$ ./tinyvm
 Welcome! Enter 'HELP' to show the list of available commands.
 TinyVM> help
 List of available commands:
@@ -28,8 +27,6 @@ List of available commands:
 	Shows compiled-code address for a given function symbol.
 --> SHOW_LINE_IDS <function_name>
 	Shows by-line IR identifiers for a given function.
---> SHOW_ASM
-	Show logged x86-64 assembly code.
 --> SHOW_FUNS
 	Show function symbols tracked by MCJITHelper.
 --> SHOW_MODS
@@ -55,6 +52,11 @@ INSERT_OSR <PROB> <COND> SLVD COPY IN <F1> AT <P1> AS <F1'> TO <F2> AT <P2> AS <
 where:
 	PROB is either -1 (no branch weight) or an integer in {0, ..., 100}
 	COND is either ALWAYS or NEVER
+	OPEN (open OSR) means the continuation function is generated when
+		the OSR is fired
+	SLVD (resolved OSR) generates the continuation function right away
+	UPDATE instruments the original function
+	COPY instruments a copy of the original function
 	F1 and F2 are existing functions
 	P1 and P2 are locations in F1 and F2 respectively
 	V1 is the target of one or more calls in F1

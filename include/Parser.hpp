@@ -44,10 +44,10 @@ private:
 
     void openOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,
             std::string* F1NewName, OSRLibrary::OSRCond &cond, int branchTakenProb,
-            bool dynInline, llvm::Value* valToDynInline);
+            int threshold, bool dynInline, llvm::Value* valToDynInline);
     void resolvedOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,
             std::string* F1NewName, const std::string* LPadName, std::string* F2NewName,
-            OSRLibrary::OSRCond &cond, int branchTakenProb);
+            OSRLibrary::OSRCond &cond, int branchTakenProb, int threshold);
 
     typedef std::vector<const llvm::Value*> IDToValueVec;
     static IDToValueVec computeSlotIDs(llvm::Function* F);

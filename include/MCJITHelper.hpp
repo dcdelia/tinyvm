@@ -85,6 +85,8 @@ public:
     void registerFunction(Function* F);
     void trackAsmCodeUtil(Module* M);
     std::vector<uint64_t> getCompiledFuncAddr(const std::string &Name);
+    AllocaInst* insertOSRCounter(Function* F);
+    void generateCounterTriggeredCond(OSRLibrary::OSRCond *cond, AllocaInst* alloca, int count);
     CmpInst* generateAlwaysTrueCond();
     CmpInst* generateAlwaysFalseCond();
     bool canModifyModule(Module* M);

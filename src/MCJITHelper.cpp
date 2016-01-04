@@ -367,6 +367,54 @@ CmpInst* MCJITHelper::generateAlwaysFalseCond() {
     return new FCmpInst(CmpInst::FCMP_FALSE, zeroConst, zeroConst, "neverOSR");
 }
 
+AllocaInst* MCJITHelper::insertOSRCounter(Function* F) {
+    assert(!F->isDeclaration() && "Cannot insert OSR counter in a prototype!");
+
+    BasicBlock *entry = &F->getEntryBlock();
+    IntegerType* int64Ty = Type::getInt64Ty(Context); // we use an int counter
+
+    // for the sake of efficiency, let's assume the IR is well-formed!
+    // assert(pred_empty(BBEntry) && "Entry block to function must not have predecessors!");
+
+    // find first non-alloca inst as insertion point
+    BasicBlock::iterator bbIt = entry->begin();
+    while (isa<AllocaInst>(bbIt)) bbIt++;
+
+    AllocaInst* alloca = new AllocaInst(int64Ty, "OSRcounter", bbIt);
+
+    // TODO can obviously do better
+    for (bbIt = entry->begin(); isa<AllocaInst>(bbIt); bbIt++);
+
+    // initialize counter to zero
+    Constant* zero = ConstantInt::get(int64Ty, 0, false);
+    //StoreInst* store =
+    new StoreInst(zero, alloca, false, bbIt);
+
+    return alloca;
+}
+
+void MCJITHelper::generateCounterTriggeredCond(OSRLibrary::OSRCond *cond,
+        AllocaInst* alloca, int count) {
+    // updates an int OSR counter by 1 until a threshold is reached
+    IntegerType* int64Ty = Type::getInt64Ty(Context);
+    Constant* incByOne = ConstantInt::get(int64Ty, 1, false);
+    Constant* threshold = ConstantInt::get(int64Ty, count, false);
+
+    // avoid ambiguity in Instruction constructors (also, using a nullptr
+    // BasicBlock pointer leads to a segmentation fault)
+    Instruction* nowhere = nullptr;
+
+    LoadInst* load = new LoadInst(alloca, "prevOSRcounter", false, nowhere);
+    BinaryOperator* add = BinaryOperator::Create(Instruction::Add, load, incByOne, "curOSRcounter", nowhere);
+    StoreInst* store = new StoreInst(add, alloca, false, nowhere);
+    ICmpInst* cmp = new ICmpInst(ICmpInst::ICMP_EQ, add, threshold, "shallOSR");
+
+    cond->push_back(load);
+    cond->push_back(add);
+    cond->push_back(store);
+    cond->push_back(cmp);
+}
+
 std::string& MCJITHelper::LLVMTypeToString(Type* type) {
     static std::string type_str;
     static llvm::raw_string_ostream type_rso(type_str);

@@ -39,7 +39,8 @@ enum Token {
     tok_show_mods   = -25,
     tok_show_addr   = -26,
     tok_show_funs   = -27,
-    tok_load_lib    = -28
+    tok_load_lib    = -28,
+    tok_opt_ssa     = -29
 };
 
 class Lexer {

@@ -40,6 +40,7 @@ private:
     void handleTrackAsmCommand();
     void handleInsertOpenOSRCommand();
     void handleOptCommand(bool CFGSimplificationOnly);
+    void handleOptSSACommand();
     void handleVerboseCommand();
 
     void openOSRHelper(llvm::Function* src, llvm::Instruction* OSRSrc, bool update,

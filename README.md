@@ -21,6 +21,8 @@ List of available commands:
 	Performs a CFG simplification pass over a given function.
 --> OPT_FULL <function_name>
 	Performs several optimization passes over a given function.
+--> OPT_SSA <function_name>
+	Promote memory references to registers and construct SSA form.
 --> REPEAT <iterations> <function call>
 	Performs a function call (see next paragraph) repeatedly.
 --> SHOW_ADDR <function_name>

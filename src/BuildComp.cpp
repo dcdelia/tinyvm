@@ -300,7 +300,8 @@ void BuildComp::identifyMissingValues(Instruction* I, std::map<Value*, Value*>
     }
 }
 
-
+// reconstruct an instruction and add it to a CompCode object, assuming that
+// its dependencies have already been reconstructed
 bool BuildComp::reconstructInst(Instruction* I,
         std::map<Value*, Value*> &availableValues,
         std::map<Value*, Value*> &extraAvailableValues,
@@ -318,6 +319,7 @@ bool BuildComp::reconstructInst(Instruction* I,
 
         if (!constV || !shouldPerformBaseOpts(opt)) return false;
 
+        // check if the constant value has already been reconstructed
         if (Instruction* constI = dyn_cast<Instruction>(constV)) {
             if (reconstructedMap.count(constI) != 0) {
                 reconstructedMap[I] = reconstructedMap[constI];
@@ -327,6 +329,7 @@ bool BuildComp::reconstructInst(Instruction* I,
 
         Value* valToUse = nullptr;
 
+        // check if the constant value is already available
         if (availableValues.count(constV) != 0) {
             valToUse = availableValues[constV];
         } else if (extraAvailableValues.count(constV) != 0) {
@@ -334,6 +337,7 @@ bool BuildComp::reconstructInst(Instruction* I,
         }
 
         if (valToUse) {
+            // unless it is a Constant, we should add it to CompCode's arguments
             if (!isa<Constant>(valToUse)) {
                 argsForCompCode.insert(valToUse);
             }
@@ -342,30 +346,38 @@ bool BuildComp::reconstructInst(Instruction* I,
             return true;
         }
 
+        // TODO try to reconstruct it anyway?
+
         return false;
     }
 
+    // TODO we can do better than this?
     if (isa<LoadInst>(I)) {
         return false;
     }
 
-
+    // we can reconstruct a call/invoke instruction only for read-only functions
     if (CallInst* CI = dyn_cast<CallInst>(I)) {
         if (CI->mayWriteToMemory()) return false;
     }
-
     if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
         if (II->mayWriteToMemory()) return false;
     }
 
-    Instruction* RI = I->clone();
+    // keep track of the instructions that are being reconstructed
     recSet.insert(I);
 
+    // create a copy of the original instruction
+    Instruction* RI = I->clone();
+
+    // we are going to need a number of iterators
     std::map<Value*, Value*>::iterator availIt, deadAvailIt;
     std::map<Value*, Value*>::iterator availEnd = availableValues.end();
     std::map<Value*, Value*>::iterator extraAvailEnd = extraAvailableValues.end();
     std::map<Instruction*, Value*>::iterator recEnd = reconstructedMap.end();
 
+    // iterate over the operands in the copy and fix them to point to available
+    // values or previously reconstructed instructions
     for (Use &U: RI->operands()) {
         Value* op = U.get();
 
@@ -419,6 +431,7 @@ bool BuildComp::reconstructInst(Instruction* I,
     return true;
 }
 
+// recursively attempt to reconstruct a value computed by an instruction
 StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
         std::map<Value*, Value*> &availableValues,
         std::map<Value*, Value*> &extraAvailableValues,
@@ -438,39 +451,45 @@ StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
         return nullptr;
     }
 
-    // identify which values need to be reconstructed
+    // identify values that require recursive reconstruction and build workset
     std::set<Value*> missingValues;
     identifyMissingValues(instToReconstruct, availableValues,
             extraAvailableValues, missingValues, opt);
 
     std::set<Instruction*> instWorkSet;
     for (Value* v: missingValues) {
-        // dead arguments should have already been made available at this stage
+        // dead arguments should have already been made available at this stage!
         if (isa<Argument>(v)) return nullptr; // TODO insert assertion here
 
         instWorkSet.insert(cast<Instruction>(v));
     }
 
-    // compute a topological order based on use-def information
+    // compute a topological order on the workset based on use-def information
     std::vector<Instruction*> sortedInstructions;
     while (!instWorkSet.empty()) {
+        // iterate over instruction worklist
         for (std::set<Instruction*>::iterator it = instWorkSet.begin(),
                 end = instWorkSet.end(); it != end; ) {
             Instruction* I = *it;
             bool canInsert = true;
+
+            // iterate over operands
             for (Use &U: I->operands()) {
                 Value* op = U.get();
                 if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                    // a use of a PHI node by itself is legal LLVM
+                    // a use of a PHI node by the node itself is legal in LLVM
                     if (opI == I && cast<PHINode>(I)) continue;
-                    // we cannot insert an instruction before all the missing
-                    // instructions it uses as operands have not been inserted
+
+                    // we cannot insert an instruction until all the missing
+                    // instructions it uses as operands have been inserted
                     if (instWorkSet.count(opI) != 0) {
                         canInsert = false;
                         break;
                     }
                 }
             }
+
+            // check if we can perform the insertion
             if (canInsert) {
                 sortedInstructions.push_back(I);
                 instWorkSet.erase(it++);
@@ -487,14 +506,21 @@ StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
             && "instruction to reconstruct appear as operand for itself?!?");
     sortedInstructions.push_back(instToReconstruct);
 
+    // initialize a CompCode object
     StateMap::CompCode* compCode = new StateMap::CompCode();
     compCode->args = nullptr;
     compCode->code = new SmallVector<Value*, 8>;
 
-    bool success = true;
+    // for each entry the key is the instruction to reconstruct, and the value
+    // is the value to use for the reconstruction (e.g., an available value, or
+    // an instruction that has been recursively reconstructed before this one)
     std::map<Instruction*, Value*> reconstructedMap;
+
+    // live values that are used as operands along the compensation instructions
     std::set<Value*> argsForCompCode;
 
+    // attempt to reconstruct instructions (give up when encountering an error)
+    bool success = true;
     for (Instruction* currInstToReconstruct: sortedInstructions) {
         success &= reconstructInst(currInstToReconstruct, availableValues,
                 extraAvailableValues, reconstructedMap, recSet, compCode->code,
@@ -504,9 +530,10 @@ StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
     }
 
     if (success) {
+        // the last instruction is the value we have been asked to reconstruct
         compCode->value = compCode->code->back();
 
-        // args should be initialized even when no arguments are taken
+        // args should be initialized even when no arguments are taken!
         compCode->args = new SmallVector<Value*, 4>;
         for (Value* arg: argsForCompCode) {
             compCode->args->push_back(arg);
@@ -514,6 +541,7 @@ StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
 
         return new StateMap::ValueInfo(compCode);
     } else {
+        // release memory on failure
         for (StateMap::CodeSequence::iterator it = compCode->code->begin(),
                 end = compCode->code->end(); it != end; ++it) {
             delete cast<Instruction>(*it);
@@ -867,20 +895,25 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
     }
 }
 
+// [check if we can] build compensation code for a LocPair <OSRSrc, LPad>
 bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         std::set<Value*> &keepSet, std::set<Instruction*> &recSet,
         bool &needPrologue, BuildComp::Heuristic opt,
         BuildComp::AnalysisData* src_BCAD, BuildComp::AnalysisData* dest_BCAD,
         bool updateMapping, bool verbose) {
 
+    // flag set to true when compensation code instructions should be created
+    // (i.e., local aliasing information is not sufficient to restore the state)
     needPrologue = false;
 
+    // fetch liveness analysis information from the StateMap
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
     LivenessAnalysis::LiveValues liveAtOSRSrc, liveAtLPad;
     LivenessAnalysis *LA_src, *LA_dest;
 
+    // identify associated basic block & function for OSRSrc and LPad
     BasicBlock* OSRSrcBlock = OSRSrc->getParent();
     BasicBlock* LPadBlock = LPad->getParent();
     Function* src = OSRSrcBlock->getParent();
@@ -897,11 +930,13 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         LA_dest = &LAPair.first;
     }
 
+    // compute LIVE_IN sets for OSRSrc and LPad
     liveAtOSRSrc = LivenessAnalysis::analyzeLiveInForSeq(OSRSrcBlock,
                 LA_src->getLiveOutValues(OSRSrcBlock), OSRSrc, nullptr);
     liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
                 LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
 
+    // retrieve CodeMapper(s) and information on updates to StateMap object(s)
     CodeMapper* src_CM = CodeMapper::getCodeMapper(*src);
     CodeMapper* dest_CM = CodeMapper::getCodeMapper(*dest);
     CodeMapper::StateMapUpdateInfo *src_updateInfo = nullptr;
@@ -913,20 +948,26 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         dest_updateInfo = dest_CM->getStateMapUpdateInfo(M);
     }
 
+    // worklist of instructions to reconstruct
     std::vector<Value*> workList; // instructions to reconstruct
-    std::map<Value*, Value*> availableValues; // available values
-    std::map<Value*, Value*> extraAvailableValues; // will populate it later...
 
-    // Build the set of available values. Note that a live value not mapped to
-    // a valToSet from liveAtLPad might come in handy later when we might have
-    // to reconstruct some instruction
+    // list of values that are obviously available
+    std::map<Value*, Value*> availableValues;
+
+    // list of values that are made available by running ad-hoc heuristics
+    std::map<Value*, Value*> extraAvailableValues;
+
+    // Build the set of available values.
+    //
+    // Note that a live value not mapped to a valToSet from liveAtLPad might
+    // come in handy later as we may need it to reconstruct an instruction.
     StateMap::OneToOneValueMap &OOMap = M->getAllCorrespondingOneToOneValues();
     for (StateMap::OneToOneValueMap::iterator it = OOMap.begin(),
             end = OOMap.end(); it != end; ++it) {
         Value* valToSet = it->first;
         Value* valToUse = it->second;
 
-        // skip valToSet if it belongs to src
+        // skip valToSet if it belongs to src: we need to reconstruct at dest!
         if (Instruction* I = dyn_cast<Instruction>(valToSet)) {
             if (I->getParent()->getParent() == src) continue;
         } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
@@ -936,17 +977,20 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             continue;
         }
 
+        // constants and live variables are obviously available
         if (isa<Constant>(valToUse) || liveAtOSRSrc.count(valToUse) > 0) {
             availableValues[valToSet] = valToUse;
             continue;
         }
 
+        // safe optimization: arguments are never modified, thus are available
         if (shouldPerformBaseOpts(opt) && isa<Argument>(valToUse)) {
             availableValues[valToSet] = valToUse;
             continue;
         }
     }
 
+    // find out which values need to be reconstructed
     for (const Value* v: liveAtLPad) {
         Value* valToSet = const_cast<Value*>(v);
         if (availableValues.count(valToSet) == 0) {
@@ -954,13 +998,18 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         }
     }
 
-    if (workList.empty()) return true;
+    if (workList.empty()) return true; // no compensation code is required
 
+    // extraAvailableValues += values for which liveness can be safely extended
     if (shouldUseDeadValues(opt)) {
         computeDeadAvailableValues(M, OSRSrc, src, src_BCAD, availableValues,
                 extraAvailableValues, opt);
     }
 
+    // extraAvailableValues += values that are available through an alias
+    //
+    // Note: when shouldUseDeadValues(opt) is true, it also looks for dead
+    // aliases for which liveness can be safely extended
     if (shouldUseAliases(opt) && (src_updateInfo || dest_updateInfo) ) {
         #if BUILD_ALIAS_INFO_MAP
         CodeMapper::OneToManyAliasMap aliasInfoMap =
@@ -977,10 +1026,13 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
                 liveAtOSRSrc, availableValues, extraAvailableValues, opt);*/
     }
 
+    // data structure for encoding compensation code & local 1:1 information
     StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
-    std::set<Value*> curValuesToKeep;
-    bool error = false;
 
+    // values that cannot be reconstructed (and thus should have been kept)
+    std::set<Value*> curValuesToKeep;
+
+    bool error = false;
     for (Value* valToReconstruct: workList) {
         assert(availableValues.count(valToReconstruct) == 0
                 && "missed an already-available value?");
@@ -988,12 +1040,12 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         Value* valToUse = nullptr;
 
         if (extraAvailableValues.count(valToReconstruct) > 0) {
-            // such a value in general is not a globally 1:1 corresponding value
+            // in general this is not a globally 1:1 corresponding value
             valToUse = extraAvailableValues[valToReconstruct];
         } else if (PHINode* phi = dyn_cast<PHINode>(valToReconstruct)) {
-            // constant PHI nodes can be treated as a special case
             Value* constV = nullptr;
 
+            // constant PHI nodes can be treated as a special case
             if (shouldPerformBaseOpts(opt)) {
                 constV = phi->hasConstantValue();
                 if (constV) {
@@ -1006,7 +1058,10 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             }
 
             if (!valToUse) {
-                error = true;
+                error = true; // TODO what if we can still reconstruct it?!?
+
+                // ---> I DON'T UNDERSTAND THE COMMENT BELOW ANYMORE! <---
+                //
                 // TODO: constV would yield more accurate info, but we can let
                 // the client inspect phi to see whether hasConstantValue()
                 keepSet.insert(phi);
@@ -1014,22 +1069,26 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             }
         }
 
-        // we have a 1:1 corresponding value that can be used for this LocPair
+        // we have a local 1:1 corresponding value for this LocPair
         if (valToUse) {
             StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
             valueInfoMap[valToReconstruct] = valInfo;
             continue;
         }
 
-        // attempt to reconstruct the instruction using compensation code
+        // attempt to reconstruct the value through a compensation code
         if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
             StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
                     extraAvailableValues, curValuesToKeep, recSet, opt);
             if (valInfo == nullptr) {
+                // cannot reconstruct the value
                 error = true;
                 keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());
+
+                // clear the set for the next value to reconstruct
                 curValuesToKeep.clear();
             } else {
+                // we can reconstruct the value!
                 valueInfoMap[valToReconstruct] = valInfo;
                 needPrologue = true;
             }
@@ -1053,6 +1112,7 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
             delete it->second;
         }
     } else {
+        // register LocPairInfo for the current LocPair
         StateMap::LocPair LP(OSRSrc, LPad);
         assert(M->getLocPairInfo(LP) == nullptr && "LocPairInfo alread exists");
         StateMap::LocPairInfo* LPInfo = M->createLocPairInfo(LP);

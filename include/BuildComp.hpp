@@ -26,6 +26,8 @@ class BuildComp {
 public:
     static const int numHeuristics = 7;
 
+    typedef std::map<llvm::Value*, llvm::Value*> ValueMap;
+
     enum Heuristic {
         BC_NONE = 0,
         BC_BASE_OPTS,
@@ -63,6 +65,32 @@ public:
             FPM.run(*F);
         }
     };
+
+    struct Statistics {
+        // set of values that should have been preserved to enable OSR
+        std::set<llvm::Value*> keepSet;
+
+        // set of values (i.e., instructions) that could be reconstructed
+        std::set<llvm::Instruction*> reconstructSet;
+
+        // flag to indicate whether instructions should be reconstructed (true)
+        // or local 1:1 mapping information is sufficient for OSR (false)
+        bool needPrologue;
+
+        int liveValuesToReconstruct;
+
+        int aliasedLiveValues;
+
+        void reset() {
+            keepSet.clear();
+            reconstructSet.clear();
+            aliasedLiveValues = 0;
+            liveValuesToReconstruct = 0;
+            needPrologue = false;
+        }
+
+    };
+
 
     static bool buildComp(StateMap *M,
                         llvm::Instruction* OSRSrc,
@@ -132,10 +160,23 @@ private:
                     std::set<llvm::Instruction*> &recSet,
                     Heuristic opt);
 
+    static bool canReconstructValue(llvm::Value* V,
+                    ValueMap &availMap,
+                    ValueMap &aliasMap,
+                    ValueMap &deadAvailMap,
+                    Statistics &stats,
+                    Heuristic opt,
+                    std::vector<llvm::Instruction*> &recList,
+                    std::set<llvm::Instruction*> &workSet);
+
+    static bool canAttemptToReconstruct(llvm::Instruction* I, Heuristic opt);
+
     static bool shouldPerformBaseOpts(Heuristic opt);
     static bool shouldUseAliases(Heuristic opt);
     static bool shouldUseDeadValues(Heuristic opt);
     static bool shouldUseDeadValuesUnsafely(Heuristic opt);
+
+    static bool shouldPreferDeadValues(Heuristic opt) { return true; }
 
     static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);
 };

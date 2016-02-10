@@ -300,6 +300,139 @@ void BuildComp::identifyMissingValues(Instruction* I, std::map<Value*, Value*>
     }
 }
 
+// we try to reconstruct also PHI nodes created during LCSSA form construction
+static Value* isPHINodeConstant(PHINode* PN) {
+    // deal with simple cases first (e.g., all incoming values are equal)
+    Value* V = PN->hasConstantValue();
+    if (V) return V;
+
+    // initialize V to the first incoming value
+    V = PN->getIncomingValue(0);
+    if (PHINode* opPN = dyn_cast<PHINode>(V)) {
+        // give up if V is a non-constant PHI node
+        V = opPN->hasConstantValue();
+        if (!V) return nullptr;
+    }
+
+    // process remaining incoming values
+    for (int i = 1, n = PN->getNumIncomingValues(); i < n; ++i) {
+        Value* op = PN->getIncomingValue(i);
+
+        if (op == V) continue; // ok, same incoming value from this edge
+
+        if (PHINode* opPN = dyn_cast<PHINode>(op)) {
+            if (opPN->hasConstantValue() != V) return nullptr;
+            else continue;
+        }
+
+        return nullptr;
+    }
+
+    return V;
+}
+
+
+bool BuildComp::canAttemptToReconstruct(Instruction* I, BuildComp::Heuristic opt) {
+    // we can reconstruct invoke/call instructions to read-only functions only
+    if (CallInst* CI = dyn_cast<CallInst>(I)) {
+        if (CI->mayWriteToMemory()) return false;
+    }
+
+    if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
+        if (II->mayWriteToMemory()) return false;
+    }
+
+    // TODO
+    if (isa<LoadInst>(I)) return false;
+
+    // try to reconstruct PHI nodes when possible
+    if (PHINode* PN = dyn_cast<PHINode>(I)) {
+        if (!shouldPerformBaseOpts(opt) || !isPHINodeConstant(PN)) return false;
+        else return true;
+    }
+
+    return true;
+}
+
+bool BuildComp::canReconstructValue(Value* V, BuildComp::ValueMap &availMap,
+        BuildComp::ValueMap &aliasMap, BuildComp::ValueMap &deadAvailMap,
+        BuildComp::Statistics &stats, BuildComp::Heuristic opt,
+        std::vector<Instruction*> &recList,
+        std::set<Instruction*> &workSet) {
+
+    // OSRLibrary::fixUsesOfFunctionsAndGlobals() will take care of Constant
+    if (isa<Constant>(V)) return true;
+
+    // if V is available, either directly or through an alias, just use it!
+    if (availMap.count(V) > 0 || aliasMap.count(V) > 0) return true;
+
+    // process an Instruction
+    if (Instruction* I = dyn_cast<Instruction>(V)) {
+
+        // check if we have already reconstructed it
+        if (std::find(recList.begin(), recList.end(), I) != recList.end()) {
+            return true;
+        }
+
+        if (deadAvailMap.count(I) > 0) {
+            if (!shouldPreferDeadValues(opt) && canAttemptToReconstruct(I, opt)) {
+                // keep track of the number of values succesfully reconstructed
+                int safeElems = recList.size();
+
+                // let's see if we can reconstruct it first (this should reduce
+                // the register pressure increase from inserting an OSR point)
+                if (PHINode* PN = dyn_cast<PHINode>(I)) {
+                    Value* constV = isPHINodeConstant(PN);
+                    assert(constV != nullptr && "isPHINodeConstant() broken!");
+
+                    bool ret = canReconstructValue(constV, availMap, aliasMap,
+                            deadAvailMap, stats, opt, recList, workSet);
+
+                    // on success, use the reconstructed value
+                    if (ret) return true;
+
+                } else {
+                    // iterate over operands of the instruction
+                    bool ret = true;
+                    for (Use &U: I->operands()) {
+                        Value* op = U.get();
+
+                        ret &= canReconstructValue(op, availMap, aliasMap,
+                                deadAvailMap, stats, opt, recList, workSet);
+
+                        if (!ret) break;
+                    }
+
+                    if (ret) return true;
+                }
+
+                // undo changes and use the dead available value
+                recList.resize(safeElems);
+            }
+        }
+
+        // attempt to reconstruct the instruction
+        if (!canAttemptToReconstruct(I, opt)) return false;
+
+        // iterate over operands
+        bool ret = true;
+        for (Use &U: I->operands()) {
+            Value* op = U.get();
+            ret &= canReconstructValue(op, availMap, aliasMap,
+                    deadAvailMap, stats, opt, recList, workSet);
+
+            // TODO flag to stop when statistics are not needed?
+        }
+
+        return ret;
+    }
+
+    // for Argument values, either they belong to availMap or we give up!
+    assert(isa<Argument>(V) && "unexpected value type in reconstruction");
+
+    return false;
+}
+
 // reconstruct an instruction and add it to a CompCode object, assuming that
 // its dependencies have already been reconstructed
 bool BuildComp::reconstructInst(Instruction* I,

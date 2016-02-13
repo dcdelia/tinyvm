@@ -27,6 +27,8 @@ public:
     static const int numHeuristics = 7;
 
     typedef std::map<llvm::Value*, llvm::Value*> ValueMap;
+    typedef std::set<llvm::Value*> ValueSet;
+    typedef std::set<llvm::Instruction*> InstrSet;
 
     enum Heuristic {
         BC_NONE = 0,
@@ -68,29 +70,41 @@ public:
 
     struct Statistics {
         // set of values that should have been preserved to enable OSR
-        std::set<llvm::Value*> keepSet;
+        ValueSet keepSet;
 
-        // set of values (i.e., instructions) that could be reconstructed
-        std::set<llvm::Instruction*> reconstructSet;
+        // set of instructions that could be reconstructed
+        InstrSet reconstructSet;
 
         // flag to indicate whether instructions should be reconstructed (true)
         // or local 1:1 mapping information is sufficient for OSR (false)
-        bool needPrologue;
+        bool needPrologue = false;
 
-        int liveValuesToReconstruct;
+        // operands used in a compensation code can be divided in: live values,
+        // live available alias, reconstructed values, dead values (include dead
+        // available aliases as well)
+        int liveValues = 0;
+        int liveAliases = 0;
+        int reconstructedValues = 0;
+        int deadValues = 0;
 
-        int aliasedLiveValues;
-
+        // to reuse the object across multiple reconstruction steps
         void reset() {
             keepSet.clear();
             reconstructSet.clear();
-            aliasedLiveValues = 0;
-            liveValuesToReconstruct = 0;
+            liveValues =  liveAliases = reconstructedValues = deadValues = 0;
             needPrologue = false;
         }
-
     };
 
+    static bool buildComp(StateMap* M,
+                        llvm::Instruction* OSRSrc,
+                        llvm::Instruction* LPad,
+                        Heuristic opts,
+                        Statistics &stats,
+                        AnalysisData* src_BCAD,
+                        BuildComp::AnalysisData* dest_BCAD,
+                        bool updateMapping = false,
+                        bool verbose = false);
 
     static bool buildComp(StateMap *M,
                         llvm::Instruction* OSRSrc,
@@ -136,22 +150,29 @@ private:
                     AnalysisData::SafeLoadSet &safeLoads,
                     bool useOnlySafeLoads);
 
+    static void computeAvailableValues(StateMap* M,
+                    llvm::Function* src,
+                    LivenessAnalysis::LiveValues &liveAtOSRSrc,
+                    Heuristic opts,
+                    ValueMap &availMap);
+
     static void computeAvailableAliases(StateMap* M,
                     llvm::Instruction* OSRSrc,
                     AnalysisData* BCAD,
                     CodeMapper::OneToManyAliasMap &aliasInfoMap,
                     LivenessAnalysis::LiveValues& liveAtOSRSrc,
-                    std::map<llvm::Value*, llvm::Value*> &availableValues,
-                    std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
-                    Heuristic opt);
+                    ValueMap &availMap,
+                    ValueMap &liveAliasMap,
+                    ValueMap &deadAvailMap,
+                    Heuristic opts);
 
     static void computeDeadAvailableValues(StateMap* M,
                     llvm::Instruction* OSRSrc,
                     llvm::Function* src,
                     AnalysisData* BCAD,
-                    std::map<llvm::Value*, llvm::Value*> availableValues,
-                    std::map<llvm::Value*, llvm::Value*> &extraAvailableValues,
-                    Heuristic opt);
+                    ValueMap &availMap,
+                    ValueMap &deadAvailMap,
+                    Heuristic opts);
 
     static StateMap::ValueInfo* buildCompCode(llvm::Instruction* instToReconstruct,
                     std::map<llvm::Value*, llvm::Value*> &availableValues,
@@ -160,23 +181,31 @@ private:
                     std::set<llvm::Instruction*> &recSet,
                     Heuristic opt);
 
-    static bool canReconstructValue(llvm::Value* V,
+    static StateMap::CompCode* buildCompCode(llvm::Instruction* instToReconstruct,
+                    std::vector<llvm::Instruction*> &recList,
                     ValueMap &availMap,
-                    ValueMap &aliasMap,
+                    ValueMap &liveAliasMap,
                     ValueMap &deadAvailMap,
                     Statistics &stats,
+                    Heuristic opts);
+
+    static bool reconstructValue(llvm::Value* V,
+                    ValueMap &availMap,
+                    ValueMap &liveAliasMap,
+                    ValueMap &deadAvailMap,
                     Heuristic opt,
                     std::vector<llvm::Instruction*> &recList,
-                    std::set<llvm::Instruction*> &workSet);
+                    std::set<llvm::Instruction*> &workSet,
+                    std::set<llvm::Value*> *keepSet);
 
     static bool canAttemptToReconstruct(llvm::Instruction* I, Heuristic opt);
 
-    static bool shouldPerformBaseOpts(Heuristic opt);
-    static bool shouldUseAliases(Heuristic opt);
-    static bool shouldUseDeadValues(Heuristic opt);
-    static bool shouldUseDeadValuesUnsafely(Heuristic opt);
+    static bool canDoBasicOpts(Heuristic opt);
+    static bool canUseAliases(Heuristic opt);
+    static bool canUseDeadValues(Heuristic opt);
+    static bool canUseAllDeadValues(Heuristic opt);
 
-    static bool shouldPreferDeadValues(Heuristic opt) { return true; }
+    static bool shouldPreferDeadValues(Heuristic opt) { return false; }
 
     static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);
 };

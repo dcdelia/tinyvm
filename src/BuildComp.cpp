@@ -270,627 +270,10 @@ bool BuildComp::canUseAllDeadValues(Heuristic opt) {
     }
 }
 
-void BuildComp::identifyMissingValues(Instruction* I, std::map<Value*, Value*>
-        &availableValues, std::map<Value*, Value*> &extraAvailableValues,
-        std::set<Value*> &missingValues, BuildComp::Heuristic opt) {
-    for (User::op_iterator it = I->op_begin(), end = I->op_end(); it != end;
-            ++it) {
-        Value* op = *it;
-
-        // OSRLibrary takes care of Constant with fixUsesOfFunctionsAndGlobals()
-        if (isa<Constant>(op)) continue;
-
-        if (availableValues.count(op) == 0 && missingValues.count(op) == 0 &&
-                extraAvailableValues.count(op) == 0) {
-            missingValues.insert(op);
-            if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                // we don't fetch incoming values for non-constant PHI nodes
-                if (PHINode* phi = dyn_cast<PHINode>(opI)) {
-                    if (!canDoBasicOpts(opt) ||
-                        !phi->hasConstantValue()) {
-                        continue;
-                    }
-                }
-
-                identifyMissingValues(opI, availableValues,
-                        extraAvailableValues, missingValues, opt);
-
-            }
-        }
-    }
-}
-
-// we try to reconstruct constant PHI nodes (e.g., LCSSA form)
-static Value* isPHINodeConstant(PHINode* PN, std::set<PHINode*> *aliasSet = nullptr) {
-
-    // base step: detect trivially constant PHI nodes
-    Value* V = PN->hasConstantValue();
-    if (V) return V;
-
-    // recursive step: initialize V using the first incoming value
-    V = PN->getIncomingValue(0);
-    if (PHINode* opPN = dyn_cast<PHINode>(V)) {
-        // recursively solve the node and assign it to V
-        if ((V = isPHINodeConstant(opPN, aliasSet)) == nullptr) {
-            if (aliasSet) aliasSet->clear();
-            return nullptr;
-        }
-
-        if (aliasSet) aliasSet->insert(opPN);
-    }
-
-    // recursive step: process remaining incoming values
-    for (int i = 1, n = PN->getNumIncomingValues(); i < n; ++i) {
-        Value* op = PN->getIncomingValue(i);
-
-        if (op == V) continue; // ok, same incoming value from this edge
-
-        if (PHINode* opPN = dyn_cast<PHINode>(op)) {
-            if (isPHINodeConstant(opPN, aliasSet) != V) {
-                if (aliasSet) aliasSet->clear();
-                return nullptr;
-            } else {
-                if (aliasSet) aliasSet->insert(opPN);
-                continue;
-            }
-        }
-
-        // the PHI node is not constant!
-        if (aliasSet) aliasSet->clear();
-        return nullptr;
-    }
-
-    return V;
-}
-
-
-bool BuildComp::canAttemptToReconstruct(Instruction* I, BuildComp::Heuristic opt) {
-    // we can reconstruct invoke/call instructions to read-only functions only
-    if (CallInst* CI = dyn_cast<CallInst>(I)) {
-        if (CI->mayWriteToMemory()) return false;
-    }
-
-    if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
-        if (II->mayWriteToMemory()) return false;
-    }
-
-    // TODO
-    if (isa<LoadInst>(I)) return false;
-
-    // try to reconstruct PHI nodes when possible
-    if (PHINode* PN = dyn_cast<PHINode>(I)) {
-        if (!canDoBasicOpts(opt) || !isPHINodeConstant(PN, nullptr)) return false;
-        else return true;
-    }
-
+bool BuildComp::shouldPreferDeadValues(Heuristic opt) {
     return true;
 }
 
-Value* isAliasAvailableForConstantPHI(Value* constV, std::set<PHINode*> *aliasSet,
-        BuildComp::ValueMap &availMap, BuildComp::ValueMap &liveAliasMap,
-        BuildComp::ValueMap &deadAvailMap, bool canUseDeadAvailable) {
-
-    BuildComp::ValueMap::iterator availEnd = availMap.end();
-    BuildComp::ValueMap::iterator liveAliasEnd = liveAliasMap.end();
-    BuildComp::ValueMap::iterator deadAvailEnd = deadAvailMap.end();
-
-    BuildComp::ValueMap::iterator VMIt;
-
-    // process constV first
-    if ( (VMIt = availMap.find(constV)) != availEnd) return VMIt->second;
-    if ( (VMIt = liveAliasMap.find(constV)) != liveAliasEnd) return VMIt->second;
-
-    for (PHINode* PN: *aliasSet) {
-        if ( (VMIt = availMap.find(PN)) != availEnd) return VMIt->second;
-        if ( (VMIt = liveAliasMap.find(PN)) != liveAliasEnd) return VMIt->second;
-    }
-
-    if (!canUseDeadAvailable) goto EXIT;
-
-    if ( (VMIt = deadAvailMap.find(constV)) != deadAvailEnd) return VMIt->second;
-    for (PHINode* PN: *aliasSet) {
-        if ( (VMIt = deadAvailMap.find(PN)) != deadAvailEnd) return VMIt->second;
-    }
-
-    EXIT: return nullptr;
-
-    /*
-
-    bool found;
-    BuildComp::ValueMap::iterator VMIt;
-
-    // check constV first
-    found = true;
-    if ( (VMIt = availMap.find(constV)) == availEnd) {
-        if ( (VMIt = liveAliasMap.find(constV)) == liveAliasEnd) {
-            if (canUseDeadAvailable) {
-                VMIt = deadAvailMap.find(constV);
-                found = (VMIt != deadAvailEnd);
-            } else {
-                found = false;
-            }
-        }
-    }
-
-    // then check aliases
-    for (PHINode* PN: *aliasSet) {
-        found = true;
-
-        if ( (VMIt = availMap.find(PN)) == availEnd) {
-           if ( (VMIt = liveAliasMap.find(PN)) == liveAliasEnd) {
-                if (canUseDeadAvailable) {
-                    VMIt = deadAvailMap.find(PN);
-                    found = (VMIt != deadAvailEnd);
-                } else {
-                    found = false;
-                }
-            }
-        }
-
-        if (found) return VMIt->second;
-    }
-
-    return nullptr;
-    */
-}
-
-bool BuildComp::reconstructValue(Value* V, BuildComp::ValueMap &availMap,
-        BuildComp::ValueMap &liveAliasMap, BuildComp::ValueMap &deadAvailMap,
-        BuildComp::Heuristic opts,
-        std::vector<Instruction*> &recList,
-        std::set<Instruction*> &workSet,
-        std::set<Value*> *keepSet) {
-
-    // OSRLibrary::fixUsesOfFunctionsAndGlobals() will take care of Constant
-    if (isa<Constant>(V)) return true;
-
-    // if V is available, either directly or through an alias, just use it!
-    if (availMap.count(V) > 0 || liveAliasMap.count(V) > 0) return true;
-
-    // process an Instruction
-    if (Instruction* I = dyn_cast<Instruction>(V)) {
-        // check if we have already reconstructed it
-        if (std::find(recList.begin(), recList.end(), I) != recList.end()) {
-            return true;
-        }
-
-        // the instruction is dead-available
-        if (deadAvailMap.count(I) > 0) {
-            if (!shouldPreferDeadValues(opts) && canAttemptToReconstruct(I, opts)) {
-                // keep track of the number of values reconstructed so far
-                int safeElems = recList.size();
-
-                // let's see if we can reconstruct it (this should reduce the
-                // register pressure increase caused by an OSR point insertion)
-                if (PHINode* PN = dyn_cast<PHINode>(I)) {
-                    // as we passed the canAttempToReconstruct() test, we can
-                    // have only constant PHI nodes here!
-                    std::set<PHINode*> aliasSetForConstPHI;
-                    Value* constVal = isPHINodeConstant(PN, &aliasSetForConstPHI);
-                    assert(constVal && "unexpected non-constant PHI node");
-
-                    // check if  we have a live available alias for it
-                    if (isAliasAvailableForConstantPHI(constVal, &aliasSetForConstPHI,
-                            availMap, liveAliasMap, deadAvailMap, false)) {
-                        return true;
-                    }
-
-                    // passing nullptr as keepSet speeds up the process
-                    bool ret = reconstructValue(constVal, availMap, liveAliasMap,
-                            deadAvailMap, opts, recList, workSet, nullptr);
-
-                    // on success, use the reconstructed value
-                    if (ret) {
-                        // we do not add a PHI node to recList, as we will use
-                        // directly its constant value in the compensation code
-                        return true;
-                    }
-                } else {
-                    // iterate over operands of the instruction
-                    bool ret = true;
-                    for (Use &U: I->operands()) {
-                        Value* op = U.get();
-
-                        // passing nullptr as keepSet speeds up the process
-                        ret &= reconstructValue(op, availMap, liveAliasMap,
-                                deadAvailMap, opts, recList, workSet, nullptr);
-
-                        if (!ret) break;
-                    }
-
-                    if (ret) {
-                        recList.push_back(I);
-                        return true;
-                    }
-                }
-
-                // undo changes and use the dead available value
-                recList.resize(safeElems);
-                return true;
-            } else {
-                // we are allowed to use the dead available value right away
-                return true;
-            }
-        }
-
-        // attempt to reconstruct the instruction
-        if (!canAttemptToReconstruct(I, opts)) {
-            if (keepSet) keepSet->insert(I);
-
-            return false;
-        }
-
-        // PHI nodes need special handling
-        if (PHINode* PN = dyn_cast<PHINode>(I)) {
-            // as we passed the canAttempToReconstruct() test, we can only have
-            // constant PHI nodes here!
-            std::set<PHINode*> aliasSetForConstPHI;
-            Value* constVal = isPHINodeConstant(PN, &aliasSetForConstPHI);
-            assert(constVal && "unexpected non-constant PHI node");
-
-            // check whether we have an available alias (live or dead) for it
-            if (isAliasAvailableForConstantPHI(constVal, &aliasSetForConstPHI,
-                    availMap, liveAliasMap, deadAvailMap, true)) {
-                return true;
-            }
-
-            // attemp to reconstruct the value
-            bool ret = reconstructValue(constVal, availMap, liveAliasMap,
-                    deadAvailMap, opts, recList, workSet, keepSet);
-
-            if (ret) {
-                // on success, we do not add the PHI node to recList
-                return true;
-            } else {
-                // returning constVal provides more informationn to a front-end
-                if (keepSet) keepSet->insert(constVal);
-                return false;
-            }
-        }
-
-        // at this stage, we are dealing with a non-PHI instruction that can be
-        // possibly reconstructed, as long as its operand can be
-        bool success = true;
-        for (Use &U: I->operands()) {
-            Value* op = U.get();
-            bool ret = reconstructValue(op, availMap, liveAliasMap, deadAvailMap,
-                    opts, recList, workSet, keepSet);
-
-            if (!ret) {
-                if (keepSet) {
-                    keepSet->insert(op);
-                } else {
-                    // when keepSet should not be computed, give up asap!
-                    return false;
-                }
-            }
-
-            success &= ret;
-        }
-
-        // adding an instruction to recList means we can reconstruct it (and the
-        // recursive step has alread added all of its dependencies)
-        if (success) recList.push_back(I);
-
-        return success;
-    }
-
-    // Argument values should be part of availMap, thus we give up! Note that
-    // unless we V is an Argument, this code portion is unreachable
-    assert(isa<Argument>(V) && "unexpected value type in reconstruction");
-
-    if (keepSet) keepSet->insert(V);
-
-    return false;
-}
-
-#if 0
-// reconstruct an instruction and add it to a CompCode object, assuming that
-// its dependencies have already been reconstructed
-bool BuildComp::reconstructInst(Instruction* I,
-        std::map<Value*, Value*> &availableValues,
-        std::map<Value*, Value*> &extraAvailableValues,
-        std::map<Instruction*, Value*> &reconstructedMap,
-        std::set<Instruction*> &recSet,
-        StateMap::CodeSequence* compCodeSequence,
-        std::set<Value*> &argsForCompCode,
-        BuildComp::Heuristic opt) {
-
-    // TODO heuristics; other instruction types?
-
-    // attempt to reconstruct constant PHI nodes
-    if (PHINode* phi = dyn_cast<PHINode>(I)) {
-        Value* constV = phi->hasConstantValue();
-
-        if (!constV || !canDoBasicOpts(opt)) return false;
-
-        // check if the constant value has already been reconstructed
-        if (Instruction* constI = dyn_cast<Instruction>(constV)) {
-            if (reconstructedMap.count(constI) != 0) {
-                reconstructedMap[I] = reconstructedMap[constI];
-                return true;
-            }
-        }
-
-        Value* valToUse = nullptr;
-
-        // check if the constant value is already available
-        if (availableValues.count(constV) != 0) {
-            valToUse = availableValues[constV];
-        } else if (extraAvailableValues.count(constV) != 0) {
-            valToUse = extraAvailableValues[constV];
-        }
-
-        if (valToUse) {
-            // unless it is a Constant, we should add it to CompCode's arguments
-            if (!isa<Constant>(valToUse)) {
-                argsForCompCode.insert(valToUse);
-            }
-            reconstructedMap[I] = valToUse;
-
-            return true;
-        }
-
-        // TODO try to reconstruct it anyway?
-
-        return false;
-    }
-
-    // TODO we can do better than this?
-    if (isa<LoadInst>(I)) {
-        return false;
-    }
-
-    // we can reconstruct a call/invoke instruction only for read-only functions
-    if (CallInst* CI = dyn_cast<CallInst>(I)) {
-        if (CI->mayWriteToMemory()) return false;
-    }
-    if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
-        if (II->mayWriteToMemory()) return false;
-    }
-
-    // keep track of the instructions that are being reconstructed
-    recSet.insert(I);
-
-    // create a copy of the original instruction
-    Instruction* RI = I->clone();
-
-    // we are going to need a number of iterators
-    std::map<Value*, Value*>::iterator availIt, deadAvailIt;
-    std::map<Value*, Value*>::iterator availEnd = availableValues.end();
-    std::map<Value*, Value*>::iterator extraAvailEnd = extraAvailableValues.end();
-    std::map<Instruction*, Value*>::iterator recEnd = reconstructedMap.end();
-
-    // iterate over the operands in the copy and fix them to point to available
-    // values or previously reconstructed instructions
-    for (Use &U: RI->operands()) {
-        Value* op = U.get();
-
-        if (isa<Constant>(op)) continue;
-
-        availIt = availableValues.find(op);
-        if (availIt != availEnd) {
-            Value* v = availIt->second;
-            U.set(v);
-            argsForCompCode.insert(v);
-            continue;
-        }
-
-        deadAvailIt = extraAvailableValues.find(op);
-        if (deadAvailIt != extraAvailEnd) {
-            Value* v = deadAvailIt->second;
-            U.set(v);
-            argsForCompCode.insert(v);
-            continue;
-        } else {
-            assert(!isa<Argument>(op) && "cannot extend liveness of dead arg?");
-        }
-
-        if (isa<Argument>(op)) {
-            // TODO check option to extend liveness range for a dead argument
-            return false;
-        }
-
-        if (Instruction* opI = dyn_cast<Instruction>(op)) {
-            std::map<Instruction*, Value*>::iterator recIt =
-                    reconstructedMap.find(opI);
-
-            assert(recIt != recEnd && "unidentified or not in topological order?");
-            U.set(recIt->second);
-            continue;
-        }
-
-        assert(false && "Metadata operands are unsupported"); // reachable?
-        return false;
-    }
-
-    if (I->hasName()) {
-        RI->setName((I->getName()));
-    } else {
-        RI->setName("CCtmp");
-    }
-
-    reconstructedMap[I] = RI;
-    compCodeSequence->push_back(RI);
-
-    return true;
-}
-
-// recursively attempt to reconstruct a value computed by an instruction
-StateMap::ValueInfo* BuildComp::buildCompCode(Instruction* instToReconstruct,
-        std::map<Value*, Value*> &availableValues,
-        std::map<Value*, Value*> &extraAvailableValues,
-        std::set<Value*> &valuesToKeep,
-        std::set<Instruction*> &recSet,
-        BuildComp::Heuristic opt) {
-
-    // sanity checks
-    assert(extraAvailableValues.count(instToReconstruct) == 0
-            && "attempting to reconstruct a dead available value?");
-    assert(!isa<PHINode>(instToReconstruct) && "PHI node not treated earlier?");
-
-    // TODO: other instructions as well?
-    if (isa<PHINode>(instToReconstruct) || isa<LoadInst>(instToReconstruct)) {
-        // TODO check optimization for LOAD from read-only memory
-        valuesToKeep.insert(instToReconstruct);
-        return nullptr;
-    }
-
-    // identify values that require recursive reconstruction and build workset
-    std::set<Value*> missingValues;
-    identifyMissingValues(instToReconstruct, availableValues,
-            extraAvailableValues, missingValues, opt);
-
-    std::set<Instruction*> instWorkSet;
-    for (Value* v: missingValues) {
-        // dead arguments should have already been made available at this stage!
-        if (isa<Argument>(v)) return nullptr; // TODO insert assertion here
-
-        instWorkSet.insert(cast<Instruction>(v));
-    }
-
-    // compute a topological order on the workset based on use-def information
-    std::vector<Instruction*> sortedInstructions;
-    while (!instWorkSet.empty()) {
-        // iterate over instruction worklist
-        for (std::set<Instruction*>::iterator it = instWorkSet.begin(),
-                end = instWorkSet.end(); it != end; ) {
-            Instruction* I = *it;
-            bool canInsert = true;
-
-            // iterate over operands
-            for (Use &U: I->operands()) {
-                Value* op = U.get();
-                if (Instruction* opI = dyn_cast<Instruction>(op)) {
-                    // a use of a PHI node by the node itself is legal in LLVM
-                    if (opI == I && cast<PHINode>(I)) continue;
-
-                    // we cannot insert an instruction until all the missing
-                    // instructions it uses as operands have been inserted
-                    if (instWorkSet.count(opI) != 0) {
-                        canInsert = false;
-                        break;
-                    }
-                }
-            }
-
-            // check if we can perform the insertion
-            if (canInsert) {
-                sortedInstructions.push_back(I);
-                instWorkSet.erase(it++);
-            } else {
-                ++it;
-            }
-        }
-    }
-
-    // now we can insert the instruction to reconstruct at the end of the list:
-    // since we are not reconstructing PHI nodes, instToReconstruct can not
-    // appear in missingValues (special case of a PHI node using itself)
-    assert(missingValues.count(instToReconstruct) == 0
-            && "instruction to reconstruct appear as operand for itself?!?");
-    sortedInstructions.push_back(instToReconstruct);
-
-    // initialize a CompCode object
-    StateMap::CompCode* compCode = new StateMap::CompCode();
-    compCode->args = nullptr;
-    compCode->code = new SmallVector<Value*, 8>;
-
-    // for each entry the key is the instruction to reconstruct, and the value
-    // is the value to use for the reconstruction (e.g., an available value, or
-    // an instruction that has been recursively reconstructed before this one)
-    std::map<Instruction*, Value*> reconstructedMap;
-
-    // live values that are used as operands along the compensation instructions
-    std::set<Value*> argsForCompCode;
-
-    // attempt to reconstruct instructions (give up when encountering an error)
-    bool success = true;
-    for (Instruction* currInstToReconstruct: sortedInstructions) {
-        success &= reconstructInst(currInstToReconstruct, availableValues,
-                extraAvailableValues, reconstructedMap, recSet, compCode->code,
-                argsForCompCode, opt);
-
-        if (!success) break;
-    }
-
-    if (success) {
-        // the last instruction is the value we have been asked to reconstruct
-        compCode->value = compCode->code->back();
-
-        // args should be initialized even when no arguments are taken!
-        compCode->args = new SmallVector<Value*, 4>;
-        for (Value* arg: argsForCompCode) {
-            compCode->args->push_back(arg);
-        }
-
-        return new StateMap::ValueInfo(compCode);
-    } else {
-        // release memory on failure
-        for (StateMap::CodeSequence::iterator it = compCode->code->begin(),
-                end = compCode->code->end(); it != end; ++it) {
-            delete cast<Instruction>(*it);
-        }
-        delete compCode->code;
-        delete compCode;
-
-        return nullptr;
-    }
-}
-#endif
-
-bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
-        Instruction* LPad, std::set<Value*> &missingSet, bool verbose) {
-    std::pair<Function*, Function*> funPair = M->getFunctions();
-    std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
-
-    LivenessAnalysis::LiveValues liveAtOSRSrc, liveAtLPad;
-    LivenessAnalysis *LA_src, *LA_dest;
-
-    BasicBlock* OSRSrcBlock = OSRSrc->getParent();
-    BasicBlock* LPadBlock = LPad->getParent();
-    Function* src = OSRSrcBlock->getParent();
-    Function* dest = LPadBlock->getParent();
-
-    if (src == funPair.first) {
-        assert (dest == funPair.second && "wrong LocPair or StateMap");
-        LA_src = &LAPair.first;
-        LA_dest = &LAPair.second;
-    } else {
-        assert (src == funPair.second && dest == funPair.first
-                && "wrong LocPair or StateMap");
-        LA_src = &LAPair.second;
-        LA_dest = &LAPair.first;
-    }
-
-    liveAtOSRSrc = LivenessAnalysis::analyzeLiveInForSeq(OSRSrcBlock,
-                LA_src->getLiveOutValues(OSRSrcBlock), OSRSrc, nullptr);
-    liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
-                LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
-
-    // check if for each value to set there is a 1:1 mapping with a live value
-    for (const Value* v: liveAtLPad) {
-        Value* valToSet = const_cast<Value*>(v);
-        Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
-        if (oneToOneVal == nullptr || liveAtOSRSrc.count(oneToOneVal) == 0) {
-            missingSet.insert(valToSet);
-        }
-    }
-
-    bool ret = !missingSet.empty();
-
-    if (verbose && ret) {
-        std::cerr << "No live value available to set the following values:"
-                  << std::endl;
-        for (Value* v: missingSet) {
-            v->dump();
-        }
-    }
-
-    return ret;
-}
-
-#if BUILD_ALIAS_INFO_MAP
 static CodeMapper::OneToManyAliasMap genAliasInfoMap(
         CodeMapper::StateMapUpdateInfo* src_updateInfo,
         CodeMapper::StateMapUpdateInfo* dest_updateInfo) {
@@ -937,20 +320,15 @@ static CodeMapper::OneToManyAliasMap genAliasInfoMap(
         }
     }
 
-
     return map;
-
 }
-#endif
 
 void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
         BuildComp::AnalysisData* BCAD,
         CodeMapper::OneToManyAliasMap &aliasInfoMap,
         LivenessAnalysis::LiveValues& liveAtOSRSrc,
-        BuildComp::ValueMap &availMap,
-        BuildComp::ValueMap &liveAliasMap,
-        BuildComp::ValueMap &deadAvailMap,
-        BuildComp::Heuristic opts) {
+        BuildComp::ValueMap &availMap, BuildComp::ValueMap &liveAliasMap,
+        BuildComp::ValueMap &deadAvailMap, BuildComp::Heuristic opts) {
     assert(BCAD != nullptr && "no BuildComp::AnalysisData provided!");
 
     DominatorTree &DT = BCAD->DT;
@@ -1124,6 +502,302 @@ void BuildComp::computeAvailableValues(StateMap* M, Function* src,
     }
 }
 
+// helper method for isPHINodeConstant()
+static Value* isPHINodeConstantAux(PHINode* PN, std::set<PHINode*> &workSet,
+        std::set<PHINode*> *aliasSet) {
+
+    // base step
+    Value* constV = PN->hasConstantValue();
+    if (constV) return constV;
+
+    // to avoid infinite loops
+    std::pair<std::set<PHINode*>::iterator, bool> ret = workSet.insert(PN);
+    if (!ret.second) return nullptr;
+
+    // recursive step
+    for (int i = 0, n = PN->getNumIncomingValues(); i < n; ++i) {
+        // get incoming value
+        Value* op = PN->getIncomingValue(i);
+
+        // it can be either a PHI node or a regular value
+        if (PHINode* opPN = dyn_cast<PHINode>(op)) {
+            Value* tmp = isPHINodeConstantAux(opPN, workSet, aliasSet);
+
+            // just to simplify code structure
+            if (!constV) constV = tmp;
+
+            // fail if non-constant or different than constV
+            if (!tmp || (constV && constV != tmp)) {
+                if (aliasSet) aliasSet->clear();
+                return nullptr;
+            }
+
+            if (aliasSet) aliasSet->insert(opPN);
+        } else {
+            if (constV) {
+                if (op != constV) {
+                    if (aliasSet) aliasSet->clear();
+                    return nullptr;
+                }
+            } else {
+                constV = op;
+            }
+        }
+    }
+
+    workSet.erase(ret.first);
+    assert(constV && "isPHINodeConstantAux() is buggy?");
+
+    return constV;
+}
+
+// we try to reconstruct constant PHI nodes (e.g., LCSSA form)
+static Value* isPHINodeConstant(PHINode* PN, std::set<PHINode*> *aliasSet = nullptr) {
+
+    #if 1
+    std::set<PHINode*> workSet;
+
+    Value* constV = isPHINodeConstantAux(PN, workSet, aliasSet);
+    assert( (!constV || workSet.empty()) && "non-empty workSet on success");
+    return constV;
+    #else
+    return PN->hasConstantValue();
+    #endif
+
+    #if 0
+    // base step: detect trivially constant PHI nodes
+    Value* V = PN->hasConstantValue();
+    if (V) return V;
+
+    // recursive step: initialize V using the first incoming value
+    V = PN->getIncomingValue(0);
+    if (PHINode* opPN = dyn_cast<PHINode>(V)) {
+        // recursively solve the node and assign it to V
+        if ((V = isPHINodeConstant(opPN, aliasSet)) == nullptr) {
+            if (aliasSet) aliasSet->clear();
+            return nullptr;
+        }
+
+        if (aliasSet) aliasSet->insert(opPN);
+    }
+
+    // recursive step: process remaining incoming values
+    for (int i = 1, n = PN->getNumIncomingValues(); i < n; ++i) {
+        Value* op = PN->getIncomingValue(i);
+
+        if (op == V) continue; // ok, same incoming value from this edge
+
+        if (PHINode* opPN = dyn_cast<PHINode>(op)) {
+            if (isPHINodeConstant(opPN, aliasSet) != V) {
+                if (aliasSet) aliasSet->clear();
+                return nullptr;
+            } else {
+                if (aliasSet) aliasSet->insert(opPN);
+                continue;
+            }
+        }
+
+        // the PHI node is not constant!
+        if (aliasSet) aliasSet->clear();
+        return nullptr;
+    }
+
+    return V;
+    #endif
+}
+
+bool BuildComp::canAttemptToReconstruct(Instruction* I, BuildComp::Heuristic opt) {
+    // reconstruct invoke/call instructions only when to read-only functions
+    if (CallInst* CI = dyn_cast<CallInst>(I)) {
+        if (CI->mayWriteToMemory()) return false;
+    }
+    if (InvokeInst* II = dyn_cast<InvokeInst>(I)) {
+        if (II->mayWriteToMemory()) return false;
+    }
+
+    // TODO probably we can do better than this!
+    if (isa<LoadInst>(I)) return false;
+
+    // try to reconstruct PHI nodes when possible
+    if (PHINode* PN = dyn_cast<PHINode>(I)) {
+        return canDoBasicOpts(opt) && isPHINodeConstant(PN, nullptr);
+    }
+
+    return true;
+}
+
+Value* isAliasAvailableForConstantPHI(Value* constV, std::set<PHINode*> *aliasSet,
+        BuildComp::ValueMap &availMap, BuildComp::ValueMap &liveAliasMap,
+        BuildComp::ValueMap &deadAvailMap, bool canUseDeadAvailable) {
+
+    BuildComp::ValueMap::iterator availEnd = availMap.end();
+    BuildComp::ValueMap::iterator liveAliasEnd = liveAliasMap.end();
+    BuildComp::ValueMap::iterator deadAvailEnd = deadAvailMap.end();
+
+    BuildComp::ValueMap::iterator VMIt;
+
+    // process constV first
+    if ( (VMIt = availMap.find(constV)) != availEnd) return VMIt->second;
+    if ( (VMIt = liveAliasMap.find(constV)) != liveAliasEnd) return VMIt->second;
+
+    for (PHINode* PN: *aliasSet) {
+        if ( (VMIt = availMap.find(PN)) != availEnd) return VMIt->second;
+        if ( (VMIt = liveAliasMap.find(PN)) != liveAliasEnd) return VMIt->second;
+    }
+
+    if (canUseDeadAvailable) {
+        if ( (VMIt = deadAvailMap.find(constV)) != deadAvailEnd)
+            return VMIt->second;
+        for (PHINode* PN: *aliasSet) {
+            if ( (VMIt = deadAvailMap.find(PN)) != deadAvailEnd)
+                return VMIt->second;
+        }
+    }
+
+    return nullptr;
+}
+
+bool BuildComp::reconstructValue(Value* V, BuildComp::ValueMap &availMap,
+        BuildComp::ValueMap &liveAliasMap, BuildComp::ValueMap &deadAvailMap,
+        BuildComp::Heuristic opts, std::vector<Instruction*> &recList,
+        std::set<Value*> *keepSet) {
+
+    // OSRLibrary::fixUsesOfFunctionsAndGlobals() will take care of Constant
+    if (isa<Constant>(V)) return true;
+
+    // if V is available, either directly or through an alias, just use it!
+    if (availMap.count(V) > 0 || liveAliasMap.count(V) > 0) return true;
+
+    // process an Instruction
+    if (Instruction* I = dyn_cast<Instruction>(V)) {
+        // check if we have already reconstructed it
+        if (std::find(recList.begin(), recList.end(), I) != recList.end()) {
+            return true;
+        }
+
+        // the instruction is dead-available
+        if (deadAvailMap.count(I) > 0) {
+            // check if we can reconstruct it first (avoid register pressure
+            // increase from extending the liveness range of a value)
+            if (!shouldPreferDeadValues(opts) && canAttemptToReconstruct(I, opts)) {
+                // keep track of the number of values reconstructed so far
+                int safeElems = recList.size();
+
+                // constant PHI nodes need special handling
+                if (PHINode* PN = dyn_cast<PHINode>(I)) {
+                    std::set<PHINode*> aliasSetForConstPHI;
+                    Value* constVal = isPHINodeConstant(PN, &aliasSetForConstPHI);
+                    assert(constVal && "unexpected non-constant PHI node");
+
+                    // check if  we have a live available alias for it
+                    if (isAliasAvailableForConstantPHI(constVal, &aliasSetForConstPHI,
+                            availMap, liveAliasMap, deadAvailMap, false)) {
+                        return true;
+                    }
+
+                    // not updating keepSet speeds up the process
+                    bool ret = reconstructValue(constVal, availMap, liveAliasMap,
+                            deadAvailMap, opts, recList, nullptr);
+
+                    // on success, use the reconstructed value
+                    if (ret) {
+                        // we do not add a PHI node to recList, as we will use
+                        // the corresponding constant value in the CompCode
+                        return true;
+                    }
+                } else {
+                    // iterate over operands of the non-PHI instruction
+                    bool ret = true;
+                    for (Use &U: I->operands()) {
+                        Value* op = U.get();
+
+                        // not updating keepSet speeds up the process
+                        ret &= reconstructValue(op, availMap, liveAliasMap,
+                                deadAvailMap, opts, recList, nullptr);
+
+                        if (!ret) break;
+                    }
+
+                    if (ret) {
+                        recList.push_back(I);
+                        return true;
+                    }
+                }
+
+                // undo changes and use the dead available value
+                recList.resize(safeElems);
+                return true;
+            } else {
+                // use the dead available value right away!
+                return true;
+            }
+        }
+
+        // attempt to reconstruct the instruction
+        if (!canAttemptToReconstruct(I, opts)) {
+            if (keepSet) keepSet->insert(I);
+            return false;
+        }
+
+        // constant PHI nodes need special handling
+        if (PHINode* PN = dyn_cast<PHINode>(I)) {
+            // the node is constant since we passed canAttempToReconstruct()
+            std::set<PHINode*> aliasSetForConstPHI;
+            Value* constVal = isPHINodeConstant(PN, &aliasSetForConstPHI);
+            assert(constVal && "unexpected non-constant PHI node");
+
+            // check whether we have an available alias (live or dead) for it
+            if (isAliasAvailableForConstantPHI(constVal, &aliasSetForConstPHI,
+                    availMap, liveAliasMap, deadAvailMap, true)) {
+                return true;
+            }
+
+            // attemp to reconstruct the value
+            bool ret = reconstructValue(constVal, availMap, liveAliasMap,
+                    deadAvailMap, opts, recList, keepSet);
+
+            if (ret) {
+                // on success, we do not add the PHI node to recList
+                return true;
+            } else {
+                // returning constVal provides more informationn to a front-end
+                if (keepSet) keepSet->insert(constVal);
+                return false;
+            }
+        }
+
+        // at this stage, we are dealing with a non-PHI instruction that can be
+        // reconstructed, as long as its operand can be too
+        bool success = true;
+        for (Use &U: I->operands()) {
+            Value* op = U.get();
+
+            if (!reconstructValue(op, availMap, liveAliasMap, deadAvailMap,
+                    opts, recList, keepSet)) {
+                // when keepSet should not be computed, give up asap!
+                if (!keepSet) return false;
+
+                keepSet->insert(op);
+                success = false;
+            }
+        }
+
+        // adding an instruction to recList means we can reconstruct it (and the
+        // recursive step has alread added all of its dependencies)
+        if (success) recList.push_back(I);
+
+        return success;
+    }
+
+    // Argument values should be part of availMap, thus we give up! Note that
+    // unless we V is an Argument, this code portion is unreachable
+    assert(isa<Argument>(V) && "unexpected value type in reconstruction");
+
+    if (keepSet) keepSet->insert(V);
+
+    return false;
+}
+
 static Value* fetchOperandFromMaps(Value* V, BuildComp::ValueMap &availMap,
         BuildComp::ValueMap &liveAliasMap, BuildComp::ValueMap &deadAvailMap,
         BuildComp::Statistics &stats) {
@@ -1197,7 +871,7 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
                 PHINode* PN = cast<PHINode>(opI);
                 std::set<PHINode*> aliasSetForConstPHI;
                 Value* constV = isPHINodeConstant(PN, &aliasSetForConstPHI);
-                assert (constV == nullptr && "expected a const PHI!");
+                assert (constV && "expected a const PHI!");
 
                 Value* valToUse = nullptr;
                 if (Instruction* constI = dyn_cast<Instruction>(constV)) {
@@ -1231,8 +905,9 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
     }
 
     Instruction* lastI = recList.back();
-    assert (lastI == instToReconstruct && "missing instructions?"); // TODO PHI node
 
+    assert ( (lastI == instToReconstruct || isa<PHINode>(instToReconstruct))
+            && "missing instructions?"); // TODO better check for PHI node
 
     // we can now encode arguments and return value for the CompCode
     for (Value* arg: argsForCompCode) {
@@ -1339,7 +1014,6 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
     bool success = true;
 
     std::vector<Instruction*> recList;
-    std::set<Instruction*> workSet;
     std::set<Value*> keepSetForValue;
 
     for (Value* valToReconstruct: workList) {
@@ -1347,10 +1021,9 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
 
         // TODO easier this way atm
         recList.clear();
-        workSet.clear();
 
         bool canReconstruct = reconstructValue(valToReconstruct, availMap,
-                liveAliasMap, deadAvailMap, opts, recList, workSet, &keepSetForValue);
+                liveAliasMap, deadAvailMap, opts, recList, &keepSetForValue);
 
         if (canReconstruct) {
             if (recList.empty()) { // local 1:1 mapping information
@@ -1391,7 +1064,7 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
         }
     }
 
-    assert( (success || stats.keepSet.empty()) && "non-empty keepSet on success?");
+    assert( (!success || stats.keepSet.empty()) && "non-empty keepSet on success?");
 
     if (!success || !updateMapping) {
         // free memory
@@ -1427,20 +1100,16 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
     keepSet = stats.keepSet;
 
     return ret;
+}
 
-#if 0
-    // flag set to true when compensation code instructions should be created
-    // (i.e., local aliasing information is not sufficient to restore the state)
-    needPrologue = false;
-
-    // fetch liveness analysis information from the StateMap
+bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
+        Instruction* LPad, std::set<Value*> &missingSet, bool verbose) {
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
     LivenessAnalysis::LiveValues liveAtOSRSrc, liveAtLPad;
     LivenessAnalysis *LA_src, *LA_dest;
 
-    // identify associated basic block & function for OSRSrc and LPad
     BasicBlock* OSRSrcBlock = OSRSrc->getParent();
     BasicBlock* LPadBlock = LPad->getParent();
     Function* src = OSRSrcBlock->getParent();
@@ -1457,198 +1126,31 @@ bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
         LA_dest = &LAPair.first;
     }
 
-    // compute LIVE_IN sets for OSRSrc and LPad
     liveAtOSRSrc = LivenessAnalysis::analyzeLiveInForSeq(OSRSrcBlock,
                 LA_src->getLiveOutValues(OSRSrcBlock), OSRSrc, nullptr);
     liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
                 LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
 
-    // retrieve CodeMapper(s) and information on updates to StateMap object(s)
-    CodeMapper* src_CM = CodeMapper::getCodeMapper(*src);
-    CodeMapper* dest_CM = CodeMapper::getCodeMapper(*dest);
-    CodeMapper::StateMapUpdateInfo *src_updateInfo = nullptr;
-    CodeMapper::StateMapUpdateInfo *dest_updateInfo = nullptr;
-    if (src_CM) {
-        src_updateInfo = src_CM->getStateMapUpdateInfo(M);
-    }
-    if (dest_CM) {
-        dest_updateInfo = dest_CM->getStateMapUpdateInfo(M);
-    }
-
-    // worklist of instructions to reconstruct
-    std::vector<Value*> workList; // instructions to reconstruct
-
-    // list of values that are obviously available
-    std::map<Value*, Value*> availableValues;
-
-    // list of values that are made available by running ad-hoc heuristics
-    std::map<Value*, Value*> extraAvailableValues;
-
-    // Build the set of available values.
-    //
-    // Note that a live value not mapped to a valToSet from liveAtLPad might
-    // come in handy later as we may need it to reconstruct an instruction.
-    StateMap::OneToOneValueMap &OOMap = M->getAllCorrespondingOneToOneValues();
-    for (StateMap::OneToOneValueMap::iterator it = OOMap.begin(),
-            end = OOMap.end(); it != end; ++it) {
-        Value* valToSet = it->first;
-        Value* valToUse = it->second;
-
-        // skip valToSet if it belongs to src: we need to reconstruct at dest!
-        if (Instruction* I = dyn_cast<Instruction>(valToSet)) {
-            if (I->getParent()->getParent() == src) continue;
-        } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
-            if (A->getParent() == src) continue;
-        } else {
-            assert(false && "Constant appears as key in the 1:1 map!");
-            continue;
-        }
-
-        // constants and live variables are obviously available
-        if (isa<Constant>(valToUse) || liveAtOSRSrc.count(valToUse) > 0) {
-            availableValues[valToSet] = valToUse;
-            continue;
-        }
-
-        // safe optimization: arguments are never modified, thus are available
-        if (canDoBasicOpts(opt) && isa<Argument>(valToUse)) {
-            availableValues[valToSet] = valToUse;
-            continue;
-        }
-    }
-
-    // find out which values need to be reconstructed
+    // check if for each value to set there is a 1:1 mapping with a live value
     for (const Value* v: liveAtLPad) {
         Value* valToSet = const_cast<Value*>(v);
-        if (availableValues.count(valToSet) == 0) {
-            workList.push_back(valToSet);
+        Value* oneToOneVal = M->getCorrespondingOneToOneValue(valToSet);
+        if (oneToOneVal == nullptr || liveAtOSRSrc.count(oneToOneVal) == 0) {
+            missingSet.insert(valToSet);
         }
     }
 
-    if (workList.empty()) return true; // no compensation code is required
+    bool ret = !missingSet.empty();
 
-    // extraAvailableValues += values for which liveness can be safely extended
-    if (canUseDeadValues(opt)) {
-        computeDeadAvailableValues(M, OSRSrc, src, src_BCAD, availableValues,
-                extraAvailableValues, opt);
+    if (verbose && ret) {
+        std::cerr << "No corresponding live value for the following values:"
+                  << std::endl;
+        for (Value* v: missingSet) {
+            v->dump();
+        }
     }
 
-    // extraAvailableValues += values that are available through an alias
-    //
-    // Note: when shouldUseDeadValues(opt) is true, it also looks for dead
-    // aliases for which liveness can be safely extended
-    if (canUseAliases(opt) && (src_updateInfo || dest_updateInfo) ) {
-        #if BUILD_ALIAS_INFO_MAP
-        CodeMapper::OneToManyAliasMap aliasInfoMap =
-                genAliasInfoMap(src_updateInfo, dest_updateInfo);
-        #else
-        CodeMapper::OneToManyAliasMap &aliasInfoMap =
-                dest_updateInfo->RAUWAliasInfo;
-        #endif
-
-        computeAvailableAliases(M, OSRSrc, src_BCAD, aliasInfoMap,
-                liveAtOSRSrc, availableValues, extraAvailableValues,
-                extraAvailableValues, opt);
-
-        /*computeAvailableAdditionalOneToOne(M, OSRSrc, BCAD, updateInfo,
-                liveAtOSRSrc, availableValues, extraAvailableValues, opt);*/
-    }
-
-    // data structure for encoding compensation code & local 1:1 information
-    StateMap::LocPairInfo::ValueInfoMap valueInfoMap;
-
-    // values that cannot be reconstructed (and thus should have been kept)
-    std::set<Value*> curValuesToKeep;
-
-    bool error = false;
-    for (Value* valToReconstruct: workList) {
-        assert(availableValues.count(valToReconstruct) == 0
-                && "missed an already-available value?");
-
-        Value* valToUse = nullptr;
-
-        if (extraAvailableValues.count(valToReconstruct) > 0) {
-            // in general this is not a globally 1:1 corresponding value
-            valToUse = extraAvailableValues[valToReconstruct];
-        } else if (PHINode* phi = dyn_cast<PHINode>(valToReconstruct)) {
-            Value* constV = nullptr;
-
-            // constant PHI nodes can be treated as a special case
-            if (canDoBasicOpts(opt)) {
-                constV = phi->hasConstantValue();
-                if (constV) {
-                    if (availableValues.count(constV) != 0) {
-                        valToUse = availableValues[constV];
-                    } else if (extraAvailableValues.count(constV) != 0) {
-                        valToUse = extraAvailableValues[constV];
-                    }
-                }
-            }
-
-            if (!valToUse) {
-                error = true; // TODO what if we can still reconstruct it?!?
-
-                // ---> I DON'T UNDERSTAND THE COMMENT BELOW ANYMORE! <---
-                //
-                // TODO: constV would yield more accurate info, but we can let
-                // the client inspect phi to see whether hasConstantValue()
-                keepSet.insert(phi);
-                continue;
-            }
-        }
-
-        // we have a local 1:1 corresponding value for this LocPair
-        if (valToUse) {
-            StateMap::ValueInfo* valInfo = new StateMap::ValueInfo(valToUse);
-            valueInfoMap[valToReconstruct] = valInfo;
-            continue;
-        }
-
-        // attempt to reconstruct the value through a compensation code
-        if (Instruction* I = dyn_cast<Instruction>(valToReconstruct)) {
-            StateMap::ValueInfo* valInfo = buildCompCode(I, availableValues,
-                    extraAvailableValues, curValuesToKeep, recSet, opt);
-            if (valInfo == nullptr) {
-                // cannot reconstruct the value
-                error = true;
-                keepSet.insert(curValuesToKeep.begin(), curValuesToKeep.end());
-
-                // clear the set for the next value to reconstruct
-                curValuesToKeep.clear();
-            } else {
-                // we can reconstruct the value!
-                valueInfoMap[valToReconstruct] = valInfo;
-                needPrologue = true;
-            }
-
-            continue;
-        }
-
-        assert(isa<Argument>(valToReconstruct));
-        // TODO insert assert check on heuristics for dead arguments
-
-        error = true;
-        keepSet.insert(valToReconstruct);
-    }
-
-    assert( (error || keepSet.empty()) && "non-empty keepSet on success?");
-
-    if (error || !updateMapping) {
-        // avoid memory leaks
-        for (StateMap::LocPairInfo::ValueInfoMap::iterator it = valueInfoMap.begin(),
-                end = valueInfoMap.end(); it != end; ++it) {
-            delete it->second;
-        }
-    } else {
-        // register LocPairInfo for the current LocPair
-        StateMap::LocPair LP(OSRSrc, LPad);
-        assert(M->getLocPairInfo(LP) == nullptr && "LocPairInfo alread exists");
-        StateMap::LocPairInfo* LPInfo = M->createLocPairInfo(LP);
-        LPInfo->valueInfoMap = std::move(valueInfoMap);
-    }
-
-    return !error;
-#endif
+    return ret;
 }
 
 void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
@@ -1769,7 +1271,6 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
     delete BCAD_F1;
     delete BCAD_F2;
 }
-
 
 /*
  * OSR library for LLVM. Copyright (C) 2015 Daniele Cono D'Elia

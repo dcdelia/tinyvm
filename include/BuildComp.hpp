@@ -195,7 +195,6 @@ private:
                     ValueMap &deadAvailMap,
                     Heuristic opt,
                     std::vector<llvm::Instruction*> &recList,
-                    std::set<llvm::Instruction*> &workSet,
                     std::set<llvm::Value*> *keepSet);
 
     static bool canAttemptToReconstruct(llvm::Instruction* I, Heuristic opt);
@@ -205,7 +204,7 @@ private:
     static bool canUseDeadValues(Heuristic opt);
     static bool canUseAllDeadValues(Heuristic opt);
 
-    static bool shouldPreferDeadValues(Heuristic opt) { return false; }
+    static bool shouldPreferDeadValues(Heuristic opt);
 
     static llvm::FunctionPass* createBuildCompAnalysisPass(AnalysisData* BCAD);
 };

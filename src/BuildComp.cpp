@@ -32,7 +32,8 @@
 #include <vector>
 #include <llvm/IR/Dominators.h>
 
-#define BUILD_ALIAS_INFO_MAP    1
+// attempt to recursively reconstruct LCSSA PHI nodes
+#define RECONSTRUCT_LCSSA       1
 
 using namespace llvm;
 
@@ -468,10 +469,8 @@ void BuildComp::computeDeadAvailableValues(StateMap* M, Instruction* OSRSrc,
 void BuildComp::computeAvailableValues(StateMap* M, Function* src,
         LivenessAnalysis::LiveValues &liveAtOSRSrc,
         BuildComp::Heuristic opts, BuildComp::ValueMap &availMap) {
-
-    //
     // Note that a live value not mapped to a valToSet from liveAtLPad might
-    // come in handy later as we may need it to reconstruct an instruction.
+    // come in handy later (we may need it to reconstruct an instruction!)
     StateMap::OneToOneValueMap &OOMap = M->getAllCorrespondingOneToOneValues();
     for (StateMap::OneToOneValueMap::iterator it = OOMap.begin(),
             end = OOMap.end(); it != end; ++it) {
@@ -502,6 +501,7 @@ void BuildComp::computeAvailableValues(StateMap* M, Function* src,
     }
 }
 
+#if RECONSTRUCT_LCSSA
 // helper method for isPHINodeConstant()
 static Value* isPHINodeConstantAux(PHINode* PN, std::set<PHINode*> &workSet,
         std::set<PHINode*> *aliasSet) {
@@ -551,60 +551,21 @@ static Value* isPHINodeConstantAux(PHINode* PN, std::set<PHINode*> &workSet,
     return constV;
 }
 
-// we try to reconstruct constant PHI nodes (e.g., LCSSA form)
+// we improve LLVM's PHINode::hasConstantValue() to capture more cases (e.g.,
+// PHI nodes inserted during LCSSA form construction)
 static Value* isPHINodeConstant(PHINode* PN, std::set<PHINode*> *aliasSet = nullptr) {
-
-    #if 1
     std::set<PHINode*> workSet;
 
     Value* constV = isPHINodeConstantAux(PN, workSet, aliasSet);
     assert( (!constV || workSet.empty()) && "non-empty workSet on success");
+
     return constV;
-    #else
-    return PN->hasConstantValue();
-    #endif
-
-    #if 0
-    // base step: detect trivially constant PHI nodes
-    Value* V = PN->hasConstantValue();
-    if (V) return V;
-
-    // recursive step: initialize V using the first incoming value
-    V = PN->getIncomingValue(0);
-    if (PHINode* opPN = dyn_cast<PHINode>(V)) {
-        // recursively solve the node and assign it to V
-        if ((V = isPHINodeConstant(opPN, aliasSet)) == nullptr) {
-            if (aliasSet) aliasSet->clear();
-            return nullptr;
-        }
-
-        if (aliasSet) aliasSet->insert(opPN);
-    }
-
-    // recursive step: process remaining incoming values
-    for (int i = 1, n = PN->getNumIncomingValues(); i < n; ++i) {
-        Value* op = PN->getIncomingValue(i);
-
-        if (op == V) continue; // ok, same incoming value from this edge
-
-        if (PHINode* opPN = dyn_cast<PHINode>(op)) {
-            if (isPHINodeConstant(opPN, aliasSet) != V) {
-                if (aliasSet) aliasSet->clear();
-                return nullptr;
-            } else {
-                if (aliasSet) aliasSet->insert(opPN);
-                continue;
-            }
-        }
-
-        // the PHI node is not constant!
-        if (aliasSet) aliasSet->clear();
-        return nullptr;
-    }
-
-    return V;
-    #endif
 }
+#else
+static Value* isPHINodeConstant(PHINode* PN, std::set<PHINode*> *aliasSet = nullptr) {
+    return PN->hasConstantValue();
+}
+#endif
 
 bool BuildComp::canAttemptToReconstruct(Instruction* I, BuildComp::Heuristic opt) {
     // reconstruct invoke/call instructions only when to read-only functions
@@ -739,7 +700,7 @@ bool BuildComp::reconstructValue(Value* V, BuildComp::ValueMap &availMap,
             return false;
         }
 
-        // constant PHI nodes need special handling
+        // PHI nodes need special handling
         if (PHINode* PN = dyn_cast<PHINode>(I)) {
             // the node is constant since we passed canAttempToReconstruct()
             std::set<PHINode*> aliasSetForConstPHI;
@@ -798,24 +759,28 @@ bool BuildComp::reconstructValue(Value* V, BuildComp::ValueMap &availMap,
     return false;
 }
 
+// helper method to iterate over ValueMap objects and update statistics
 static Value* fetchOperandFromMaps(Value* V, BuildComp::ValueMap &availMap,
         BuildComp::ValueMap &liveAliasMap, BuildComp::ValueMap &deadAvailMap,
         BuildComp::Statistics &stats) {
     BuildComp::ValueMap::iterator VMIt;
 
     if ( (VMIt = availMap.find(V)) != availMap.end()) {
-        stats.liveValues++;
-        return VMIt->second;
+        Value* valToUse = VMIt->second;
+        stats.liveValues.insert(valToUse);
+        return valToUse;
     }
 
     if ( (VMIt = liveAliasMap.find(V)) != liveAliasMap.end()) {
-        stats.liveAliases++;
-        return VMIt->second;
+        Value* valToUse = VMIt->second;
+        stats.liveAliases.insert(valToUse);
+        return valToUse;
     }
 
     if ( (VMIt = deadAvailMap.find(V)) != deadAvailMap.end()) {
-        stats.deadValues++;
-        return VMIt->second;
+        Value* valToUse = VMIt->second;
+        stats.deadValues.insert(valToUse);
+        return valToUse;
     }
 
     return nullptr;
@@ -838,7 +803,7 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
     std::map<Instruction*, Value*>::iterator RMIt;
 
     // available values that are used as operands in the code
-    std::set<Value*> argsForCompCode;
+    ValueSet argsForCompCode;
 
     for (Instruction* I: recList) {
         Instruction* clonedI = I->clone();
@@ -890,9 +855,10 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
             }
         }
 
-        // I can set names as reconstructed instructions always compute values
+        // as reconstructed instructions compute values, they can be assigned
+        // a name: we add a "CC_" prefix to distinguish them from the others
         if (I->hasName()) {
-            clonedI->setName((I->getName())); // TODO add CC_ prefix
+            clonedI->setName(Twine("CC_", I->getName()));
         } else {
             clonedI->setName("CC_anon");
         }
@@ -902,6 +868,9 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
 
         // add instruction to CompCode object
         compCode->code->push_back(clonedI);
+
+        // update statistics
+        stats.reconstructSet.insert(I);
     }
 
     Instruction* lastI = recList.back();
@@ -1014,14 +983,9 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
     bool success = true;
 
     std::vector<Instruction*> recList;
-    std::set<Value*> keepSetForValue;
+    ValueSet keepSetForValue;
 
     for (Value* valToReconstruct: workList) {
-        assert(availMap.count(valToReconstruct) == 0 && "missed an already-available value?"); // TODO remove asap
-
-        // TODO easier this way atm
-        recList.clear();
-
         bool canReconstruct = reconstructValue(valToReconstruct, availMap,
                 liveAliasMap, deadAvailMap, opts, recList, &keepSetForValue);
 
@@ -1053,13 +1017,18 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
                 StateMap::CompCode* compCode = buildCompCode(instToReconstruct,
                         recList, availMap, liveAliasMap, deadAvailMap, stats, opts);
                 assert(compCode != nullptr && "no CompCode object generated");
+
                 valueInfoMap[valToReconstruct] = new StateMap::ValueInfo(compCode);
+                stats.needPrologue = true;
+                recList.clear();
             }
             assert(keepSetForValue.empty() && "non-empty keepSetForValue on success?");
         } else {
             // give up
             success = false;
             stats.keepSet.insert(keepSetForValue.begin(), keepSetForValue.end());
+
+            recList.clear();
             keepSetForValue.clear();
         }
     }

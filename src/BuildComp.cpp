@@ -271,7 +271,7 @@ bool BuildComp::canUseAllDeadValues(Heuristic opt) {
     }
 }
 
-bool BuildComp::shouldPreferDeadValues(Heuristic opt) {
+bool BuildComp::shouldNotPreferDeadValues(Heuristic opt) {
     return true;
 }
 
@@ -344,7 +344,7 @@ void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
         if (availMap.count(valToSet) > 0) continue;
 
         // unless we do not care about register pressure, we give it a try!
-        if (shouldPreferDeadValues(opts) && deadAvailMap.count(valToSet) > 0) continue;
+        if (!shouldNotPreferDeadValues(opts) && deadAvailMap.count(valToSet) > 0) continue;
 
         // iterate over all possible aliases until a working one is found
         for (Value* valToUse: pair.second) {
@@ -368,7 +368,7 @@ void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
             }
 
             // at this point we have to check if the Instruction is available
-            if (canUseDeadValues(opts) && shouldPreferDeadValues(opts)) {
+            if (canUseDeadValues(opts) && !shouldNotPreferDeadValues(opts)) {
                 Instruction* I = cast<Instruction>(valToUse);
 
                 if (isDeadInstructionAvailable(I, OSRSrc, DT, safeLoads,
@@ -380,7 +380,7 @@ void BuildComp::computeAvailableAliases(StateMap* M, Instruction* OSRSrc,
         }
 
         // a second scan is needed when we want to keep register pressure low
-        if (canUseDeadValues(opts) && !shouldPreferDeadValues(opts)) {
+        if (canUseDeadValues(opts) && shouldNotPreferDeadValues(opts)) {
             if (deadAvailMap.count(valToSet) > 0) continue;
 
             for (Value* valToUse: pair.second) {
@@ -640,7 +640,7 @@ bool BuildComp::reconstructValue(Value* V, BuildComp::ValueMap &availMap,
         if (deadAvailMap.count(I) > 0) {
             // check if we can reconstruct it first (avoid register pressure
             // increase from extending the liveness range of a value)
-            if (!shouldPreferDeadValues(opts) && canAttemptToReconstruct(I, opts)) {
+            if (shouldNotPreferDeadValues(opts) && canAttemptToReconstruct(I, opts)) {
                 // keep track of the number of values reconstructed so far
                 int safeElems = recList.size();
 

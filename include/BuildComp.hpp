@@ -182,7 +182,7 @@ private:
     static bool canUseAliases(Heuristic opt);
     static bool canUseDeadValues(Heuristic opt);
     static bool canUseAllDeadValues(Heuristic opt);
-    static bool shouldPreferDeadValues(Heuristic opt);
+    static bool shouldNotPreferDeadValues(Heuristic opt);
 };
 
 #endif

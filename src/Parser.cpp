@@ -246,21 +246,17 @@ void Parser::handleMapsCommand() {
             }
         }
 
-        std::set<Value*> keepSet;
-        std::set<Instruction*> recSet;
-        bool needPrologue;
+        BuildComp::Statistics stats;
 
-        auto processLocPair = [this, &keepSet, &recSet, &needPrologue](
+        auto processLocPair = [this, &stats](
                 StateMap* M, Instruction* OSRSrc, Instruction* LPad,
                 IDToValueVec& slotIDsForSrc, IDToValueVec& lineIDsForSrc,
                 IDToValueVec& slotIDsForDest, IDToValueVec& lineIDsForDest,
                 BuildComp::AnalysisData* BCAD_src,
                 BuildComp::AnalysisData* BCAD_dest) {
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
-                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
-                    false, TheHelper->verbose);
-            keepSet.clear();
-            recSet.clear();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, compCodeStrategy,
+                    stats, BCAD_src, BCAD_dest, false, TheHelper->verbose);
+            stats.reset();
             if (ret) {
                 std::cerr << getInstrID(OSRSrc, slotIDsForSrc, lineIDsForSrc)
                           << "\t"
@@ -1323,19 +1319,19 @@ void Parser::handleCompCodeCommand() {
     IDToValueVec lineIDsForDest = computeLineIDs(dest);
 
     std::string OSRSrcName, LPadName;
-    std::set<Value*> missingSet;
-    std::set<Value*> keepSet;
-    std::set<Instruction*> recSet;
+    BuildComp::ValueSet missingSet;
+
     std::vector<std::pair<StateMap::CompCode*, Value*>> compCodeWorkList;
+
+    // statistics
+    BuildComp::Statistics stats;
 
     int noCompCodeRequired = 0;
     int compCodeRequired = 0;
     int canBuildCompCode = 0;
-    bool needPrologue = false;
     int isPrologueRequired = 0;
     int totalRecInstructions = 0;
     int maxRecInstructions = 0;
-
 
     // collecting statistics
     std::map<Value*, int> valuesToKeepAtPoints;
@@ -1410,26 +1406,24 @@ void Parser::handleCompCodeCommand() {
             }
         } else if (action == buildCode || action == canBuildCode) {
             bool doBuild = (action == buildCode);
-            keepSet.clear();
-            recSet.clear();
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
-                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
-                    doBuild, verbose);
+            stats.reset();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, compCodeStrategy,
+                    stats, BCAD_src, BCAD_dest, doBuild, verbose);
             if (ret) {
                 ++canBuildCompCode;
-                if (needPrologue) {
+                if (stats.needPrologue) {
                     ++isPrologueRequired;
-                    assert(!recSet.empty());
-                    int recInstructions = recSet.size();
+                    assert(!stats.reconstructSet.empty());
+                    int recInstructions = stats.reconstructSet.size();
                     totalRecInstructions += recInstructions;
                     if (recInstructions > maxRecInstructions) {
                         maxRecInstructions = recInstructions;
                     }
                 } else {
-                    assert(recSet.empty() && "reconstructed instruction missed");
+                    assert(stats.reconstructSet.empty() && "reconstructed instruction missed");
                 }
             }
-            //updateValuesToKeepInfo(keepSet);
+            //updateValuesToKeepInfo(stats.keepSet);
 
             if (forAllPairs && !verbose) continue;
             if (ret) {
@@ -1443,24 +1437,23 @@ void Parser::handleCompCodeCommand() {
                 std::cerr << "Compensation code cannot be built automatically, "
                           << "as the following values cannot be reconstructed:"
                           << std::endl;
-                for (Value* v: keepSet) {
+                for (Value* v: stats.keepSet) {
                     v->dump();
                 }
             }
         } else if (action == testCode) {
-            keepSet.clear();
-            recSet.clear();
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
-                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
-                    true, verbose);
-            //updateValuesToKeepInfo(keepSet);
+            stats.reset();
+
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, compCodeStrategy,
+                    stats, BCAD_src, BCAD_dest, true, verbose);
+            //updateValuesToKeepInfo(stats.keepSet);
 
             if (!ret) {
                 if (verbose || !forAllPairs) {
                     std::cerr << "Compensation code cannot be built automatically, "
                               << "as the following values cannot be reconstructed:"
                               << std::endl;
-                    for (Value* v: keepSet) {
+                    for (Value* v: stats.keepSet) {
                         v->dump();
                     }
                 }
@@ -1468,16 +1461,16 @@ void Parser::handleCompCodeCommand() {
             }
 
             ++canBuildCompCode;
-            if (needPrologue) {
+            if (stats.needPrologue) {
                     ++isPrologueRequired;
-                    assert(!recSet.empty());
-                    int recInstructions = recSet.size();
+                    assert(!stats.reconstructSet.empty());
+                    int recInstructions = stats.reconstructSet.size();
                     totalRecInstructions += recInstructions;
                     if (recInstructions > maxRecInstructions) {
                         maxRecInstructions = recInstructions;
                     }
                 } else {
-                    assert(recSet.empty() && "reconstructed instruction missed");
+                    assert(stats.reconstructSet.empty() && "reconstructed instruction missed");
                 }
 
             std::unique_ptr<Module> NewModule =
@@ -1554,31 +1547,29 @@ void Parser::handleCompCodeCommand() {
                 }
             }
         } else if (action == inspect) {
-            keepSet.clear();
-            recSet.clear();
-            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
-                    needPrologue, compCodeStrategy, BCAD_src, BCAD_dest,
-                    false, verbose);
+            stats.reset();
+            bool ret = BuildComp::buildComp(M, OSRSrc, LPad, compCodeStrategy,
+                    stats, BCAD_src, BCAD_dest, false, verbose);
             std::map<BasicBlock*, std::pair<int,int>>::iterator bbMapIt =
                     feasibleOSRPointsPerBlock.find(OSRSrc->getParent());
             assert (bbMapIt != feasibleOSRPointsPerBlock.end() && "unknown BB");
             ++(bbMapIt->second.second);
             if (ret) {
                 ++canBuildCompCode;
-                if (needPrologue) {
+                if (stats.needPrologue) {
                     ++isPrologueRequired;
-                    assert(!recSet.empty());
-                    int recInstructions = recSet.size();
+                    assert(!stats.reconstructSet.empty());
+                    int recInstructions = stats.reconstructSet.size();
                     totalRecInstructions += recInstructions;
                     if (recInstructions > maxRecInstructions) {
                         maxRecInstructions = recInstructions;
                     }
                 } else {
-                    assert(recSet.empty() && "reconstructed instruction missed");
+                    assert(stats.reconstructSet.empty() && "reconstructed instruction missed");
                 }
                 ++(bbMapIt->second.first);
             } else {
-                updateValuesToKeepInfo(keepSet);
+                updateValuesToKeepInfo(stats.keepSet);
             }
         }
     }

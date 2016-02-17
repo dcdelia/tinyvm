@@ -74,7 +74,7 @@ public:
 
         // flag to indicate whether instructions should be reconstructed (true)
         // or local 1:1 mapping information is sufficient for OSR (false)
-        bool needPrologue = false;
+        bool needPrologue;
 
         // set of reconstructed instructions
         InstrSet reconstructSet;
@@ -84,6 +84,19 @@ public:
         // well), and previously reconstructed instructions
         ValueSet liveValues, liveAliases, deadValues;
 
+        // statistics about dead variables to reconstruct at an OSR landing pad
+        int deadVariables; // == aliased + recoverable + unrecoverable
+        int aliasedDeadVariables;
+        int recoverableDeadVariables;
+        int sumVarCCLength;
+        int maxVarCCLength;
+
+        Statistics() {
+            needPrologue = false;
+            deadVariables = aliasedDeadVariables = recoverableDeadVariables = 0;
+            sumVarCCLength = maxVarCCLength = 0;
+        }
+
         // to reuse the object across multiple reconstruction steps
         void reset() {
             keepSet.clear();
@@ -91,6 +104,11 @@ public:
             liveValues.clear();
             liveAliases.clear();
             deadValues.clear();
+
+            // differently from needPrologue and deadVariable, these fields are
+            // not initialized before use in buildComp-related methods
+            aliasedDeadVariables = recoverableDeadVariables = 0;
+            sumVarCCLength = maxVarCCLength = 0;
         }
     };
 
@@ -99,27 +117,15 @@ public:
                         llvm::Instruction* LPad,
                         Heuristic opts,
                         Statistics &stats,
-                        AnalysisData* src_BCAD,
-                        BuildComp::AnalysisData* dest_BCAD,
+                        AnalysisData* src_BCAD = nullptr,
+                        BuildComp::AnalysisData* dest_BCAD = nullptr,
                         bool updateMapping = false,
-                        bool verbose = false);
-
-    static bool buildComp(StateMap *M,
-                        llvm::Instruction* OSRSrc,
-                        llvm::Instruction* LPad,
-                        std::set<llvm::Value*> &keepSet,
-                        std::set<llvm::Instruction*> &recSet,
-                        bool &needPrologue,
-                        Heuristic opt = BC_NONE,
-                        AnalysisData *BCAD_src = nullptr,
-                        AnalysisData *BCAD_dest = nullptr,
-                        bool updateMapping = true,
                         bool verbose = false);
 
     static bool isBuildCompRequired(StateMap* M,
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
-                        std::set<llvm::Value*> &missingSet,
+                        ValueSet &missingSet,
                         bool verbose = false);
 
     static void printStatistics(StateMap* M,

@@ -884,9 +884,13 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
     }
     compCode->value = compCode->code->back();
 
+    int length = compCode->code->size();
+    assert(length > 0 && "empty compCode?");
+    if (length > stats.maxVarCCLength) stats.maxVarCCLength = length;
+    stats.sumVarCCLength += length;
+
     return compCode;
 }
-
 
 bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
         BuildComp::Heuristic opts, BuildComp::Statistics &stats,
@@ -957,7 +961,8 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
     }
 
     // when all values to set are live at OSRSrc, no compensation code is needed
-    if (workList.empty()) return true;
+    stats.deadVariables = workList.size();
+    if (!stats.deadVariables) return true;
 
     // compute dead available values (we need it also for dead aliases)
     if (canUseDeadValues(opts)) {
@@ -991,7 +996,6 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
 
         if (canReconstruct) {
             if (recList.empty()) { // local 1:1 mapping information
-
                 Value* valToUse = fetchOperandFromMaps(valToReconstruct,
                         availMap, liveAliasMap, deadAvailMap, stats);
 
@@ -1011,6 +1015,7 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
 
                 // store local 1:1 mapping information in valueInfoMap
                 valueInfoMap[valToReconstruct] = new StateMap::ValueInfo(valToUse);
+                stats.aliasedDeadVariables++;
             } else {
                 // reconstruct the value, which has to be an instruction! TODO always?
                 Instruction* instToReconstruct = cast<Instruction>(valToReconstruct);
@@ -1020,6 +1025,7 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
 
                 valueInfoMap[valToReconstruct] = new StateMap::ValueInfo(compCode);
                 stats.needPrologue = true;
+                stats.recoverableDeadVariables++;
                 recList.clear();
             }
             assert(keepSetForValue.empty() && "non-empty keepSetForValue on success?");
@@ -1052,27 +1058,8 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
     return success;
 }
 
-// [check if we can] build compensation code for a LocPair <OSRSrc, LPad>
-bool BuildComp::buildComp(StateMap *M, Instruction* OSRSrc, Instruction* LPad,
-        std::set<Value*> &keepSet, std::set<Instruction*> &recSet,
-        bool &needPrologue, BuildComp::Heuristic opt,
-        BuildComp::AnalysisData* src_BCAD, BuildComp::AnalysisData* dest_BCAD,
-        bool updateMapping, bool verbose) {
-
-    Statistics stats;
-
-    bool ret = buildComp(M, OSRSrc, LPad, opt, stats, src_BCAD, dest_BCAD,
-            updateMapping, verbose);
-
-    recSet = stats.reconstructSet;
-    needPrologue = stats.needPrologue;
-    keepSet = stats.keepSet;
-
-    return ret;
-}
-
 bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
-        Instruction* LPad, std::set<Value*> &missingSet, bool verbose) {
+        Instruction* LPad, BuildComp::ValueSet &missingSet, bool verbose) {
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
@@ -1122,7 +1109,7 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
     return ret;
 }
 
-void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
+void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opts,
         bool verbose) {
     std::pair<Function*, Function*> funPair = M->getFunctions();
     Function* F1 = funPair.first;
@@ -1166,8 +1153,8 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
 
     AnalysisData* BCAD_F1 = new AnalysisData(F1);
     AnalysisData* BCAD_F2 = new AnalysisData(F2);
-    std::set<Value*> keepSet;
-    std::set<Instruction*> recSet;
+
+    Statistics stats;
     std::set<Value*> missingSet;
     bool needPrologue;
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
@@ -1184,9 +1171,10 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opt,
         bool bcFails = false;
         if (bcReq) {
             missingSet.clear();
-            bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, keepSet, recSet,
-                    needPrologue, opt, BCAD_src, BCAD_dest, false, verbose);
-            keepSet.clear();
+            bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, opts, stats,
+                    BCAD_src, BCAD_dest, false, verbose);
+            needPrologue = stats.needPrologue;
+            stats.reset();
         }
         if (F == F1) {
             ++OSRSourcesInF1;

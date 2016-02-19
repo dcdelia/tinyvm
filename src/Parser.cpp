@@ -1324,14 +1324,90 @@ void Parser::handleCompCodeCommand() {
     std::vector<std::pair<StateMap::CompCode*, Value*>> compCodeWorkList;
 
     // statistics
-    BuildComp::Statistics stats;
+    struct GlobalStats {
+        // progPoints == noCompCodeRequired + compCodeRequired
+        int noCompCodeRequired;
+        int compCodeRequired; // == canBuildCompCode + unfeasiblePoints
+        int canBuildCompCode; // == isPrologueRequired + isAliasingSufficient
+        int isPrologueRequired;
 
-    int noCompCodeRequired = 0;
-    int compCodeRequired = 0;
-    int canBuildCompCode = 0;
-    int isPrologueRequired = 0;
-    int totalRecInstructions = 0;
-    int maxRecInstructions = 0;
+        long totalRecInstructions; // normalize against isPrologueRequired
+        int maxRecInstructions;
+
+        // normalize them against progPoints
+        long sumValuesToSet; // == sumAvailValues + sumDeadValues
+        long sumAvailValues;
+        long sumDeadVariables; // == aliased + recoverable + unrecoverable
+        long sumDeadAliased;
+        long sumDeadRecoverable;
+
+        int maxValuesToSet;
+
+        long sumAllVarsCCLength; // normalize agains sumDeadRecoverable
+        int maxAllVarsCCLength;
+    };
+
+    auto printStats = [](GlobalStats& gStats) {
+        // round decimal places while printing
+        std::streamsize oldPrecision = std::cerr.precision();
+        std::cerr.precision(2);
+        std::cerr << std::fixed;
+
+        std::cerr << "- compensation code can be built automatically: "
+                  << gStats.canBuildCompCode << std::endl;
+        std::cerr << "- compensation code requires a prologue: "
+                      << gStats.isPrologueRequired << std::endl;
+        float avgRecInst = (gStats.isPrologueRequired == 0) ? 0 :
+                gStats.totalRecInstructions/(float)gStats.isPrologueRequired;
+        std::cerr << "- avg # of instructions in a prologue: "
+                  << avgRecInst << std::endl;
+        std::cerr << "- max # of instructions in a prologue: "
+                  << gStats.maxRecInstructions << std::endl;
+
+        int programPoints = gStats.noCompCodeRequired + gStats.compCodeRequired;
+
+        if (!programPoints) {
+            std::cerr.precision(oldPrecision);
+            return;
+        }
+
+        // metrics to normalize against # of program points
+        float avgValuesToSet = gStats.sumValuesToSet/(float)programPoints;
+        float avgAvailValues = gStats.sumAvailValues/(float)programPoints;
+        float avgDeadVars = gStats.sumDeadVariables/(float)programPoints;
+        float avgDeadAliased = gStats.sumDeadAliased/(float)programPoints;
+        float avgDeadRecoverable = gStats.sumDeadRecoverable/(float)programPoints;
+        long sumDeadUnrecoverable = gStats.sumDeadVariables - gStats.sumDeadAliased
+                                    - gStats.sumDeadRecoverable;
+        float avgDeadUnrecoverable = sumDeadUnrecoverable/(float)programPoints;
+
+        float fracA = 0, fracD = 0, fracDA = 0, fracDR = 0, fracDU = 0;
+        if (avgDeadVars > 0) {
+            fracA = avgAvailValues/avgValuesToSet;
+            fracD = avgDeadVars/avgValuesToSet;
+            fracDA = avgDeadAliased/avgDeadVars;
+            fracDR = avgDeadRecoverable/avgDeadVars;
+            fracDU = avgDeadUnrecoverable/avgDeadVars;
+        }
+
+        std::cerr << "- avg # of values to set per OSR point: "
+                  << avgValuesToSet << " (" << (100*fracA) << "% live, "
+                  << 100*fracD << "% dead)" << std::endl;
+
+        std::cerr << "- max # of values to set at an OSR point: "
+                  << gStats.maxValuesToSet << std::endl;
+
+        std::cerr << "- breakdown of dead values across OSR points: " << std::endl
+                  << "  " << 100*fracDA << "% => a live alias was found" << std::endl
+                  << "  " << 100*fracDR << "% => can be recovered by buildComp" << std::endl
+                  << "  " << 100*fracDU << "% => cannot be recovered by buildComp"
+                  << std::endl;
+
+        std::cerr.precision(oldPrecision);
+    };
+
+    BuildComp::Statistics stats;
+    GlobalStats gStats = {0};
 
     // collecting statistics
     std::map<Value*, int> valuesToKeepAtPoints;
@@ -1341,6 +1417,8 @@ void Parser::handleCompCodeCommand() {
         feasibleOSRPointsPerBlock.insert(std::pair<BasicBlock*, std::pair<int, int>>(
                 B, std::pair<int,int>(0,0)));
     }
+
+    // we define two lambda functions
     auto updateValuesToKeepInfo = [&valuesToKeepAtPoints](std::set<Value*> &S) {
         for (Value* v: S) {
             std::map<Value*, int>::iterator it = valuesToKeepAtPoints.find(v);
@@ -1349,6 +1427,37 @@ void Parser::handleCompCodeCommand() {
             }
             ++it->second;
         }
+    };
+
+    auto updateStats = [&gStats, &stats](bool success) {
+        gStats.sumValuesToSet += stats.valuesToSet;
+        gStats.sumAvailValues += (stats.valuesToSet - stats.deadVariables);
+        gStats.sumDeadVariables += stats.deadVariables;
+        gStats.sumDeadAliased += stats.aliasedDeadVariables;
+        gStats.sumDeadRecoverable += stats.recoverableDeadVariables;
+
+        gStats.maxValuesToSet = std::max(gStats.maxValuesToSet,
+                                         stats.valuesToSet);
+
+        if (success) {
+            gStats.canBuildCompCode++;
+            if (stats.needPrologue) {
+                gStats.isPrologueRequired++;
+                assert(!stats.reconstructSet.empty());
+                int recInstructions = stats.reconstructSet.size();
+                gStats.totalRecInstructions += recInstructions;
+                gStats.maxRecInstructions = std::max(gStats.maxRecInstructions,
+                                                     recInstructions);
+            } else {
+                assert(stats.reconstructSet.empty() && "missed recInst");
+            }
+        } else {
+            //
+        }
+
+        gStats.sumAllVarsCCLength += stats.sumVarCCLength;
+        gStats.maxAllVarsCCLength = std::max(gStats.maxAllVarsCCLength,
+                                             stats.maxVarCCLength);
     };
 
 
@@ -1383,17 +1492,24 @@ void Parser::handleCompCodeCommand() {
 
         // all the actions require isBuildCompRequired()
         missingSet.clear();
+        int numLiveValues;
         bool isCompRequired = BuildComp::isBuildCompRequired(M, OSRSrc, LPad,
-                missingSet, verbose);
+                missingSet, verbose, &numLiveValues);
         if (!isCompRequired) {
             if (verbose || !forAllPairs) {
                 std::cerr << "No compensation code is required." << std::endl;
             }
-            ++noCompCodeRequired;
+
+            // update gStats by hand as we are jumping to the next for iteration
+            ++gStats.noCompCodeRequired;
+            gStats.sumValuesToSet += numLiveValues;
+            gStats.maxValuesToSet = std::max(gStats.maxValuesToSet,
+                                             numLiveValues);
+
             //if (action != testCode) continue;
             continue;
         } else {
-            ++compCodeRequired;
+            ++gStats.compCodeRequired;
         }
 
         if (action == checkCodeRequired) {
@@ -1409,20 +1525,8 @@ void Parser::handleCompCodeCommand() {
             stats.reset();
             bool ret = BuildComp::buildComp(M, OSRSrc, LPad, compCodeStrategy,
                     stats, BCAD_src, BCAD_dest, doBuild, verbose);
-            if (ret) {
-                ++canBuildCompCode;
-                if (stats.needPrologue) {
-                    ++isPrologueRequired;
-                    assert(!stats.reconstructSet.empty());
-                    int recInstructions = stats.reconstructSet.size();
-                    totalRecInstructions += recInstructions;
-                    if (recInstructions > maxRecInstructions) {
-                        maxRecInstructions = recInstructions;
-                    }
-                } else {
-                    assert(stats.reconstructSet.empty() && "reconstructed instruction missed");
-                }
-            }
+
+            updateStats(ret);
             //updateValuesToKeepInfo(stats.keepSet);
 
             if (forAllPairs && !verbose) continue;
@@ -1460,18 +1564,7 @@ void Parser::handleCompCodeCommand() {
                 continue;
             }
 
-            ++canBuildCompCode;
-            if (stats.needPrologue) {
-                    ++isPrologueRequired;
-                    assert(!stats.reconstructSet.empty());
-                    int recInstructions = stats.reconstructSet.size();
-                    totalRecInstructions += recInstructions;
-                    if (recInstructions > maxRecInstructions) {
-                        maxRecInstructions = recInstructions;
-                    }
-                } else {
-                    assert(stats.reconstructSet.empty() && "reconstructed instruction missed");
-                }
+            updateStats(true);
 
             std::unique_ptr<Module> NewModule =
                     llvm::make_unique<Module>("CompCodeMod", TheHelper->Context);
@@ -1554,19 +1647,9 @@ void Parser::handleCompCodeCommand() {
                     feasibleOSRPointsPerBlock.find(OSRSrc->getParent());
             assert (bbMapIt != feasibleOSRPointsPerBlock.end() && "unknown BB");
             ++(bbMapIt->second.second);
+
+            updateStats(ret);
             if (ret) {
-                ++canBuildCompCode;
-                if (stats.needPrologue) {
-                    ++isPrologueRequired;
-                    assert(!stats.reconstructSet.empty());
-                    int recInstructions = stats.reconstructSet.size();
-                    totalRecInstructions += recInstructions;
-                    if (recInstructions > maxRecInstructions) {
-                        maxRecInstructions = recInstructions;
-                    }
-                } else {
-                    assert(stats.reconstructSet.empty() && "reconstructed instruction missed");
-                }
                 ++(bbMapIt->second.first);
             } else {
                 updateValuesToKeepInfo(stats.keepSet);
@@ -1579,21 +1662,13 @@ void Parser::handleCompCodeCommand() {
                   << dest->getName().str() << std::endl;
         std::cerr << "# of OSRSrc locations for which" << std::endl;
         std::cerr << "- no compensation code is required: " <<
-                noCompCodeRequired << std::endl;
+                gStats.noCompCodeRequired << std::endl;
         std::cerr << "- compensation code is required: "
-                  << compCodeRequired << std::endl;
+                  << gStats.compCodeRequired << std::endl;
         if (action == buildCode || action == canBuildCode || action == testCode
                 || action == inspect) {
-            std::cerr << "- compensation code can be built automatically: "
-                      << canBuildCompCode << std::endl;
-            std::cerr << "- compensation code requires a prologue: "
-                      << isPrologueRequired << std::endl;
-            float avgRecInst = (isPrologueRequired == 0) ? 0 :
-                                totalRecInstructions/(float)isPrologueRequired;
-            std::cerr << "- avg number of instructions in a prologue: "
-                      << avgRecInst << std::endl;
-            std::cerr << "- max number of instructions in a prologue: "
-                      << maxRecInstructions << std::endl;
+            // compute avg and print global statistics
+            printStats(gStats);
 
             if (action == inspect) {
                 if (valuesToKeepAtPoints.empty()) {

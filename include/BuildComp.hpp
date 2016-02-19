@@ -82,9 +82,10 @@ public:
         // operands used in a compensation code can be divided in: live values,
         // live available alias, dead values (includes dead available aliases as
         // well), and previously reconstructed instructions
-        ValueSet liveValues, liveAliases, deadValues;
+        ValueSet liveOps, liveAliasedOps, deadOps;
 
-        // statistics about dead variables to reconstruct at an OSR landing pad
+        // statistics about variables to set//reconstruct at an OSR landing pad
+        int valuesToSet; // == live at both locations + dead variables
         int deadVariables; // == aliased + recoverable + unrecoverable
         int aliasedDeadVariables;
         int recoverableDeadVariables;
@@ -101,9 +102,9 @@ public:
         void reset() {
             keepSet.clear();
             reconstructSet.clear();
-            liveValues.clear();
-            liveAliases.clear();
-            deadValues.clear();
+            liveOps.clear();
+            liveAliasedOps.clear();
+            deadOps.clear();
 
             // differently from needPrologue and deadVariable, these fields are
             // not initialized before use in buildComp-related methods
@@ -126,7 +127,8 @@ public:
                         llvm::Instruction* OSRSrc,
                         llvm::Instruction* LPad,
                         ValueSet &missingSet,
-                        bool verbose = false);
+                        bool verbose = false,
+                        int* numLiveValues = nullptr);
 
     static void printStatistics(StateMap* M,
                         Heuristic opt = BC_NONE,

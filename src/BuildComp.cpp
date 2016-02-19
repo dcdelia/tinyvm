@@ -767,19 +767,19 @@ static Value* fetchOperandFromMaps(Value* V, BuildComp::ValueMap &availMap,
 
     if ( (VMIt = availMap.find(V)) != availMap.end()) {
         Value* valToUse = VMIt->second;
-        stats.liveValues.insert(valToUse);
+        stats.liveOps.insert(valToUse);
         return valToUse;
     }
 
     if ( (VMIt = liveAliasMap.find(V)) != liveAliasMap.end()) {
         Value* valToUse = VMIt->second;
-        stats.liveAliases.insert(valToUse);
+        stats.liveAliasedOps.insert(valToUse);
         return valToUse;
     }
 
     if ( (VMIt = deadAvailMap.find(V)) != deadAvailMap.end()) {
         Value* valToUse = VMIt->second;
-        stats.deadValues.insert(valToUse);
+        stats.deadOps.insert(valToUse);
         return valToUse;
     }
 
@@ -961,6 +961,7 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
     }
 
     // when all values to set are live at OSRSrc, no compensation code is needed
+    stats.valuesToSet = liveAtLPad.size();
     stats.deadVariables = workList.size();
     if (!stats.deadVariables) return true;
 
@@ -1059,7 +1060,8 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
 }
 
 bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
-        Instruction* LPad, BuildComp::ValueSet &missingSet, bool verbose) {
+        Instruction* LPad, BuildComp::ValueSet &missingSet, bool verbose,
+        int *numLiveValues) {
     std::pair<Function*, Function*> funPair = M->getFunctions();
     std::pair<LivenessAnalysis&, LivenessAnalysis&> LAPair = M->getLivenessResults();
 
@@ -1086,6 +1088,8 @@ bool BuildComp::isBuildCompRequired(StateMap* M, Instruction* OSRSrc,
                 LA_src->getLiveOutValues(OSRSrcBlock), OSRSrc, nullptr);
     liveAtLPad = LivenessAnalysis::analyzeLiveInForSeq(LPadBlock,
                 LA_dest->getLiveOutValues(LPadBlock), LPad, nullptr);
+
+    if (numLiveValues) *numLiveValues = liveAtLPad.size();
 
     // check if for each value to set there is a 1:1 mapping with a live value
     for (const Value* v: liveAtLPad) {
@@ -1156,7 +1160,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opts,
 
     Statistics stats;
     std::set<Value*> missingSet;
-    bool needPrologue;
+
     for (StateMap::LocMap::iterator it = landingPadMap.begin(),
             end = landingPadMap.end(); it != end; ++it) {
         Instruction* OSRSrc = it->first;
@@ -1171,10 +1175,9 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opts,
         bool bcFails = false;
         if (bcReq) {
             missingSet.clear();
+            stats.reset();
             bcFails = !BuildComp::buildComp(M, OSRSrc, LPad, opts, stats,
                     BCAD_src, BCAD_dest, false, verbose);
-            needPrologue = stats.needPrologue;
-            stats.reset();
         }
         if (F == F1) {
             ++OSRSourcesInF1;
@@ -1182,7 +1185,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opts,
                 ++buildCompRequiredInF1;
                 if (bcFails) {
                     ++buildCompFailsInF1;
-                } else if (needPrologue) {
+                } else if (stats.needPrologue) {
                     ++isPrologueRequiredInF1;
                 }
             }
@@ -1192,7 +1195,7 @@ void BuildComp::printStatistics(StateMap* M, BuildComp::Heuristic opts,
                 ++buildCompRequiredInF2;
                 if (bcFails) {
                     ++buildCompFailsInF2;
-                } else if (needPrologue) {
+                } else if (stats.needPrologue) {
                     ++isPrologueRequiredInF2;
                 }
             }

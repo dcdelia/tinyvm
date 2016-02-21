@@ -13,6 +13,7 @@
 #include "OptPasses.hpp"
 #include "OSRLibrary.hpp"
 #include "StateMap.hpp"
+#include "Debugging.hpp"
 #include "history.h"
 #include "timer.h"
 
@@ -85,6 +86,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_verbose:       handleVerboseCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return 0;
             case tok_identifier:    handleFunctionInvocation(1); break;
+            case tok_debug:         Debugging::handleDebugCommand(TheLexer, TheHelper); break;
             case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return -1;
             default:                std::cerr << "Unexpected token. Exiting..." << std::endl;; return 1;
         }
@@ -435,10 +437,10 @@ void Parser::handleDumpCommand(bool showLineIDs) {
     if (!showLineIDs) {
         std::vector<Module*> &Modules = TheHelper->getLoadedModules();
         for (Module* M: Modules) {
-            std::cerr << M->getModuleIdentifier() << std::endl;
+            //std::cerr << M->getModuleIdentifier() << std::endl;
             if (M->getModuleIdentifier() == Name) {
                 M->dump();
-                return;
+                return; // TODO continue? is the ID unique?
             }
         }
     }
@@ -551,6 +553,10 @@ void Parser::handleHelpCommand() {
         if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
         if (!strcasecmp("MAPS", commandName)) goto MAPS;
         if (!strcasecmp("OPT", commandName)) goto OPT;
+        if (!strcasecmp("DEBUG", commandName)) {
+            Debugging::showHelpForDebugCommand();
+            goto EXIT;
+        }
     }
 
     std::cerr << "List of available commands:" << std::endl;
@@ -569,6 +575,9 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> COMP_CODE [...]" << std::endl
               << "\tManipulate compensation code for OSR points." << std::endl
               << "\tEnter HELP COMP_CODE to find out more." << std::endl;
+    std::cerr << "--> DEBUG [...] "<< std::endl
+              << "\tManipulate debug information for IR code." << std::endl
+              << "\tEnter HELP DEBUG to find out more." << std::endl;
     std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
               << "\tShow the IR code of a given function or module."
               << std::endl;

@@ -43,7 +43,8 @@ enum Token {
     tok_clone_fun   = -29,
     tok_maps        = -30,
     tok_opt         = -31,
-    tok_comp_code   = -32
+    tok_comp_code   = -32,
+    tok_debug       = -33
 };
 
 class Lexer {

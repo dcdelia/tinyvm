@@ -19,7 +19,7 @@ tinyvm: $(BUILD) $(BUILD)/main.o $(BUILD)/Lexer.o $(BUILD)/MCJITHelper.o \
 	    $(BUILD)/CustomMemoryManager.o $(BUILD)/StackMap.o $(BUILD)/Liveness.o \
 	    $(BUILD)/StateMap.o $(BUILD)/OSRLibrary.o $(BUILD)/Parser.o \
 	    $(BUILD)/timer.o $(BUILD)/history.o $(BUILD)/CodeMapper.o \
-	    $(BUILD)/BuildComp.o OptPasses
+	    $(BUILD)/BuildComp.o $(BUILD)/Debugging.o OptPasses
 	$(CXX) $(CXX_FLAGS) $(BUILD)/* $(LLVM_LDFLAGS) -o tinyvm
 
 $(BUILD):
@@ -59,7 +59,7 @@ $(BUILD)/OSRLibrary.o: $(SRC)/OSRLibrary.cpp $(INCLUDE)/OSRLibrary.hpp \
 $(BUILD)/Parser.o: $(SRC)/Parser.cpp $(INCLUDE)/Lexer.hpp $(INCLUDE)/MCJITHelper.hpp \
 	    $(INCLUDE)/OSRLibrary.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/timer.h \
 	    $(INCLUDE)/Liveness.hpp $(INCLUDE)/OptPasses.hpp $(INCLUDE)/BuildComp.hpp \
-	    $(INCLUDE)/CodeMapper.hpp
+	    $(INCLUDE)/CodeMapper.hpp $(INCLUDE)/Debugging.hpp
 	$(CXX) $(CXX_FLAGS) -c $(SRC)/Parser.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Parser.o
 
 $(BUILD)/history.o: $(SRC)/history.c $(INCLUDE)/history.h
@@ -116,6 +116,10 @@ $(BUILD)/LoopSimplify.o: $(PASSES_SRC)/Utils/LoopSimplify.cpp $(INCLUDE)/OptPass
 
 $(BUILD)/OSR_Statistic.o: $(PASSES_SRC)/Utils/OSR_Statistic.cpp $(INCLUDE)/OptPasses.hpp
 	$(CXX) $(CXX_FLAGS) -c $(PASSES_SRC)/Utils/OSR_Statistic.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/OSR_Statistic.o
+
+$(BUILD)/Debugging.o: $(SRC)/Debugging.cpp $(INCLUDE)/Debugging.hpp $(INCLUDE)/BuildComp.hpp \
+	    $(INCLUDE)/MCJITHelper.hpp $(INCLUDE)/StateMap.hpp $(INCLUDE)/Lexer.hpp
+	$(CXX) $(CXX_FLAGS) -c $(SRC)/Debugging.cpp $(LLVM_CXXFLAGS) -o $(BUILD)/Debugging.o
 
 clean:
 	rm -f $(BUILD)/*.o

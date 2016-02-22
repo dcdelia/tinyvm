@@ -86,7 +86,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_verbose:       handleVerboseCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return 0;
             case tok_identifier:    handleFunctionInvocation(1); break;
-            case tok_debug:         Debugging::handleDebugCommand(TheLexer, TheHelper); break;
+            case tok_debug:         Debugging::handleDebugCommand(TheLexer, TheHelper, compCodeStrategy); break;
             case tok_eof:           std::cerr << "CTRL+D or EOF reached." << std::endl; return -1;
             default:                std::cerr << "Unexpected token. Exiting..." << std::endl;; return 1;
         }

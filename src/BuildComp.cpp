@@ -275,7 +275,7 @@ bool BuildComp::shouldNotPreferDeadValues(Heuristic opt) {
     return true;
 }
 
-static CodeMapper::OneToManyAliasMap genAliasInfoMap(
+CodeMapper::OneToManyAliasMap BuildComp::genAliasInfoMap(
         CodeMapper::StateMapUpdateInfo* src_updateInfo,
         CodeMapper::StateMapUpdateInfo* dest_updateInfo) {
 
@@ -553,7 +553,7 @@ static Value* isPHINodeConstantAux(PHINode* PN, std::set<PHINode*> &workSet,
 
 // we improve LLVM's PHINode::hasConstantValue() to capture more cases (e.g.,
 // PHI nodes inserted during LCSSA form construction)
-static Value* isPHINodeConstant(PHINode* PN, std::set<PHINode*> *aliasSet = nullptr) {
+Value* BuildComp::isPHINodeConstant(PHINode* PN, std::set<PHINode*> *aliasSet) {
     std::set<PHINode*> workSet;
 
     Value* constV = isPHINodeConstantAux(PN, workSet, aliasSet);
@@ -587,9 +587,10 @@ bool BuildComp::canAttemptToReconstruct(Instruction* I, BuildComp::Heuristic opt
     return true;
 }
 
-Value* isAliasAvailableForConstantPHI(Value* constV, std::set<PHINode*> *aliasSet,
-        BuildComp::ValueMap &availMap, BuildComp::ValueMap &liveAliasMap,
-        BuildComp::ValueMap &deadAvailMap, bool canUseDeadAvailable) {
+Value* BuildComp::isAliasAvailableForConstantPHI(Value* constV,
+        std::set<PHINode*> *aliasSet, BuildComp::ValueMap &availMap,
+        BuildComp::ValueMap &liveAliasMap, BuildComp::ValueMap &deadAvailMap,
+        bool canUseDeadAvailable) {
 
     BuildComp::ValueMap::iterator availEnd = availMap.end();
     BuildComp::ValueMap::iterator liveAliasEnd = liveAliasMap.end();
@@ -760,7 +761,7 @@ bool BuildComp::reconstructValue(Value* V, BuildComp::ValueMap &availMap,
 }
 
 // helper method to iterate over ValueMap objects and update statistics
-static Value* fetchOperandFromMaps(Value* V, BuildComp::ValueMap &availMap,
+Value* BuildComp::fetchOperandFromMaps(Value* V, BuildComp::ValueMap &availMap,
         BuildComp::ValueMap &liveAliasMap, BuildComp::ValueMap &deadAvailMap,
         BuildComp::Statistics &stats) {
     BuildComp::ValueMap::iterator VMIt;
@@ -944,13 +945,13 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
     }
 
     // worklist of instructions to reconstruct
-    std::vector<Value*> workList; // instructions to reconstruct
+    std::vector<Value*> workList;
 
     // lists of values that available, live aliases or dead available [alias]
     ValueMap availMap, liveAliasMap, deadAvailMap;
 
     // compute available values first
-    computeAvailableValues(M, src,liveAtOSRSrc, opts, availMap);
+    computeAvailableValues(M, src, liveAtOSRSrc, opts, availMap);
 
     // find out which values need to be reconstructed
     for (const Value* v: liveAtLPad) {

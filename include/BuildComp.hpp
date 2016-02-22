@@ -23,6 +23,7 @@
 #include <string>
 
 class BuildComp {
+    friend class Debugging;
 public:
     static const int numHeuristics = 7;
 
@@ -143,6 +144,10 @@ private:
                     Heuristic opts,
                     ValueMap &availMap);
 
+    static CodeMapper::OneToManyAliasMap genAliasInfoMap(
+                    CodeMapper::StateMapUpdateInfo* src_updateInfo,
+                    CodeMapper::StateMapUpdateInfo* dest_updateInfo);
+
     static void computeAvailableAliases(StateMap* M,
                     llvm::Instruction* OSRSrc,
                     AnalysisData* BCAD,
@@ -169,6 +174,22 @@ private:
 
     static bool canAttemptToReconstruct(llvm::Instruction* I,
                     Heuristic opt);
+
+    static llvm::Value* isPHINodeConstant(llvm::PHINode* PN,
+                    std::set<llvm::PHINode*> *aliasSet = nullptr);
+
+    static llvm::Value* isAliasAvailableForConstantPHI(llvm::Value* constV,
+                    std::set<llvm::PHINode*> *aliasSet,
+                    ValueMap &availMap,
+                    ValueMap &liveAliasMap,
+                    ValueMap &deadAvailMap,
+                    bool canUseDeadAvailable);
+
+    static llvm::Value* fetchOperandFromMaps(llvm::Value* V,
+                    ValueMap &availMap,
+                    ValueMap &liveAliasMap,
+                    ValueMap &deadAvailMap,
+                    Statistics &stats);
 
     static StateMap::CompCode* buildCompCode(llvm::Instruction* instToReconstruct,
                     std::vector<llvm::Instruction*> &recList,

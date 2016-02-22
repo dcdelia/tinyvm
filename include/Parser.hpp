@@ -16,6 +16,7 @@
 #include <llvm/IR/Value.h>
 
 class Parser {
+    friend class Debugging;
 public:
     Parser(Lexer* L, MCJITHelper* MH, history_t* H) :
             TheLexer(L), TheHelper(MH), TheHistory(H) {}

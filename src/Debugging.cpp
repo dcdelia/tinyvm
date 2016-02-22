@@ -91,7 +91,7 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
         }
 
         GET_TOKEN();
-        if (!strcasecmp(token, "FROM")) INVALID();
+        if (strcasecmp(token, "FROM")) INVALID();
 
         GET_TOKEN();
         std::string OptFunName = token;
@@ -200,11 +200,12 @@ void Debugging::parseProgramVariables(Function* F, Debugging::SourceInfo* info) 
 
 void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
         MCJITHelper* TheHelper, BuildComp::Heuristic &buildCompOpts) {
-    //bool verbose = TheHelper->verbose;
-
     StateMap* M;
     SourceInfo* sourceInfo;
     std::vector<StateMap::LocPair> locWorkList;
+
+    // retrieve flag for verbose mode
+    bool verbose = TheHelper->verbose;
 
     // retrieve pre-computed debug info
     std::map<Function*, SourceInfo*>::iterator mapIt = sourceInfoMap.find(orig);
@@ -237,7 +238,7 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     Function *src = opt, *dest = orig;
     BuildComp::Heuristic opts = buildCompOpts;
 
-    // TODO we borrow some code from the Parser class
+    // we borrow some code for IR name resolution from the Parser class
     Parser::IDToValueVec slotIDsForSrc = Parser::computeSlotIDs(src);
     Parser::IDToValueVec slotIDsForDest = Parser::computeSlotIDs(dest);
     Parser::IDToValueVec lineIDsForSrc = Parser::computeLineIDs(src);
@@ -277,7 +278,12 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     std::string OSRSrcName, LPadName;
     LivenessAnalysis::LiveValues liveAtOSRSrc, liveAtLPad;
     BuildComp::Statistics bcStats;
-    //BuildComp::ValueSet missingSet;
+
+    int allScalarsAreLive = 0;
+    int totDeadUserVars = 0;
+    int totRecoverableUserVars = 0;
+
+    std::set<Value*> deadScalars, recoveredScalars;
 
     for (int i = 0, e = locWorkList.size(); i != e; ++i) {
         Instruction* OSRSrc = locWorkList[i].first;
@@ -309,17 +315,32 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
         for (const Value* v: liveAtLPad) {
             Value* valToSet = const_cast<Value*>(v);
             if (!availMap.count(valToSet)) {
+                // arguments are not interesting for debugging purposes
+                if (isa<Argument>(valToSet)) {
+                    if (verbose) {
+                        std::cerr << "Skipping dead argument ";
+                        valToSet->dump();
+                    }
+                    continue;
+                }
+
                 // TODO
                 if (sourceInfo->dbgValueInfoMap.count(valToSet)) {
                     varWorkList.push_back(valToSet);
+                    deadScalars.insert(valToSet);
                 }
             }
         }
 
         if (varWorkList.empty()) {
-            std::cerr << "All live user variables are available!" << std::endl;
+            if (verbose) {
+                std::cerr << "All live user variables are available!" << std::endl;
+            }
+            ++allScalarsAreLive;
             continue;
         }
+
+        totDeadUserVars += varWorkList.size();
 
         if (BuildComp::canUseDeadValues(opts)) {
             BuildComp::computeDeadAvailableValues(M, OSRSrc, src, &BCAD_src,
@@ -340,10 +361,15 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                     liveAliasMap, deadAvailMap, opts, recList, nullptr);
 
             if (!canReconstruct) {
-                std::cerr << "Could not reconstruct variable: ";
-                userVar->dump();
+                if (verbose) {
+                    std::cerr << "Could not reconstruct variable: ";
+                    userVar->dump();
+                }
                 continue;
             }
+
+            ++totRecoverableUserVars;
+            recoveredScalars.insert(userVar);
 
             if (recList.empty()) { // local 1:1 mapping information
                 Value* valToUse = BuildComp::fetchOperandFromMaps(userVar,
@@ -376,4 +402,50 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
             }
         }
     }
+
+    std::cerr << "Locations at which all user scalars are available: "
+              << allScalarsAreLive << "/" << locWorkList.size() << std::endl;
+
+    std::cerr << "Recoverable dead user scalars (total): "
+              << totRecoverableUserVars << "/" << totDeadUserVars << std::endl;
+
+    auto printVarWithDbgInfo = [&sourceInfo](Value* v) {
+        std::map<Value*, std::string>::iterator it;
+
+        it = sourceInfo->dbgValueInfoMap.find(v);
+        if (it != sourceInfo->dbgValueInfoMap.end()) {
+            std::string line;
+            raw_string_ostream ss(line);
+            v->print(ss);
+
+            line += " ==> ";
+
+            std::string &dbgInfo = it->second;
+            int first = 0, last = dbgInfo.length() - 1;
+
+            for (int i = last; i > 0; --i) {
+                if (dbgInfo[i] == ']') {
+                    last = i;
+                } else if (dbgInfo[i] == '[') {
+                    if (first) {
+                        first = i;
+                        break;
+                    }
+                    first = i;
+                }
+            }
+
+            line += dbgInfo.substr(first, last-first+1);
+
+            std::cerr << line << std::endl;
+        } else {
+            v->dump();
+        }
+    };
+
+    std::cerr << "List of dead scalar variables across all locations:" << std::endl;
+    for (Value* v: deadScalars) printVarWithDbgInfo(v);
+
+    std::cerr << "List of (at-least-somewhere) recoverable scalar variables:" << std::endl;
+    for (Value* v: recoveredScalars) printVarWithDbgInfo(v);
 }

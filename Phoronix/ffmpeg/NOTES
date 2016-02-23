@@ -1,0 +1,3 @@
+Drop attributes 'static av_always_inline void' for the function we are
+interested into (decode_cabac_residual_internal), then compile with:
+clang -S -emit-llvm -I../ h264_cabac.c

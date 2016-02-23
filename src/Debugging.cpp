@@ -3,6 +3,7 @@
 #include "CodeMapper.hpp"
 #include "Parser.hpp"
 
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <llvm/IR/DebugLoc.h>
@@ -152,7 +153,7 @@ void Debugging::parseProgramLocations(Function* F, Debugging::SourceInfo* info) 
         }
     }
 
-    std::cerr << "IR values associated with source line locations: "
+    std::cerr << "IR instructions associated with source line locations: "
               << info->instToLineNumMap.size() << std::endl;
 }
 
@@ -282,6 +283,7 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     int allScalarsAreLive = 0;
     int totDeadUserVars = 0;
     int totRecoverableUserVars = 0;
+    float sumRecoverableRatio = 0;
 
     std::set<Value*> deadScalars, recoveredScalars;
 
@@ -356,6 +358,8 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
         std::vector<Instruction*> recList;
         bcStats.reset();
 
+        int oldTotRecoverableUserVars = totRecoverableUserVars;
+
         for (Value* userVar: varWorkList) {
             bool canReconstruct = BuildComp::reconstructValue(userVar, availMap,
                     liveAliasMap, deadAvailMap, opts, recList, nullptr);
@@ -401,13 +405,25 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                 recList.clear();
             }
         }
+
+        sumRecoverableRatio += (totRecoverableUserVars - oldTotRecoverableUserVars)
+                               / (float)varWorkList.size();
     }
+
+    int locsWithDeadVars = locWorkList.size() - allScalarsAreLive;
 
     std::cerr << "Locations at which all user scalars are available: "
               << allScalarsAreLive << "/" << locWorkList.size() << std::endl;
 
     std::cerr << "Recoverable dead user scalars (total): "
               << totRecoverableUserVars << "/" << totDeadUserVars << std::endl;
+
+    std::cerr << "Average recoverability ratio: " << std::fixed << std::setprecision(3)
+              << sumRecoverableRatio/locsWithDeadVars << std::endl;
+
+    std::cerr << "Average number of dead variables (when any): " << std::fixed
+              << std::setprecision(2) << totDeadUserVars/(float)locsWithDeadVars
+              << std::endl;
 
     auto printVarWithDbgInfo = [&sourceInfo](Value* v) {
         std::map<Value*, std::string>::iterator it;

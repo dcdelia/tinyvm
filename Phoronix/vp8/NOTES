@@ -1,0 +1,2 @@
+In order to generate the IR module, we need to specify an include path:
+clang++ -S -emit-llvm -I../../ mcomp.c

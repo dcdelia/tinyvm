@@ -1,0 +1,8 @@
+LOAD_IR debugging/fhourstones/code-dbg.ll
+DEBUG PARSE ab
+DEBUG STRIP code-dbg.ll
+CLONE_FUN ab AS optfun
+VERBOSE
+OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
+MAPS UPDATE ab optfun
+VERBOSE

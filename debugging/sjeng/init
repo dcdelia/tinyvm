@@ -1,0 +1,8 @@
+LOAD_IR debugging/sjeng/code-dbg.ll
+DEBUG PARSE std_eval
+DEBUG STRIP code-dbg.ll
+CLONE_FUN std_eval AS optfun
+VERBOSE
+OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
+MAPS UPDATE std_eval optfun
+VERBOSE

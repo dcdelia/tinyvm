@@ -1,0 +1,8 @@
+LOAD_IR debugging/soplex/code-dbg.ll
+DEBUG PARSE _ZN6soplex10SPxSteepPR9entered4XENS_5SPxIdEiiiii
+DEBUG STRIP code-dbg.ll
+CLONE_FUN _ZN6soplex10SPxSteepPR9entered4XENS_5SPxIdEiiiii AS optfun
+VERBOSE
+OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
+MAPS UPDATE _ZN6soplex10SPxSteepPR9entered4XENS_5SPxIdEiiiii optfun
+VERBOSE

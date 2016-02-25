@@ -576,7 +576,7 @@ void Parser::handleHelpCommand() {
               << "\tManipulate compensation code for OSR points." << std::endl
               << "\tEnter HELP COMP_CODE to find out more." << std::endl;
     std::cerr << "--> DEBUG [...] "<< std::endl
-              << "\tManipulate debug information for IR code." << std::endl
+              << "\tPerform debug-related tasks on IR code." << std::endl
               << "\tEnter HELP DEBUG to find out more." << std::endl;
     std::cerr << "--> DUMP [<function_name> | <module_name>]" << std::endl
               << "\tShow the IR code of a given function or module."

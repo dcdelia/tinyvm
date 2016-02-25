@@ -25,6 +25,7 @@ private:
     static void parseProgramLocations(Function* F, SourceInfo* info);
     static void parseProgramVariables(Function* F, SourceInfo* info);
     static void stripDebugInfo(Module* M);
+    static void runInstNamerPass(Function* F);
     static void computeRecoveryInfo(Function* orig, Function* opt,
             MCJITHelper* TheHelper, BuildComp::Heuristic &buildCompOpts);
 };

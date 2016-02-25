@@ -12,6 +12,7 @@
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Transforms/Scalar.h>
 
 
 std::map<Function*, Debugging::SourceInfo*> Debugging::sourceInfoMap;
@@ -36,7 +37,7 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
 
     // anonymous enum to encode actions
     enum {
-        parse, strip, recovery
+        parse, strip, recovery, namer
     };
 
     int action;
@@ -47,6 +48,8 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
         action = strip;
     } else if (!strcasecmp(token, "RECOVERY")) {
         action = recovery;
+    } else if (!strcasecmp(token, "NAMER")) {
+        action = namer;
     } else {
         INVALID();
     }
@@ -104,13 +107,49 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
         }
 
         computeRecoveryInfo(orig, opt, TheHelper, buildCompOpts);
+    } else if (action == namer) {
+        GET_TOKEN();
+        std::string FunName = token;
+
+        Function* F = TheHelper->getFunction(FunName);
+        if (F == nullptr) {
+            std::cerr << "Unable to find function " << FunName << "!" << std::endl;
+            return;
+        }
+
+        runInstNamerPass(F);
     }
     #undef INVALID
 
 }
 
 void Debugging::showHelpForDebugCommand() {
-    // TODO
+    std::cerr << "Perform debug-related tasks on IR code:" << std::endl
+              << "--> DEBUG NAMER <FUN>" << std::endl
+              << "--> DEBUG PARSE <FUN>" << std::endl
+              << "--> DEBUG STRIP <MOD>" << std::endl
+              << "--> DEBUG RECOVERY <FUN_BASE> FROM <FUN_OPT>" << std::endl
+              << std::endl;
+
+    std::cerr << "The DEBUG command provides a number of features useful for "
+              << "debugging purposes." << std::endl << std::endl
+              << "With NAMER, anonymous IR values are assigned an explicit ID, "
+              << "so it becomes easier to track the effects of optimizations."
+              << std::endl << std::endl
+              << "With PARSE, debugging metadata in a function are analyzed to "
+              << "associate scalar user variables with virtual SSA registers "
+              << "(@call llvm.dbg.value instrinsics)."
+              << std::endl << std::endl
+              << "With STRIP, debugging information are removed from a module."
+              << std::endl << std::endl
+              << "Given a base and a derived optimized version of a function, "
+              << "DEBUG can determine which dead/endangered/non-current user "
+              << "variables BuildComp can RECOVERY." << std::endl
+              << "This operation is performed at each point in the optimized "
+              << "version that would be the OSR landing pad for the first IR "
+              << "instruction generated in the base version for a "
+              << "source-level statement."
+              << std::endl;
 }
 
 void Debugging::stripDebugInfo(Module* M) {
@@ -464,4 +503,17 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
 
     std::cerr << "List of (at-least-somewhere) recoverable scalar variables:" << std::endl;
     for (Value* v: recoveredScalars) printVarWithDbgInfo(v);
+}
+
+void Debugging::runInstNamerPass(Function* F) {
+    Module* M = F->getParent();
+    assert (M && "function is not inside a module");
+
+    FunctionPassManager FPM(M);
+    FPM.add(createInstructionNamerPass());
+    FPM.doInitialization();
+    FPM.run(*F);
+    FPM.doFinalization();
+
+    std::cout << "All anonymous IR values have been assigned an ID!" << std::endl;
 }

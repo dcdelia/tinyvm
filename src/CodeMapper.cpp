@@ -12,10 +12,13 @@
 #include <cassert>
 #include <iostream>
 #include <map>
+#include <llvm/Support/raw_os_ostream.h>
 
 using namespace llvm;
 
 CodeMapper::GlobalMap CodeMapper::globalMap;
+bool CodeMapper::debugPasses = false;
+raw_os_ostream CodeMapper::debugStream(std::cerr);
 
 CodeMapper* CodeMapper::getCodeMapper(Function &F) {
     GlobalMap::iterator it = globalMap.find(&F);

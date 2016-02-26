@@ -13,7 +13,7 @@
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/IntrinsicInst.h>
-#include <llvm/Support/Debug.h>
+//#include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 using namespace llvm;
 
@@ -103,7 +103,7 @@ bool OSR_Sinking::runOnFunction(Function &F) {
 
   do {
     MadeChange = false;
-    DEBUG(dbgs() << "Sinking iteration " << NumSinkIter << "\n");
+    OSR_DEBUG(OSR_DBGS << "Sinking iteration " << NumSinkIter << "\n");
     // Process all basic blocks.
     for (Function::iterator I = F.begin(), E = F.end();
          I != E; ++I)
@@ -263,11 +263,11 @@ bool OSR_Sinking::SinkInstruction(Instruction *Inst,
   if (!SuccToSinkTo)
     return false;
 
-  DEBUG(dbgs() << "Sink" << *Inst << " (";
-        Inst->getParent()->printAsOperand(dbgs(), false);
-        dbgs() << " -> ";
-        SuccToSinkTo->printAsOperand(dbgs(), false);
-        dbgs() << ")\n");
+  OSR_DEBUG(OSR_DBGS << "Sink" << *Inst << " (";
+        Inst->getParent()->printAsOperand(OSR_DBGS, false);
+        OSR_DBGS << " -> ";
+        SuccToSinkTo->printAsOperand(OSR_DBGS, false);
+        OSR_DBGS << ")\n");
 
   // Move the instruction.
   /* [OSR] Inst->moveBefore(SuccToSinkTo->getFirstInsertionPt()); */

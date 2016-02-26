@@ -72,6 +72,7 @@ bool OSR_DCE::runOnFunction(Function &F) {
           WorkList.push_back(Used);
 
       // Remove the instruction.
+      OSR_DEBUG(OSR_DBGS << "DCE: " << *I << '\n');
       if (OSR_CM) OSR_CM->deleteInstruction(I); /* OSR */
       I->eraseFromParent();
 

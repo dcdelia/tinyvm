@@ -84,6 +84,7 @@ bool OSR_ADCE::runOnFunction(Function& F) {
   for (SmallVectorImpl<Instruction *>::iterator I = worklist.begin(),
        E = worklist.end(); I != E; ++I) {
     ++NumRemoved;
+    OSR_DEBUG(OSR_DBGS << "ADCE: " << *I << '\n');
     if (OSR_CM) OSR_CM->deleteInstruction(*I); /* OSR */
     (*I)->eraseFromParent();
   }

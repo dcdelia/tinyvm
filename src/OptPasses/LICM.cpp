@@ -24,7 +24,7 @@
 #include <llvm/IR/Metadata.h>
 #include <llvm/IR/PredIteratorCache.h>
 #include <llvm/Support/CommandLine.h>
-#include <llvm/Support/Debug.h>
+//#include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetLibraryInfo.h>
 #include <llvm/Transforms/Utils/Local.h>
@@ -330,7 +330,7 @@ void OSR_LICM::SinkRegion(DomTreeNode *N) {
     // If the instruction is dead, we would try to sink it because it isn't used
     // in the loop, instead, just delete it.
     if (isInstructionTriviallyDead(&I, TLI)) {
-      DEBUG(dbgs() << "LICM deleting dead inst: " << I << '\n');
+      OSR_DEBUG(OSR_DBGS << "LICM deleting dead inst: " << I << '\n');
       ++II;
       CurAST->deleteValue(&I);
       if (OSR_CM) OSR_CM->deleteInstruction(&I); /* OSR */
@@ -374,7 +374,7 @@ void OSR_LICM::HoistRegion(DomTreeNode *N) {
       // constants, it is technically hoistable, but it would be better to just
       // fold it.
       if (Constant *C = ConstantFoldInstruction(&I, DL, TLI)) {
-        DEBUG(dbgs() << "LICM folding inst: " << I << "  --> " << *C << '\n');
+        OSR_DEBUG(OSR_DBGS << "LICM folding inst: " << I << "  --> " << *C << '\n');
         CurAST->copyValue(&I, C);
         CurAST->deleteValue(&I);
         if (OSR_CM) { /* OSR */
@@ -551,7 +551,7 @@ Instruction *OSR_LICM::CloneInstructionInExitBlock(Instruction &I,
 /// position, and may either delete it or move it to outside of the loop.
 ///
 void OSR_LICM::sink(Instruction &I) {
-  DEBUG(dbgs() << "LICM sinking instruction: " << I << "\n");
+  OSR_DEBUG(OSR_DBGS << "LICM sinking instruction: " << I << "\n");
 
   if (isa<LoadInst>(I)) ++NumMovedLoads;
   else if (isa<CallInst>(I)) ++NumMovedCalls;
@@ -609,7 +609,7 @@ void OSR_LICM::sink(Instruction &I) {
 /// that is safe to hoist, this instruction is called to do the dirty work.
 ///
 void OSR_LICM::hoist(Instruction &I) {
-  DEBUG(dbgs() << "LICM hoisting to " << Preheader->getName() << ": "
+  OSR_DEBUG(OSR_DBGS << "LICM hoisting to " << Preheader->getName() << ": "
         << I << "\n");
 
   // Move the new node to the Preheader, before its terminator.

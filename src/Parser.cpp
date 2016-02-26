@@ -212,7 +212,7 @@ void Parser::handleMapsCommand() {
         if (CM_F1 == nullptr) {
             std::cerr << "Nothing to do for " << F1Name << "." << std::endl;
         } else {
-            CM_F1->updateStateMapping(M, TheHelper->verbose);
+            CM_F1->updateStateMapping(M, true); // verbose by default
             std::cerr << "StateMap updated to reflect changes in " << F1Name
                       << "." << std::endl;
         }
@@ -222,7 +222,7 @@ void Parser::handleMapsCommand() {
         if (CM_F2 == nullptr) {
             std::cerr << "Nothing to do for " << F2Name << "." << std::endl;
         } else {
-            CM_F2->updateStateMapping(M, TheHelper->verbose);
+            CM_F2->updateStateMapping(M, true); // verbose by default
             std::cerr << "StateMap updated to reflect changes in " << F2Name
                       << "." << std::endl;
         }
@@ -374,13 +374,13 @@ void Parser::handleOptCommand() {
     }
     while (token != tok_newline && token != tok_eof);
 
-    if (TheHelper->verbose) OSR_Statistic::resetStats();
+    OSR_Statistic::resetStats();
 
     FPM.doInitialization();
     FPM.run(*F);
     FPM.doFinalization();
 
-    if (TheHelper->verbose) OSR_Statistic::printStats();
+    OSR_Statistic::printStats();
 
     EXIT: return;
 
@@ -1854,6 +1854,7 @@ void Parser::handleVerboseCommand() {
         std::cerr << "Current status: verbose mode disabled. Now enabling it!" << std::endl;
     }
     TheHelper->verbose = !TheHelper->verbose;
+    CodeMapper::debugPasses = TheHelper->verbose;
 }
 
 Parser::IDToValueVec Parser::computeLineIDs(Function* F) {

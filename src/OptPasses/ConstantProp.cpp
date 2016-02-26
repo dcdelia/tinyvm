@@ -79,6 +79,7 @@ bool OSR_ConstantPropagation::runOnFunction(Function &F) {
 
         // Remove the dead instruction.
         WorkList.erase(I);
+        OSR_DEBUG(OSR_DBGS << "ConstProp: " << *I << '\n');
         if (OSR_CM) OSR_CM->deleteInstruction(I); /* OSR */
         I->eraseFromParent();
 

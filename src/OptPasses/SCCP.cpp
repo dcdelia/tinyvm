@@ -19,7 +19,7 @@
 #include <llvm/IR/InstVisitor.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/Pass.h>
-#include <llvm/Support/Debug.h>
+//#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetLibraryInfo.h>
@@ -204,7 +204,7 @@ public:
   bool MarkBlockExecutable(BasicBlock *BB) {
     if (!BBExecutable.insert(BB).second)
       return false;
-    DEBUG(dbgs() << "Marking Block Executable: " << BB->getName() << '\n');
+    OSR_DEBUG(OSR_DBGS << "SCCP Marking Block Executable: " << BB->getName() << '\n');
     BBWorkList.push_back(BB);  // Add the block to the work list!
     return true;
   }
@@ -295,7 +295,7 @@ private:
   //
   void markConstant(LatticeVal &IV, Value *V, Constant *C) {
     if (!IV.markConstant(C)) return;
-    DEBUG(dbgs() << "markConstant: " << *C << ": " << *V << '\n');
+    OSR_DEBUG(OSR_DBGS << "SCCP markConstant: " << *C << ": " << *V << '\n');
     if (IV.isOverdefined())
       OverdefinedInstWorkList.push_back(V);
     else
@@ -311,7 +311,7 @@ private:
     assert(!V->getType()->isStructTy() && "Should use other method");
     LatticeVal &IV = ValueState[V];
     IV.markForcedConstant(C);
-    DEBUG(dbgs() << "markForcedConstant: " << *C << ": " << *V << '\n');
+    OSR_DEBUG(OSR_DBGS << "SCCP markForcedConstant: " << *C << ": " << *V << '\n');
     if (IV.isOverdefined())
       OverdefinedInstWorkList.push_back(V);
     else
@@ -325,11 +325,11 @@ private:
   void markOverdefined(LatticeVal &IV, Value *V) {
     if (!IV.markOverdefined()) return;
 
-    DEBUG(dbgs() << "markOverdefined: ";
+    OSR_DEBUG(OSR_DBGS << "SCCP markOverdefined: ";
           if (Function *F = dyn_cast<Function>(V))
-            dbgs() << "Function '" << F->getName() << "'\n";
+            OSR_DBGS << "Function '" << F->getName() << "'\n";
           else
-            dbgs() << *V << '\n');
+            OSR_DBGS << *V << '\n');
     // Only instructions go on the work list
     OverdefinedInstWorkList.push_back(V);
   }
@@ -416,7 +416,7 @@ private:
       // If the destination is already executable, we just made an *edge*
       // feasible that wasn't before.  Revisit the PHI nodes in the block
       // because they have potentially new operands.
-      DEBUG(dbgs() << "Marking Edge Executable: " << Source->getName()
+      OSR_DEBUG(OSR_DBGS << "SCCP Marking Edge Executable: " << Source->getName()
             << " -> " << Dest->getName() << '\n');
 
       PHINode *PN;
@@ -492,7 +492,7 @@ private:
 
   void visitInstruction(Instruction &I) {
     // If a new instruction is added to LLVM that we don't handle.
-    dbgs() << "SCCP: Don't know how to handle: " << I << '\n';
+    OSR_DBGS << "SCCP: Don't know how to handle: " << I << '\n';
     markAnythingOverdefined(&I);   // Just in case
   }
 };
@@ -560,7 +560,7 @@ void SCCPSolver::getFeasibleSuccessors(TerminatorInst &TI,
   }
 
 #ifndef NDEBUG
-  dbgs() << "Unknown terminator instruction: " << TI << '\n';
+  OSR_DBGS << "Unknown terminator instruction: " << TI << '\n';
 #endif
   llvm_unreachable("SCCP: Don't know how to handle this terminator!");
 }
@@ -616,7 +616,7 @@ bool SCCPSolver::isEdgeFeasible(BasicBlock *From, BasicBlock *To) {
     return true;
 
 #ifndef NDEBUG
-  dbgs() << "Unknown terminator instruction: " << *TI << '\n';
+  OSR_DBGS << "Unknown terminator instruction: " << *TI << '\n';
 #endif
   llvm_unreachable(nullptr);
 }
@@ -1166,7 +1166,7 @@ void SCCPSolver::Solve() {
     while (!OverdefinedInstWorkList.empty()) {
       Value *I = OverdefinedInstWorkList.pop_back_val();
 
-      DEBUG(dbgs() << "\nPopped off OI-WL: " << *I << '\n');
+      OSR_DEBUG(OSR_DBGS << "SCCP \nPopped off OI-WL: " << *I << '\n');
 
       // "I" got into the work list because it either made the transition from
       // bottom to constant, or to overdefined.
@@ -1184,7 +1184,7 @@ void SCCPSolver::Solve() {
     while (!InstWorkList.empty()) {
       Value *I = InstWorkList.pop_back_val();
 
-      DEBUG(dbgs() << "\nPopped off I-WL: " << *I << '\n');
+      OSR_DEBUG(OSR_DBGS << "SCCP \nPopped off I-WL: " << *I << '\n');
 
       // "I" got into the work list because it made the transition from undef to
       // constant.
@@ -1204,7 +1204,7 @@ void SCCPSolver::Solve() {
       BasicBlock *BB = BBWorkList.back();
       BBWorkList.pop_back();
 
-      DEBUG(dbgs() << "\nPopped off BBWL: " << *BB << '\n');
+      OSR_DEBUG(OSR_DBGS << "SCCP \nPopped off BBWL: " << *BB << '\n');
 
       // Notify all instructions in this basic block that they are newly
       // executable.
@@ -1522,7 +1522,7 @@ FunctionPass* OSR_createSCCPPass() {
 }
 
 static void DeleteInstructionInBlock(BasicBlock *BB, CodeMapper* OSR_CM) { /* OSR */
-  DEBUG(dbgs() << "  BasicBlock Dead:" << *BB);
+  OSR_DEBUG(OSR_DBGS << "SCCP   BasicBlock Dead:" << *BB);
   ++NumDeadBlocks;
 
   // Check to see if there are non-terminating instructions to delete.
@@ -1562,7 +1562,7 @@ bool OSR_SCCP::runOnFunction(Function &F) {
   OSR_CM = CodeMapper::getCodeMapper(F); /* OSR */
   if (OSR_CM) OSR_CM->beginOptimization("SCCP");
 
-  DEBUG(dbgs() << "SCCP on function '" << F.getName() << "'\n");
+  OSR_DEBUG(OSR_DBGS << "SCCP SCCP on function '" << F.getName() << "'\n");
   const DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
   const DataLayout *DL = DLP ? &DLP->getDataLayout() : nullptr;
   const TargetLibraryInfo *TLI = &getAnalysis<TargetLibraryInfo>();
@@ -1579,7 +1579,7 @@ bool OSR_SCCP::runOnFunction(Function &F) {
   bool ResolvedUndefs = true;
   while (ResolvedUndefs) {
     Solver.Solve();
-    DEBUG(dbgs() << "RESOLVING UNDEFs\n");
+    OSR_DEBUG(OSR_DBGS << "SCCP RESOLVING UNDEFs\n");
     ResolvedUndefs = Solver.ResolvedUndefsIn(F);
   }
 
@@ -1615,7 +1615,7 @@ bool OSR_SCCP::runOnFunction(Function &F) {
 
       Constant *Const = IV.isConstant()
         ? IV.getConstant() : UndefValue::get(Inst->getType());
-      DEBUG(dbgs() << "  Constant: " << *Const << " = " << *Inst << '\n');
+      OSR_DEBUG(OSR_DBGS << "SCCP   Constant: " << *Const << " = " << *Inst << '\n');
 
       if (OSR_CM) { /* OSR */
           OSR_CM->replaceAllUsesWith(Inst, Const);

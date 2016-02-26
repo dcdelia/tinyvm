@@ -96,6 +96,7 @@ static bool processInstruction(Loop &L, Instruction &Inst, DominatorTree &DT,
 
     PHINode *PN = PHINode::Create(Inst.getType(), PredCache.GetNumPreds(ExitBB),
                                   Inst.getName() + ".lcssa", ExitBB->begin());
+    OSR_DEBUG(OSR_DBGS << "LCSSA Add: " << *PN << '\n');
     if (OSR_CM) OSR_CM->addInstruction(PN); /* OSR */
 
     // Add inputs from inside the loop for this PHI.
@@ -156,6 +157,7 @@ static bool processInstruction(Loop &L, Instruction &Inst, DominatorTree &DT,
   if (OSR_CM) { /* OSR */
     for (SmallVectorImpl<PHINode*>::iterator tmpIt = tmp_insertedPHINodes.begin(),
             tmpEnd = tmp_insertedPHINodes.end(); tmpIt != tmpEnd; ++tmpIt) {
+        OSR_DEBUG(OSR_DBGS << "LCSSA Add: " << *tmpIt << '\n');
         OSR_CM->addInstruction(*tmpIt);
     }
   }
@@ -182,6 +184,7 @@ static bool processInstruction(Loop &L, Instruction &Inst, DominatorTree &DT,
   // Remove PHI nodes that did not have any uses rewritten.
   for (unsigned i = 0, e = AddedPHIs.size(); i != e; ++i) {
     if (AddedPHIs[i]->use_empty()) {
+      OSR_DEBUG(OSR_DBGS << "LCSSA Delete: " << AddedPHIs[i] << '\n');
       if (OSR_CM) OSR_CM->deleteInstruction(AddedPHIs[i]); /* OSR */
       AddedPHIs[i]->eraseFromParent();
     }

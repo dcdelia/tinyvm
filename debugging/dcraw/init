@@ -1,4 +1,5 @@
 LOAD_IR debugging/dcraw/code-dbg.ll
+DEBUG NAMER vng_interpolate
 DEBUG PARSE vng_interpolate
 DEBUG STRIP code-dbg.ll
 CLONE_FUN vng_interpolate AS optfun

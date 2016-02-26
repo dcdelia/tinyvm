@@ -340,6 +340,8 @@ bool OSR_makeLoopInvariant(Instruction *I, bool &Changed, Instruction *InsertPt,
   }
 
   // Hoist.
+  OSR_DEBUG(OSR_DBGS << "makeLoopInvariant() Hoist: " << *I << " before "
+                     << *InsertPt << '\n');
   if (OSR_CM) OSR_CM->hoistInstruction(I, InsertPt); /* OSR */
   I->moveBefore(InsertPt);
   Changed = true;
@@ -377,6 +379,7 @@ bool OSR_RecursivelyDeleteTriviallyDeadInstructions(Value *V,
           DeadInsts.push_back(OpI);
     }
 
+    OSR_DEBUG(OSR_DBGS << "RecursivelyDeleteTriviallyDeadInstructions() Delete: " << *I << '\n');
     if (OSR_CM) OSR_CM->deleteInstruction(I); /* OSR */
     I->eraseFromParent();
   } while (!DeadInsts.empty());

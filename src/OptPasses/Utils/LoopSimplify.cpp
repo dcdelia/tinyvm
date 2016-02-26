@@ -25,7 +25,7 @@
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Type.h>
-#include <llvm/Support/Debug.h>
+//#include <llvm/Support/Debug.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
 #include <llvm/Transforms/Utils/Local.h>
 #include <llvm/Transforms/Utils/LoopUtils.h>
@@ -110,7 +110,7 @@ BasicBlock* OSR_InsertPreheaderForLoop(Loop *L, Pass *PP, CodeMapper* OSR_CM) {
 
   PreheaderBB->getTerminator()->setDebugLoc(
                                       Header->getFirstNonPHI()->getDebugLoc());
-  DEBUG(dbgs() << "LoopSimplify: Creating pre-header "
+  OSR_DEBUG(OSR_DBGS << "LoopSimplify: Creating pre-header "
                << PreheaderBB->getName() << "\n");
 
   // Make sure that NewBB is put someplace intelligent, which doesn't mess up
@@ -150,7 +150,7 @@ static BasicBlock *rewriteLoopExitBlock(Loop *L, BasicBlock *Exit, Pass *PP,
     NewExitBB = OSR_SplitBlockPredecessors(Exit, LoopBlocks, ".loopexit", PP, OSR_CM);
   }
 
-  DEBUG(dbgs() << "LoopSimplify: Creating dedicated exit block "
+  OSR_DEBUG(OSR_DBGS << "LoopSimplify: Creating dedicated exit block "
                << NewExitBB->getName() << "\n");
   return NewExitBB;
 }
@@ -252,7 +252,7 @@ static Loop *separateNestedLoop(Loop *L, BasicBlock *Preheader,
       OuterLoopPreds.push_back(PN->getIncomingBlock(i));
     }
   }
-  DEBUG(dbgs() << "LoopSimplify: Splitting out a new outer loop\n");
+  OSR_DEBUG(OSR_DBGS << "LoopSimplify: Splitting out a new outer loop\n");
 
   // If ScalarEvolution is around and knows anything about values in
   // this loop, tell it to forget them, because we're about to
@@ -363,7 +363,7 @@ static BasicBlock *insertUniqueBackedgeBlock(Loop *L, BasicBlock *Preheader,
   BranchInst *BETerminator = BranchInst::Create(Header, BEBlock);
   if (OSR_CM) OSR_CM->addInstruction(BETerminator); /* OSR */
 
-  DEBUG(dbgs() << "LoopSimplify: Inserting unique backedge block "
+  OSR_DEBUG(OSR_DBGS << "LoopSimplify: Inserting unique backedge block "
                << BEBlock->getName() << "\n");
 
   // Move the new backedge block to right after the last backedge block.
@@ -480,7 +480,7 @@ ReprocessLoop:
     // Delete each unique out-of-loop (and thus dead) predecessor.
     for (BasicBlock *P : BadPreds) {
 
-      DEBUG(dbgs() << "LoopSimplify: Deleting edge from dead predecessor "
+      OSR_DEBUG(OSR_DBGS << "LoopSimplify: Deleting edge from dead predecessor "
                    << P->getName() << "\n");
 
       // Inform each successor of each dead pred.
@@ -517,7 +517,7 @@ ReprocessLoop:
       if (BI->isConditional()) {
         if (UndefValue *Cond = dyn_cast<UndefValue>(BI->getCondition())) {
 
-          DEBUG(dbgs() << "LoopSimplify: Resolving \"br i1 undef\" to exit in "
+          OSR_DEBUG(OSR_DBGS << "LoopSimplify: Resolving \"br i1 undef\" to exit in "
                        << (*I)->getName() << "\n");
 
           BI->setCondition(ConstantInt::get(Cond->getType(),
@@ -677,7 +677,7 @@ ReprocessLoop:
 
       // Success. The block is now dead, so remove it from the loop,
       // update the dominator tree and delete it.
-      DEBUG(dbgs() << "LoopSimplify: Eliminating exiting block "
+      OSR_DEBUG(OSR_DBGS << "LoopSimplify: Eliminating exiting block "
                    << ExitingBlock->getName() << "\n");
 
       // Notify ScalarEvolution before deleting this block. Currently assume the

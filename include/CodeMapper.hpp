@@ -13,6 +13,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_os_ostream.h>
 #include <map>
 
 class CodeMapper {
@@ -26,6 +27,10 @@ private:
     class RAUWInst;
 
 public:
+    // for optimization passes debug
+    static bool debugPasses;
+    static llvm::raw_os_ostream debugStream;
+
     CodeMapper(llvm::Function &F) : TheFunction(&F) {}
 
     static CodeMapper* getCodeMapper(llvm::Function &F);

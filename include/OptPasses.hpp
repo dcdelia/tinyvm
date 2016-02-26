@@ -19,6 +19,7 @@
 #include <llvm/IR/DataLayout.h>
 #include <llvm/Target/TargetLibraryInfo.h>
 
+#include <iostream>
 #include <vector>
 
 /* Adapted LLVM passes */
@@ -94,6 +95,9 @@ private:
 
 #define OSR_STATISTIC(VARNAME, DESC) \
         static OSR_Statistic VARNAME(DEBUG_TYPE, DESC, 0)
+
+#define OSR_DEBUG(X)    if (CodeMapper::debugPasses) do { X; } while (0)
+#define OSR_DBGS        CodeMapper::debugStream
 
 /* Adaptation of LLVM's internal macros*/
 #define OSR_INITIALIZE_PASS(passName, arg, name, cfg, analysis) \

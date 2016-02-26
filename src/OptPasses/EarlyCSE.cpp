@@ -16,7 +16,7 @@
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/IR/PatternMatch.h>
 #include <llvm/Pass.h>
-#include <llvm/Support/Debug.h>
+//#include <llvm/Support/Debug.h>
 #include <llvm/Support/RecyclingAllocator.h>
 #include <llvm/Target/TargetLibraryInfo.h>
 #include <llvm/Transforms/Utils/Local.h>
@@ -426,7 +426,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
 
     // Dead instructions should just be removed.
     if (isInstructionTriviallyDead(Inst, TLI)) {
-      DEBUG(dbgs() << "EarlyCSE DCE: " << *Inst << '\n');
+      OSR_DEBUG(OSR_DBGS << "EarlyCSE DCE: " << *Inst << '\n');
       if (OSR_CM) OSR_CM->deleteInstruction(Inst); /* OSR */
       Inst->eraseFromParent();
       Changed = true;
@@ -439,14 +439,14 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
     // and this pass will not disturb any of the assumption's control
     // dependencies.
     if (match(Inst, m_Intrinsic<Intrinsic::assume>())) {
-      DEBUG(dbgs() << "EarlyCSE skipping assumption: " << *Inst << '\n');
+      OSR_DEBUG(OSR_DBGS << "EarlyCSE skipping assumption: " << *Inst << '\n');
       continue;
     }
 
     // If the instruction can be simplified (e.g. X+0 = X) then replace it with
     // its simpler value.
     if (Value *V = SimplifyInstruction(Inst, DL, TLI, DT, AC)) {
-      DEBUG(dbgs() << "EarlyCSE Simplify: " << *Inst << "  to: " << *V << '\n');
+      OSR_DEBUG(OSR_DBGS << "EarlyCSE Simplify: " << *Inst << "  to: " << *V << '\n');
       if (OSR_CM) { /* OSR */
           OSR_CM->replaceAllUsesWith(Inst, V);
           OSR_CM->deleteInstruction(Inst);
@@ -462,7 +462,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
     if (SimpleValue::canHandle(Inst)) {
       // See if the instruction has an available value.  If so, use it.
       if (Value *V = AvailableValues->lookup(Inst)) {
-        DEBUG(dbgs() << "EarlyCSE CSE: " << *Inst << "  to: " << *V << '\n');
+        OSR_DEBUG(OSR_DBGS << "EarlyCSE CSE: " << *Inst << "  to: " << *V << '\n');
         if (OSR_CM) { /* OSR */
             assert(isa<Instruction>(V) && "[OSR] unexpected value type"); // TODO still needed?
             OSR_CM->replaceAllUsesWith(Inst, V);
@@ -496,7 +496,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
       std::pair<Value*, unsigned> InVal =
         AvailableLoads->lookup(Inst->getOperand(0));
       if (InVal.first != nullptr && InVal.second == CurrentGeneration) {
-        DEBUG(dbgs() << "EarlyCSE CSE LOAD: " << *Inst << "  to: "
+        OSR_DEBUG(OSR_DBGS << "EarlyCSE CSE LOAD: " << *Inst << "  to: "
               << *InVal.first << '\n');
         /* [OSR] if (!Inst->use_empty()) Inst->replaceAllUsesWith(InVal.first);*/
         if (!Inst->use_empty()) {
@@ -530,7 +530,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
       // generation, replace this instruction.
       std::pair<Value*, unsigned> InVal = AvailableCalls->lookup(Inst);
       if (InVal.first != nullptr && InVal.second == CurrentGeneration) {
-        DEBUG(dbgs() << "EarlyCSE CSE CALL: " << *Inst << "  to: "
+        OSR_DEBUG(OSR_DBGS << "EarlyCSE CSE CALL: " << *Inst << "  to: "
                      << *InVal.first << '\n');
         if (!Inst->use_empty()) {
             if (OSR_CM) OSR_CM->replaceAllUsesWith(Inst, InVal.first); /* OSR */
@@ -560,7 +560,7 @@ bool OSR_EarlyCSE::processNode(DomTreeNode *Node) {
         // location with no intervening loads.  Delete the earlier store.
         if (LastStore &&
             LastStore->getPointerOperand() == SI->getPointerOperand()) {
-          DEBUG(dbgs() << "EarlyCSE DEAD STORE: " << *LastStore << "  due to: "
+          OSR_DEBUG(OSR_DBGS << "EarlyCSE DEAD STORE: " << *LastStore << "  due to: "
                        << *Inst << '\n');
           if (OSR_CM) OSR_CM->deleteInstruction(LastStore); /* OSR */
           LastStore->eraseFromParent();

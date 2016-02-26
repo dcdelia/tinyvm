@@ -118,6 +118,8 @@ static bool OSR_checkCSEInPredecessor(Instruction *Inst, BasicBlock *PB,
     Instruction *PBI = &*I;
     // Check whether Inst and PBI generate the same value.
     if (Inst->isIdenticalTo(PBI)) {
+      OSR_DEBUG(OSR_DBGS << "checkCSEInPredecessor() RAUW & Delete: "
+                         << *Inst << " with " << PBI << '\n');
       if (OSR_CM) { /* OSR */
         OSR_CM->replaceAllUsesWith(Inst, PBI);
         OSR_CM->deleteInstruction(Inst);
@@ -141,6 +143,7 @@ static void OSR_EraseTerminatorInstAndDCECond(TerminatorInst *TI,
   } else if (IndirectBrInst *IBI = dyn_cast<IndirectBrInst>(TI)) {
     Cond = dyn_cast<Instruction>(IBI->getAddress());
   }
+  OSR_DEBUG(OSR_DBGS << "EraseTerminatorInstAndDCECond() Delete: " << *TI << '\n');
   if (OSR_CM) OSR_CM->deleteInstruction(TI); /* OSR */
   TI->eraseFromParent();
   if (Cond) OSR_RecursivelyDeleteTriviallyDeadInstructions(Cond, nullptr, OSR_CM);
@@ -312,6 +315,8 @@ bool OSR_FoldBranchToCommonDest(BranchInst *BI, const llvm::DataLayout *DL,
 
             PredBlock->getInstList().insert(PBI, NewBonusInst);
             NewBonusInst->takeName(BonusInst);
+            OSR_DEBUG(OSR_DBGS << "FoldBranchToCommonDest() Add: "
+                               << *NewBonusInst << '\n');
             if (OSR_CM) OSR_CM->addInstruction(NewBonusInst); /* OSR */
             BonusInst->setName(BonusInst->getName() + ".old");
         }
@@ -323,6 +328,7 @@ bool OSR_FoldBranchToCommonDest(BranchInst *BI, const llvm::DataLayout *DL,
                 RF_NoModuleLevelChanges | RF_IgnoreMissingEntries);
         PredBlock->getInstList().insert(PBI, New);
         New->takeName(Cond);
+        OSR_DEBUG(OSR_DBGS << "FoldBranchToCommonDest() Add: " << *New << '\n');
         if (OSR_CM) OSR_CM->addInstruction(New); /* OSR */
         Cond->setName(New->getName() + ".old");
 

@@ -37,7 +37,7 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
 
     // anonymous enum to encode actions
     enum {
-        parse, strip, recovery, namer
+        parse, strip, recovery, namer, live_vars
     };
 
     int action;
@@ -50,6 +50,8 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
         action = recovery;
     } else if (!strcasecmp(token, "NAMER")) {
         action = namer;
+    } else if (!strcasecmp(token, "LIVE_VARS")) {
+        action = live_vars;
     } else {
         INVALID();
     }
@@ -118,6 +120,39 @@ void Debugging::handleDebugCommand(Lexer* TheLexer, MCJITHelper* TheHelper, Buil
         }
 
         runInstNamerPass(F);
+    } else if (action == live_vars) {
+        GET_TOKEN();
+        if (strcasecmp(token, "AT")) INVALID();
+
+        GET_TOKEN();
+        std::string LocName = token;
+
+        GET_TOKEN();
+        if (strcasecmp(token, "IN")) INVALID();
+
+        GET_TOKEN();
+        std::string FunName = token;
+
+        Function* F = TheHelper->getFunction(FunName);
+        if (F == nullptr) {
+            std::cerr << "Unable to find function " << FunName << "!" << std::endl;
+            return;
+        }
+
+        Instruction* src = const_cast<Instruction*>(
+                Parser::getOSRLocationFromStrIDs(*F, LocName));
+        if (!src) return;
+
+        LivenessAnalysis LA(F);
+        LivenessAnalysis::LiveValues liveVars =
+                LivenessAnalysis::analyzeLiveInForSeq(src->getParent(),
+                LA.getLiveOutValues(src->getParent()), src, nullptr);
+
+        std::cerr << "Live values at the specified location:" << std::endl;
+        for (const Value* v: liveVars) {
+            v->dump();
+        }
+
     }
     #undef INVALID
 
@@ -321,8 +356,10 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
 
     int allScalarsAreLive = 0;
     int totDeadUserVars = 0;
+    int minDeadUserVars, maxDeadUserVars = 0;
     int totRecoverableUserVars = 0;
     float sumRecoverableRatio = 0;
+    float minRecoverableRatio = 0, maxRecoverableRatio = 0;
 
     std::set<Value*> deadScalars, recoveredScalars;
 
@@ -373,15 +410,24 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
             }
         }
 
-        if (varWorkList.empty()) {
-            if (verbose) {
-                std::cerr << "All live user variables are available!" << std::endl;
-            }
+        int numDeadVars = varWorkList.size();
+
+        if (!numDeadVars) {
             ++allScalarsAreLive;
             continue;
         }
 
-        totDeadUserVars += varWorkList.size();
+        if (verbose) {
+            std::cerr << "===> <" << OSRSrcName << " to " << LPadName
+                      << "> Dead source variables:" << std::endl;
+            for (Value* v: varWorkList) {
+                v->dump();
+            }
+        }
+
+        totDeadUserVars += numDeadVars;
+        minDeadUserVars = std::min(numDeadVars, minDeadUserVars);
+        maxDeadUserVars = std::max(numDeadVars, maxDeadUserVars);
 
         if (BuildComp::canUseDeadValues(opts)) {
             BuildComp::computeDeadAvailableValues(M, OSRSrc, src, &BCAD_src,
@@ -445,11 +491,17 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
             }
         }
 
-        sumRecoverableRatio += (totRecoverableUserVars - oldTotRecoverableUserVars)
+        float recoverableRatio = (totRecoverableUserVars - oldTotRecoverableUserVars)
                                / (float)varWorkList.size();
+
+        sumRecoverableRatio += recoverableRatio;
+        minRecoverableRatio = std::min(recoverableRatio, minRecoverableRatio);
+        maxRecoverableRatio = std::max(recoverableRatio, maxRecoverableRatio);
     }
 
     int locsWithDeadVars = locWorkList.size() - allScalarsAreLive;
+
+    std::streamsize oldPrecision = std::cerr.precision();
 
     std::cerr << "Locations at which all user scalars are available: "
               << allScalarsAreLive << "/" << locWorkList.size() << std::endl;
@@ -503,6 +555,71 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
 
     std::cerr << "List of (at-least-somewhere) recoverable scalar variables:" << std::endl;
     for (Value* v: recoveredScalars) printVarWithDbgInfo(v);
+
+    auto countInstructions = [](Function* F, int* numI, int*numPHI) {
+        *numI = 0;
+        *numPHI = 0;
+        for (Function::iterator bbIt = F->begin(), bbEnd = F->end(); bbIt != bbEnd;
+                ++bbIt) {
+            BasicBlock* B = &*bbIt;
+            for (BasicBlock::iterator it = B->begin(), end = B->end(); it != end;
+                    ++it) {
+                ++(*numI);
+                if (isa<PHINode>(&*it)) ++(*numPHI);
+            }
+        }
+    };
+
+    int numI_orig, numPHI_orig, numI_opt, numPHI_opt;
+    countInstructions(orig, &numI_orig, &numPHI_orig);
+    countInstructions(opt, &numI_opt, &numPHI_opt);
+
+    int possibleDeoptPoints = 0;
+    for (StateMap::LocMap::iterator it = LPads.begin(), end = LPads.end();
+            it != end; ++it) {
+        if (it->first->getParent()->getParent() == opt) ++possibleDeoptPoints;
+    }
+
+    int sourceLevelLocs = locWorkList.size();
+
+    /* Output entry format for log file:
+     * (1) name of the original function
+     * (2) # of instructions (original function) -> total; PHI only
+     * (3) # of instructions (optimized function) -> total; PHI only
+     * (4) # of deopt locations
+     * (5) # of deopt source-level locations -> total; with dead user vars only
+     * (6) total # of dead user vars
+     * (7) total # of recoverable dead user vars
+     * (8) {avg, min, max} recoverability ratio
+     * (9) {avg, min, max} # of dead user variables (normalized against 5b)
+    */
+    std::cerr << "Entry for log file:" << std::endl;
+    std::cerr << orig->getName().str() << '\t';
+    std::cerr << numI_orig << '\t' << numPHI_orig << '\t';
+    std::cerr << numI_opt << '\t' << numPHI_opt << '\t';
+    std::cerr << possibleDeoptPoints << '\t';
+    std::cerr << sourceLevelLocs << '\t';
+    std::cerr << sourceLevelLocs - allScalarsAreLive << '\t';
+    std::cerr << totDeadUserVars << '\t';
+    std::cerr << totRecoverableUserVars << '\t';
+
+    // set decimal precision for log entry
+    std::cerr.precision(4);
+    std::cerr << std::fixed;
+
+    float avgRecoverableRatio = (!locsWithDeadVars) ? 0 :
+                                sumRecoverableRatio/locsWithDeadVars;
+    std::cerr << avgRecoverableRatio << '\t';
+    std::cerr << minRecoverableRatio << '\t';
+    std::cerr << maxRecoverableRatio << '\t';
+
+    float avgDeadUserVars = (!locsWithDeadVars) ? 0 :
+                            totDeadUserVars/(float)locsWithDeadVars;
+    std::cerr << avgDeadUserVars << '\t';
+    std::cerr << minDeadUserVars << '\t';
+    std::cerr << maxDeadUserVars << std::endl;
+
+    std::cerr.precision(oldPrecision);
 }
 
 void Debugging::runInstNamerPass(Function* F) {

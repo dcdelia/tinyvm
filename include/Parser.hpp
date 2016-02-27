@@ -39,8 +39,7 @@ private:
     void handleLoadLibCommand();
     void handleMapsCommand();
     void handleRepeatCommand();
-    void handleShowAddrCommand();
-    void handleShowCFGCommand(bool showInstructions);
+    void handleShowCommand();
     void handleTrackAsmCommand();
     void handleOptCommand();
     void handleOldOptCommand(bool simplifyCFG, bool memToReg);

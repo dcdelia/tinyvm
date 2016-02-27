@@ -29,22 +29,17 @@ enum Token {
     tok_opt_cfg     = -15,
     tok_opt_ssa     = -16,
     tok_verbose     = -17,
-    tok_show_lids   = -18,
-    tok_cfg         = -19,
-    tok_cfg_full    = -20,
-    tok_dump        = -21,
-    tok_track_asm   = -22,
-    tok_show_asm    = -23,
-    tok_repeat      = -24,
-    tok_show_mods   = -25,
-    tok_show_addr   = -26,
-    tok_show_funs   = -27,
-    tok_load_lib    = -28,
-    tok_clone_fun   = -29,
-    tok_maps        = -30,
-    tok_opt         = -31,
-    tok_comp_code   = -32,
-    tok_debug       = -33
+    tok_show        = -18,
+    tok_dump        = -19,
+    tok_track_asm   = -20,
+    tok_show_asm    = -21,
+    tok_repeat      = -22,
+    tok_load_lib    = -23,
+    tok_clone_fun   = -24,
+    tok_maps        = -25,
+    tok_opt         = -26,
+    tok_comp_code   = -27,
+    tok_debug       = -28
 };
 
 class Lexer {

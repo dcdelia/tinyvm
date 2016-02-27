@@ -65,8 +65,6 @@ int Parser::start(bool displayHelpMsg) {
             case tok_newline:       fprintf(stderr, "\r"); break; // dirty trick :-)
             case tok_help:          handleHelpCommand(); break;
             case tok_begin:         handleBeginCommand(); break;
-            case tok_cfg:           handleShowCFGCommand(false); break;
-            case tok_cfg_full:      handleShowCFGCommand(true); break;
             case tok_clone_fun:     handleCloneFunCommand(); break;
             case tok_comp_code:     handleCompCodeCommand(); break;
             case tok_dump:          handleDumpCommand(false); break;
@@ -78,11 +76,7 @@ int Parser::start(bool displayHelpMsg) {
             case tok_opt_cfg:       handleOldOptCommand(true, false); break;
             case tok_opt_ssa:       handleOldOptCommand(false, true); break;
             case tok_repeat:        handleRepeatCommand(); break;
-            case tok_show_addr:     handleShowAddrCommand(); break;
-            case tok_show_asm:      TheHelper->showTrackedAsm(); break;
-            case tok_show_funs:     TheHelper->showFunctions(); break;
-            case tok_show_lids:     handleDumpCommand(true); break;
-            case tok_show_mods:     TheHelper->showModules(); break;
+            case tok_show:          handleShowCommand(); break;
             case tok_track_asm:     handleTrackAsmCommand(); break;
             case tok_verbose:       handleVerboseCommand(); break;
             case tok_quit:          std::cerr << "Exiting..." << std::endl; return 0;
@@ -93,6 +87,88 @@ int Parser::start(bool displayHelpMsg) {
         }
         if (TheHistory != nullptr) set_term(TheHistory);
     }
+}
+
+
+
+void Parser::handleShowCommand() {
+    #define INVALID() do { std::cerr << "Invalid syntax for a SHOW command!" << std::endl\
+        << "Error at argument " << numToken << ". Enter HELP SHOW to display the right syntax." << std::endl;\
+        return; } while (0);
+
+    std::string *tmpStr = TheLexer->getLine();
+    std::string LexerStr(std::move(*tmpStr));
+    delete tmpStr;
+    INIT_TOKENIZER(const_cast<char*>(LexerStr.c_str()));
+    if (token == NULL) INVALID();
+
+    // anonymous enum to encode actions
+    enum {
+        addr, asm_code, cfg, cfg_full, funs, funs_full, line_ids, mods
+    };
+
+    int action;
+
+    if (!strcasecmp(token, "ADDR")) {
+        action = addr;
+    } else if (!strcasecmp(token, "ASM")) {
+        action = asm_code;
+    } else if (!strcasecmp(token, "CFG")) {
+        action = cfg;
+    } else if (!strcasecmp(token, "CFG_FULL")) {
+        action = cfg_full;
+    } else if (!strcasecmp(token, "FUNS")) {
+        action = funs;
+    } else if (!strcasecmp(token, "FUNS_FULL")) {
+        action = funs_full;
+    } else if (!strcasecmp(token, "LINE_IDS")) {
+        action = line_ids;
+    } else if (!strcasecmp(token, "MODS")) {
+        action = mods;
+    } else {
+        INVALID();
+    }
+
+    if (action == addr) {
+        GET_TOKEN();
+        std::string FunName = token;
+
+        std::vector<uint64_t> addresses = TheHelper->getCompiledFuncAddr(FunName);
+        if (addresses.empty()) {
+            std::cerr << "Cannot locate compiled code for the given symbol!"
+                      << std::endl;
+        } else if (addresses.size() == 1) {
+            std::cerr << "Compiled code available at address "
+                      << (void*)addresses.front() << std::endl;
+        } else {
+            std::cerr << "Multiple addresses found. Showing most recently compiled first:"
+                      << std::endl;
+            for (uint64_t addr: addresses) {
+                std::cerr << (void*)addr << std::endl;
+            }
+        }
+    } else if (action == asm_code) {
+        TheHelper->showTrackedAsm(); // TODO this code is deprecated!
+    } else if (action == cfg || action == cfg_full) {
+        GET_TOKEN();
+        std::string FunName = token;
+        Function* F = TheHelper->getFunction(FunName);
+        if (F == nullptr) {
+            std::cerr << "Unable to find function " << FunName << "!" << std::endl;
+            return;
+        }
+        if (action == cfg) F->viewCFGOnly();
+        else F->viewCFG();
+    } else if (action == funs || action == funs_full) {
+        bool namesOnly = (action == funs);
+        TheHelper->showFunctions(namesOnly);
+    } else if (action == line_ids) {
+        handleDumpCommand(true);
+    } else if (action == mods) {
+        TheHelper->showModules();
+    }
+
+    #undef INVALID
 }
 
 void Parser::handleBeginCommand() {
@@ -559,6 +635,7 @@ void Parser::handleHelpCommand() {
         if (!strcasecmp("INSERT_OSR", commandName)) goto INSERT_OSR;
         if (!strcasecmp("MAPS", commandName)) goto MAPS;
         if (!strcasecmp("OPT", commandName)) goto OPT;
+        if (!strcasecmp("SHOW", commandName)) goto SHOW;
         if (!strcasecmp("DEBUG", commandName)) {
             Debugging::showHelpForDebugCommand();
             goto EXIT;
@@ -568,12 +645,6 @@ void Parser::handleHelpCommand() {
     std::cerr << "List of available commands:" << std::endl;
     std::cerr << "--> BEGIN <module_name>" << std::endl
               << "\tType an IR module (from stdin). Press CTRL-D when finished."
-              << std::endl;
-    std::cerr << "--> CFG <function_name>" << std::endl
-              << "\tShow a compact view of the CFG of a given function."
-              << std::endl;
-    std::cerr << "--> CFG_FULL <function_name>" << std::endl
-              << "\tShow the CFG (with instructions) of a given function."
               << std::endl;
     std::cerr << "--> CLONE_FUN <function_name> AS <clone_name>" << std::endl
               << "\tClone a given function and generate a StateMap for the two "
@@ -610,18 +681,9 @@ void Parser::handleHelpCommand() {
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl
               << "\tPerform a function call (see next paragraph) repeatedly."
               << std::endl;
-    std::cerr << "--> SHOW_ADDR <function_name>" << std::endl
-              << "\tShow compiled-code address for a given function symbol."
-              << std::endl;
-    std::cerr << "--> SHOW_ASM" << std::endl
-              << "\tShow logged x86-64 assembly code." << std::endl;
-    std::cerr << "--> SHOW_FUNS" << std::endl
-              << "\tShow function symbols tracked by MCJITHelper." << std::endl;
-    std::cerr << "--> SHOW_LINE_IDS <function_name>" << std::endl
-              << "\tShow by-line IR identifiers for a given function."
-              << std::endl;
-    std::cerr << "--> SHOW_MODS" << std::endl
-              << "\tShow loaded modules and their symbols." << std::endl;
+    std::cerr << "--> SHOW [...]" << std::endl
+              << "\tPerform queries on functions and modules." << std::endl
+              << "\tEnter HELP SHOW to find out more." << std::endl;
     std::cerr << "--> TRACK_ASM" << std::endl
               << "\tEnable/disable logging of generated x86-64 assembly code."
               << std::endl;
@@ -639,7 +701,7 @@ void Parser::handleHelpCommand() {
     #define SHOW_HELP_FOR_LOCATIONS() std::cerr << std::endl << \
         "Program locations can be expressed using an LLVM \'%name\' (including"\
         << " numerical IDs for anonymous values) or a line ID \'$i\' reported "\
-        << "by SHOW_LINE_IDS. When a basic block is specified, its first "\
+        << "by SHOW LINE_IDS. When a basic block is specified, its first "\
         << "non-PHI instruction is picked as location." << std::endl;
 
     goto EXIT;
@@ -748,8 +810,35 @@ void Parser::handleHelpCommand() {
               << "\tSink instructions into successor blocks." << std::endl;
     goto EXIT;
 
-    #undef SHOW_HELP_FOR_LOCATIONS
+    SHOW:
+    std::cerr << "Perform queries on functions and modules:" << std::endl
+              << "--> SHOW ADDR <FUN>" << std::endl
+              << "    Display compiled-code address for a given function symbol."
+              << std::endl
+              << "--> SHOW ASM" << std::endl
+              << "    Dump tracked x86-64 assembly code."
+              << std::endl
+              << "--> SHOW CFG <FUN>" << std::endl
+              << "    Display the CFG (block structure only) of a function."
+              << std::endl
+              << "--> SHOW CFG_FULL <FUN>" << std::endl
+              << "    Display the CFG (with instructions) of a function."
+              << std::endl
+              << "--> SHOW FUNS" << std::endl
+              << "    Display function symbols loaded in MCJIT."
+              << std::endl
+              << "--> SHOW FUNS_FULL" << std::endl
+              << "    Display function symbols (with prototype) loaded in MCJIT."
+              << std::endl
+              << "--> SHOW LINE_IDS <FUN>" << std::endl
+              << "    Display by-line IR identifiers for a given function."
+              << std::endl
+              << "--> SHOW MODS" << std::endl
+              << "    Display loaded modules and their symbols."
+              << std::endl;
+    goto EXIT;
 
+    #undef SHOW_HELP_FOR_LOCATIONS
     EXIT: return;
 }
 
@@ -1797,53 +1886,9 @@ void Parser::handleRepeatCommand() {
     handleFunctionInvocation(iterations);
 }
 
-void Parser::handleShowAddrCommand() {
-    #define INVALID() do { std::cerr << "Invalid syntax for a SHOW_ADDR command!" << std::endl \
-            << "Expected command of the form: SHOW_ADDR <function_name>" << std::endl; \
-            return; } while (0);
-
-    if (TheLexer->getNextToken() != tok_identifier) INVALID();
-    const std::string FunctionName = TheLexer->getIdentifier();
-    #undef INVALID
-
-    // we do not rely on MCJIT's getSymbolAddress/getFunctionAddress
-    std::vector<uint64_t> addresses = TheHelper->getCompiledFuncAddr(FunctionName);
-    if (addresses.empty()) {
-        std::cerr << "Cannot locate compiled code for the given function symbol!" << std::endl;
-    } else if (addresses.size() == 1) {
-        std::cerr << "Compiled code available at address " << (void*)addresses.front() << std::endl;
-    } else {
-        std::cerr << "Multiple addresses available. Reporting them in most recently compiled order:" << std::endl;
-        for (uint64_t addr: addresses) {
-            std::cerr << (void*)addr << " ";
-        }
-        std::cerr << std::endl;
-    }
-}
-
-void Parser::handleShowCFGCommand(bool showInstructions) {
-    #define INVALID() do { std::cerr << "Invalid syntax for a CFG command!" << std::endl \
-            << "Expected command of the form: CFG <function_name>" << std::endl; \
-            return; } while (0);
-
-    if (TheLexer->getNextToken() != tok_identifier) INVALID();
-    const std::string Name = TheLexer->getIdentifier();
-    #undef INVALID
-
-    Function* F = TheHelper->getFunction(Name);
-    if (F == nullptr) {
-        std::cerr << "Unable to find function named " << Name << "!" << std::endl;
-        return;
-    } else {
-        if (showInstructions) {
-            F->viewCFG();
-        } else {
-            F->viewCFGOnly();
-        }
-    }
-}
-
 void Parser::handleTrackAsmCommand() {
+    std::cerr << "-----> THIS COMMAND IS DEPRECATED!!! <-----" << std::endl;
+
     bool enabled = TheHelper->toggleTrackAsm();
     if (enabled) {
         std::cerr << "Current status: tracking is enabled. Now disabling it!" << std::endl;

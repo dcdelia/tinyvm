@@ -87,7 +87,7 @@ public:
     bool toggleTrackAsm();
     void showTrackedAsm();
     void showModules();
-    void showFunctions();
+    void showFunctions(bool namesOnly);
     bool loadDynamicLibrary(const std::string &FileName);
     void registerFunction(Function* F);
     void trackAsmCodeUtil(Module* M);

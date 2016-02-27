@@ -261,24 +261,33 @@ void MCJITHelper::showModules() {
     }
 }
 
-void MCJITHelper::showFunctions() {
-    std::cerr << "[Currently active functions]" << std::endl;
+void MCJITHelper::showFunctions(bool namesOnly) {
     if (ActiveFunctions.empty()) {
         std::cerr << "No functions are present." << std::endl;
-    } else {
-        for (std::map<std::string, Function*>::iterator it = ActiveFunctions.begin(),
-                end = ActiveFunctions.end(); it != end; ++it) {
-            Function* F = it->second;
-            std::cerr << prototypeToString(*F) << " [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
+        return;
+    }
+
+    std::cerr << "[Currently active functions]" << std::endl;
+    for (std::map<std::string, Function*>::iterator it = ActiveFunctions.begin(),
+            end = ActiveFunctions.end(); it != end; ++it) {
+        Function* F = it->second;
+        if (namesOnly) {
+            std::cerr << F->getName().str();
+        } else {
+            std::cerr << prototypeToString(*F);
         }
-        if (!PrevFunctions.empty()) {
-            std::cerr << std::endl << "[Previously active functions]" << std::endl;
-            for (std::map<std::string, std::vector<Function*>>::iterator it = PrevFunctions.begin(),
-                    end = PrevFunctions.end(); it != end; ++it) {
-                std::cerr << it->first << " defined in:" << std::endl;
-                for (Function* F: it->second) {
-                    std::cerr << "-> [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
-                }
+
+        std::cerr << " [" << F->getParent()->getModuleIdentifier() << "]"
+                  << std::endl;
+    }
+
+    if (!PrevFunctions.empty()) {
+        std::cerr << std::endl << "[Previously active functions]" << std::endl;
+        for (std::map<std::string, std::vector<Function*>>::iterator it = PrevFunctions.begin(),
+                end = PrevFunctions.end(); it != end; ++it) {
+            std::cerr << it->first << " defined in:" << std::endl;
+            for (Function* F: it->second) {
+                std::cerr << "-> [" << F->getParent()->getModuleIdentifier() << "]" << std::endl;
             }
         }
     }

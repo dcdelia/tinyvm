@@ -50,7 +50,7 @@ int Lexer::getNextToken() {
         if (command == "MAPS")          return tok_maps;
         if (command == "OPT")           return tok_opt;
         if (command == "OPT_CFG")       return tok_opt_cfg;
-        if (command == "OPT_FULL")      return tok_opt_full;
+        if (command == "OPT_SSA")       return tok_opt_ssa;
         if (command == "REPEAT")        return tok_repeat;
         if (command == "SHOW_ADDR")     return tok_show_addr;
         if (command == "SHOW_ASM")      return tok_show_asm;

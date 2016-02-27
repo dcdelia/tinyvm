@@ -83,7 +83,6 @@ public:
     std::unique_ptr<Module> createModuleFromFile(const std::string &FileName);
     void* getPointerToNamedFunction(const std::string &Name);
     Function* getFunction(const std::string &Name);
-    FunctionPassManager createFPM(Module* M, bool CFGSimplificationOnly = false);
     int (*createAnonFunctionForCall(const std::string &FunctionName, std::vector<int> &Arguments))();
     bool toggleTrackAsm();
     void showTrackedAsm();

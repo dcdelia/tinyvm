@@ -27,7 +27,7 @@ enum Token {
     tok_begin       = -13,
     tok_insert_osr  = -14,
     tok_opt_cfg     = -15,
-    tok_opt_full    = -16,
+    tok_opt_ssa     = -16,
     tok_verbose     = -17,
     tok_show_lids   = -18,
     tok_cfg         = -19,

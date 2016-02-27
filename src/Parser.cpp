@@ -36,7 +36,8 @@
 
 #include <libgen.h> // basename()
 #include <strings.h> // strcasecmp()
-#include <unistd.h> // access()
+#include <unistd.h>
+#include <llvm/Transforms/Scalar.h> // access()
 
 using namespace llvm;
 
@@ -74,8 +75,8 @@ int Parser::start(bool displayHelpMsg) {
             case tok_load_lib:      handleLoadLibCommand(); break;
             case tok_maps:          handleMapsCommand(); break;
             case tok_opt:           handleOptCommand(); break;
-            case tok_opt_cfg:       handleOldOptCommand(true); break;
-            case tok_opt_full:      handleOldOptCommand(false); break;
+            case tok_opt_cfg:       handleOldOptCommand(true, false); break;
+            case tok_opt_ssa:       handleOldOptCommand(false, true); break;
             case tok_repeat:        handleRepeatCommand(); break;
             case tok_show_addr:     handleShowAddrCommand(); break;
             case tok_show_asm:      TheHelper->showTrackedAsm(); break;
@@ -388,28 +389,33 @@ void Parser::handleOptCommand() {
     #undef EAT_LEXER_TOKENS
 }
 
-void Parser::handleOldOptCommand(bool CFGSimplificationOnly) {
+void Parser::handleOldOptCommand(bool simplifyCFG, bool mem2reg) {
     if (TheLexer->getNextToken() != tok_identifier) {
-        const std::string cmdName = (CFGSimplificationOnly) ? "OPT_FULL" : "OPT_CFG";
-        std::cerr << "Invalid syntax for a " << cmdName << "command!" << std::endl
-                  << "Expected command of the form: " << cmdName  << " <function_name"
-                  << std::endl;
+        // keep it simple: this is just provisional code
+        std::cerr << "Invalid syntax for the command!" << std::endl;
         return;
     }
-    const std::string Name = TheLexer->getIdentifier();
 
+    assert(simplifyCFG || mem2reg);
+
+    const std::string Name = TheLexer->getIdentifier();
     Function* F = TheHelper->getFunction(Name);
     if (F == nullptr) {
         std::cerr << "Unable to find function " << Name << "!" << std::endl;
         return;
-    } else {
-        Module* M = F->getParent();
-        assert(M != nullptr);
-        FunctionPassManager FPM = TheHelper->createFPM(M, CFGSimplificationOnly);
-        FPM.run(*F);
-        FPM.doFinalization();
-        std::cerr << "Function has been optimized!" << std::endl;
     }
+
+    Module* M = F->getParent();
+    assert(M);
+
+    FunctionPassManager FPM(M);
+    if (simplifyCFG) FPM.add(createCFGSimplificationPass());
+    if (mem2reg) FPM.add(createPromoteMemoryToRegisterPass());
+    FPM.doInitialization();
+    FPM.run(*F);
+    FPM.doFinalization();
+
+    std::cerr << "Function has been optimized!" << std::endl;
 }
 
 void Parser::handleDumpCommand(bool showLineIDs) {
@@ -592,14 +598,14 @@ void Parser::handleHelpCommand() {
               << "\tManipulate StateMap objects." << std::endl
               << "\tEnter HELP MAPS to find out more." << std::endl;
     std::cerr << "--> OPT <function_name> { <opt1> ... } " << std::endl
-              << "\tPerform optimization passes on a given function." << std::endl
+              << "\tPerform OSR-aware optimization passes on a given function." << std::endl
               << "\tEnter HELP OPT to find out which optimizations are supported."
               << std::endl;
     std::cerr << "--> OPT_CFG <function_name>" << std::endl
               << "\tPerform a CFG simplification pass over a given function."
               << std::endl;
-    std::cerr << "--> OPT_FULL <function_name>" << std::endl
-              << "\tPerform several optimization passes over a given function."
+    std::cerr << "--> OPT_SSA <function_name>" << std::endl
+              << "\tPromote memory references to registers and construct SSA form."
               << std::endl;
     std::cerr << "--> REPEAT <iterations> <function call>" << std::endl
               << "\tPerform a function call (see next paragraph) repeatedly."

@@ -50,32 +50,6 @@ MCJITHelper::~MCJITHelper() {
     for (JITEventListener* L: Listeners) delete(L);
 }
 
-FunctionPassManager MCJITHelper::createFPM(Module* M, bool CFGSimplificationOnly) {
-    FunctionPassManager FPM(M);
-
-    if (!CFGSimplificationOnly) {
-        // Register info about how the target lays out data structures
-        FPM.add(new DataLayoutPass());
-        // Provide basic AliasAnalysis support for GVN
-        FPM.add(createBasicAliasAnalysisPass());
-        // Promote allocas to registers
-        FPM.add(createPromoteMemoryToRegisterPass());
-        // Do simple peephole & bit-twiddling optimizations
-        FPM.add(createInstructionCombiningPass());
-        // Reassociate expressions
-        FPM.add(createReassociatePass());
-        // Eliminate Common SubExpressions
-        FPM.add(createGVNPass());
-    }
-
-    // Simplify the control flow graph (e.g. delete unreachable blocks)
-    FPM.add(createCFGSimplificationPass());
-
-    FPM.doInitialization();
-
-    return FPM;
-}
-
 void MCJITHelper::trackAsmCodeUtil(Module* M) {
     if (trackAsmCode) {
         formatted_raw_ostream formAsmFdStream(*asmFdStream);

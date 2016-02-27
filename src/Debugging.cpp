@@ -632,5 +632,5 @@ void Debugging::runInstNamerPass(Function* F) {
     FPM.run(*F);
     FPM.doFinalization();
 
-    std::cout << "All anonymous IR values have been assigned an ID!" << std::endl;
+    std::cerr << "All anonymous IR values have been assigned an ID!" << std::endl;
 }

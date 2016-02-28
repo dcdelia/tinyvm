@@ -483,6 +483,8 @@ void BuildComp::computeAvailableValues(StateMap* M, Function* src,
         } else if (Argument* A = dyn_cast<Argument>(valToSet)) {
             if (A->getParent() == src) continue;
         } else {
+            std::cerr << "WHO HAS DIED? " << (void*)valToSet << std::endl;
+            valToSet->dump();
             assert(false && "Constant appears as key in the 1:1 map!");
             continue;
         }

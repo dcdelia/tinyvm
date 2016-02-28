@@ -702,6 +702,13 @@ ReprocessLoop:
 
       BI->getSuccessor(0)->removePredecessor(ExitingBlock);
       BI->getSuccessor(1)->removePredecessor(ExitingBlock);
+
+      if (OSR_CM) { /* OSR */
+          for (BasicBlock::iterator bbIt = ExitingBlock->begin(),
+                  bbEnd = ExitingBlock->end(); bbIt != bbEnd; ++bbIt) {
+              OSR_CM->deleteInstruction(&*bbIt);
+          }
+      }
       ExitingBlock->eraseFromParent();
     }
   }

@@ -15,9 +15,15 @@ def run_tinyvm_script(ll_folder, ll_filename, script_name, log_name):
     out_file = open(log_name, "w")
     p = subprocess.Popen(cmd, stderr=out_file)
     p.wait()
+    if p.returncode != 0:
+        print("TinyVM crashed! Check "+log_name+" or run "+script_name+" again")
+        exit(1)
     return
 
 def process_show_funs_log(log_name):
+    def error_and_exit():
+        print("Error while parsing log file for SHOW FUNS!")
+        exit(1)
     in_file = open(log_name, "r")
     lines = in_file.readlines()
     num_lines = len(lines)
@@ -28,8 +34,7 @@ def process_show_funs_log(log_name):
         if "[Currently active functions]" in lines[index-1]:
             break
     if index == num_lines:
-        print("Error while parsing log file for SHOW FUNS!")
-        exit(1)
+        error_and_exit()
     # collect function symbols into a list and return it
     functions = []
     while index < num_lines:
@@ -37,13 +42,11 @@ def process_show_funs_log(log_name):
             break
         tmp = [x for x in lines[index].split(" ")]
         if len(tmp) != 2:
-            print("Error while parsing log file for SHOW FUNS!")
-            exit(1)
+            error_and_exit()
         functions.append(tmp[0])
         index = index + 1
     if index == num_lines:
-        print("Error while parsing log file for SHOW FUNS!")
-        exit(1)
+        error_and_exit()
     in_file.close()
     return functions
 
@@ -62,7 +65,114 @@ def create_recovery_script(ll_folder, ll_filename, fun_name, script_name):
     script_file.close()
     return
 
+class logEntry:
+    def __init__(self):
+        self.fun_name = ""
+        ## code manipulations
+        self.added_inst = 0
+        self.deleted_inst = 0
+        self.hoisted_inst = 0
+        self.sunk_inst = 0
+        self.rauw_I = 0
+        self.rauw_C = 0
+        self.rauw_A = 0
+        ## recoverability info
+        self.inst_orig = 0
+        self.phi_orig = 0
+        self.inst_opt = 0
+        self.phi_opt = 0
+        self.deopt_candidates = 0
+        self.deopt_src_locs = 0
+        self.deopt_src_locs_with_dead = 0
+        self.tot_dead_user_vars = 0
+        self.tot_rec_dead_user_vars = 0
+        self.avg_rec_ratio = 0
+        self.min_rec_ratio = 0
+        self.max_rec_ratio = 0
+        # next 3 fields were normalized against deopt_src_locs_with_dead
+        self.avg_dead_user_vars = 0
+        self.min_dead_user_vars = 0
+        self.max_dead_user_vars = 0
 
+    def dump(self):
+        # provisional code for sanity check :-)
+        print(self.fun_name)
+        print(self.added_inst)
+        print(self.deopt_candidates)
+
+def process_recovery_log(log_name):
+    def error_and_exit():
+        print("Error while parsing log file for DEBUG RECOVERY!")
+        exit(1)
+    in_file = open(log_name, "r")
+    lines = in_file.readlines()
+    num_lines = len(lines)
+    index = 0
+
+    # skip header
+    while index < num_lines:
+        index = index + 1
+        if "TinyVM> Nothing to do for" in lines[index-1]:
+            break
+    if index == num_lines:
+        error_and_exit()
+
+    # collect statistics into a logEntry object and return it
+    log_entry = logEntry()
+
+    # process CodeMapper info first
+    if index + 6 >= num_lines:
+        error_and_exit()
+    tmp = [x for x in lines[index].strip().split(" ")]
+    log_entry.added_inst = tmp[2]
+    tmp = [x for x in lines[index+1].strip().split(" ")]
+    log_entry.deleted_inst = tmp[2]
+    tmp = [x for x in lines[index+2].strip().split(" ")]
+    log_entry.hoisted_inst = tmp[2]
+    tmp = [x for x in lines[index+3].strip().split(" ")]
+    log_entry.sunk_inst = tmp[2]
+    tmp = [x for x in lines[index+4].strip().split(" ")]
+    log_entry.rauw_I = tmp[2]
+    tmp = [x for x in lines[index+5].strip().split(" ")]
+    log_entry.rauw_C = tmp[2]
+    tmp = [x for x in lines[index+6].strip().split(" ")]
+    log_entry.rauw_A = tmp[2]
+
+    index = index + 6
+
+    # skip lines in between
+    while index < num_lines:
+        index = index + 1
+        if "Entry for log file:" in lines[index-1]:
+            break
+    if index == num_lines:
+        error_and_exit()
+
+    # process recoverability info
+    tmp = [x for x in lines[index].strip().split("\t")]
+    if len(tmp) != 16:
+        error_and_exit()
+    log_entry.fun_name = tmp[0]
+    log_entry.inst_orig = tmp[1]
+    log_entry.phi_orig = tmp[2]
+    log_entry.inst_opt = tmp[3]
+    log_entry.phi_opt = tmp[4]
+    log_entry.deopt_candidates = tmp[5]
+    log_entry.deopt_src_locs = tmp[6]
+    log_entry.deopt_src_locs_with_dead = tmp[7]
+    log_entry.tot_dead_user_vars = tmp[8]
+    log_entry.tot_rec_dead_user_vars = tmp[9]
+    log_entry.avg_rec_ratio = tmp[10]
+    log_entry.min_rec_ratio = tmp[11]
+    log_entry.max_rec_ratio = tmp[12]
+    log_entry.avg_dead_user_vars = tmp[13]
+    log_entry.min_dead_user_vars = tmp[14]
+    log_entry.max_dead_user_vars = tmp[15]
+
+    in_file.close()
+    return log_entry
+
+# script starts here!
 if len(sys.argv) != 2:
     print("Syntax: " + sys.argv[0] + " <IR_folder>")
     exit(1)
@@ -77,13 +187,18 @@ for IR_file in os.listdir(IR_folder):
 
 # for each IR file, find defined functions and process them
 for IR_file in IR_files:
-    print(IR_file)
+    print("Processing "+IR_file+" now...")
     script_name = "tmp.tvm"
     log_name = "tmp.log"
     create_show_funs_script(IR_folder, IR_file, script_name)
     run_tinyvm_script(IR_folder, IR_file, script_name, log_name)
     functions = process_show_funs_log(log_name)
     for fun_name in functions:
-        print(fun_name)
         create_recovery_script(IR_folder, IR_file, fun_name, script_name)
         run_tinyvm_script(IR_folder, IR_file, script_name, log_name)
+        log_entry = process_recovery_log(log_name)
+        log_entry.dump()
+
+# clean up
+os.remove(script_name)
+os.remove(log_name)

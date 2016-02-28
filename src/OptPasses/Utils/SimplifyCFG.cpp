@@ -315,8 +315,7 @@ bool OSR_FoldBranchToCommonDest(BranchInst *BI, const llvm::DataLayout *DL,
 
             PredBlock->getInstList().insert(PBI, NewBonusInst);
             NewBonusInst->takeName(BonusInst);
-            OSR_DEBUG(OSR_DBGS << "FoldBranchToCommonDest() Add: "
-                               << *NewBonusInst << '\n');
+            OSR_DEBUG(OSR_DBGS << "FoldBranchToCommonDest() Add: " << *NewBonusInst << '\n');
             if (OSR_CM) OSR_CM->addInstruction(NewBonusInst); /* OSR */
             BonusInst->setName(BonusInst->getName() + ".old");
         }

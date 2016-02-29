@@ -8,7 +8,6 @@ def create_show_funs_script(ll_folder, ll_filename, script_name):
     script_file.write("SHOW FUNS\n")
     script_file.write("QUIT\n")
     script_file.close()
-    return
 
 def run_tinyvm_script(ll_folder, ll_filename, script_name, log_name):
     cmd = ['./tinyvm', script_name]
@@ -18,7 +17,6 @@ def run_tinyvm_script(ll_folder, ll_filename, script_name, log_name):
     if p.returncode != 0:
         print("TinyVM crashed! Check "+log_name+" or run "+script_name+" again")
         exit(1)
-    return
 
 def process_show_funs_log(log_name):
     def error_and_exit():
@@ -33,6 +31,8 @@ def process_show_funs_log(log_name):
         index = index + 1
         if "[Currently active functions]" in lines[index-1]:
             break
+        if "TinyVM> No functions are present." in lines[index-1]:
+            return []
     if index == num_lines:
         error_and_exit()
     # collect function symbols into a list and return it
@@ -63,7 +63,6 @@ def create_recovery_script(ll_folder, ll_filename, fun_name, script_name):
     script_file.write("DEBUG RECOVERY "+fun_name+" FROM optfun\n")
     script_file.write("QUIT\n")
     script_file.close()
-    return
 
 class logEntry:
     def __init__(self):
@@ -94,11 +93,32 @@ class logEntry:
         self.min_dead_user_vars = 0
         self.max_dead_user_vars = 0
 
-    def dump(self):
-        # provisional code for sanity check :-)
-        print(self.fun_name)
-        print(self.added_inst)
-        print(self.deopt_candidates)
+    def dump_to_file(self, module_name, out_file):
+        out_file.write(module_name+"\t")
+        out_file.write(self.fun_name+"\t")
+        out_file.write(self.added_inst+"\t")
+        out_file.write(self.deleted_inst+"\t")
+        out_file.write(self.hoisted_inst+"\t")
+        out_file.write(self.sunk_inst+"\t")
+        out_file.write(self.rauw_I+"\t")
+        out_file.write(self.rauw_C+"\t")
+        out_file.write(self.rauw_A+"\t")
+        out_file.write(self.inst_orig+"\t")
+        out_file.write(self.phi_orig+"\t")
+        out_file.write(self.inst_opt+"\t")
+        out_file.write(self.phi_opt+"\t")
+        out_file.write(self.deopt_candidates+"\t")
+        out_file.write(self.deopt_src_locs+"\t")
+        out_file.write(self.deopt_src_locs_with_dead+"\t")
+        out_file.write(self.tot_dead_user_vars+"\t")
+        out_file.write(self.tot_rec_dead_user_vars+"\t")
+        out_file.write(self.avg_rec_ratio+"\t")
+        out_file.write(self.min_rec_ratio+"\t")
+        out_file.write(self.max_rec_ratio+"\t")
+        out_file.write(self.avg_dead_user_vars+"\t")
+        out_file.write(self.min_dead_user_vars+"\t")
+        out_file.write(self.max_dead_user_vars+"\n")
+        print("Entry written for "+self.fun_name+" ["+module_name+"]")
 
 def process_recovery_log(log_name):
     def error_and_exit():
@@ -173,11 +193,12 @@ def process_recovery_log(log_name):
     return log_entry
 
 # script starts here!
-if len(sys.argv) != 2:
-    print("Syntax: " + sys.argv[0] + " <IR_folder>")
+if len(sys.argv) != 3:
+    print("Syntax: " + sys.argv[0] + " <IR_folder> <out_file.tsv>")
     exit(1)
 
 IR_folder = sys.argv[1]
+tsv_file_name = sys.argv[2]
 IR_files = []
 
 # construct list of IR files to process
@@ -186,6 +207,8 @@ for IR_file in os.listdir(IR_folder):
         IR_files.append(IR_file)
 
 # for each IR file, find defined functions and process them
+tsv_file = open(tsv_file_name, "w")
+
 for IR_file in IR_files:
     print("Processing "+IR_file+" now...")
     script_name = "tmp.tvm"
@@ -193,12 +216,16 @@ for IR_file in IR_files:
     create_show_funs_script(IR_folder, IR_file, script_name)
     run_tinyvm_script(IR_folder, IR_file, script_name, log_name)
     functions = process_show_funs_log(log_name)
+    if len(functions) == 0:
+        print("Module "+IR_file+" does not contain any function!")
+        continue
     for fun_name in functions:
         create_recovery_script(IR_folder, IR_file, fun_name, script_name)
         run_tinyvm_script(IR_folder, IR_file, script_name, log_name)
         log_entry = process_recovery_log(log_name)
-        log_entry.dump()
+        log_entry.dump_to_file(IR_file, tsv_file)
 
 # clean up
 os.remove(script_name)
 os.remove(log_name)
+tsv_file.close()

@@ -1069,7 +1069,10 @@ bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFu
                     updated = true;
                 }
             } else {
-                assert(false);
+                // if a global g1 is being used in another global g2, g2 will
+                // be eventually fixed using an extern declaration: nothing to
+                // do here for g1 then! (TODO: check this on running code)
+                assert(isa<GlobalVariable>(user) && "Case not accounted for yet");
             }
         }
     }
@@ -1139,7 +1142,18 @@ void OSRLibrary::replaceUsesOfConstantExprInFunction(ConstantExpr* CE,
         } else if (ConstantExpr* CCE = dyn_cast<ConstantExpr>(user)) {
             replaceUsesOfConstantExprInFunction(CCE, oldOp, newOp, F);
         } else {
-            assert(false);
+            // if a constant expr is being used in a global variable, we will
+            // refer to the global using an extern declaration: nothing to
+            // do here then! (TODO: check this on running code)
+            if (isa<GlobalVariable>(user)) continue;
+
+            // however, a constant expr might be used also inside some other
+            // constant type, such as a ConstantArray!!! for the time being,
+            // we assume that such users are or have been made visible anyway
+            // (TODO: check this on running code)
+            if (isa<Constant>(user)) continue;
+
+            assert(false && "Case not accounted for yet");
         }
     }
 }

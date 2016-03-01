@@ -356,10 +356,10 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
 
     int allScalarsAreLive = 0;
     int totDeadUserVars = 0;
-    int minDeadUserVars, maxDeadUserVars = 0;
+    int minDeadUserVars = (1 << 16), maxDeadUserVars = 0;
     int totRecoverableUserVars = 0;
     float sumRecoverableRatio = 0;
-    float minRecoverableRatio = 0, maxRecoverableRatio = 0;
+    float minRecoverableRatio = 2.0, maxRecoverableRatio = 0;
 
     std::set<Value*> deadScalars, recoveredScalars;
 
@@ -498,6 +498,10 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
         minRecoverableRatio = std::min(recoverableRatio, minRecoverableRatio);
         maxRecoverableRatio = std::max(recoverableRatio, maxRecoverableRatio);
     }
+
+    // fix mins when needed (i.e., when there are no dead variables)
+    if (minRecoverableRatio == 2.0) minRecoverableRatio = 0;
+    if (minDeadUserVars == (1 << 16)) minDeadUserVars = 0;
 
     int locsWithDeadVars = locWorkList.size() - allScalarsAreLive;
 

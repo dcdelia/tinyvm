@@ -50,7 +50,7 @@ def process_show_funs_log(log_name):
     in_file.close()
     return functions
 
-def create_recovery_script(ll_folder, ll_filename, fun_name, script_name):
+def create_recovery_script(ll_folder, ll_filename, fun_name, strategy, script_name):
     script_file = open(script_name, "w")
     script_file.write("LOAD_IR "+ll_folder+"/"+ll_filename+"\n")
     script_file.write("OPT_SSA "+fun_name+"\n") # construct SSA form
@@ -59,7 +59,7 @@ def create_recovery_script(ll_folder, ll_filename, fun_name, script_name):
     script_file.write("CLONE_FUN "+fun_name+" AS optfun\n")
     script_file.write("OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink\n")
     script_file.write("MAPS UPDATE "+fun_name+" optfun\n")
-    script_file.write("COMP_CODE STRATEGY 1\n")
+    script_file.write("COMP_CODE STRATEGY "+strategy+"\n")
     script_file.write("DEBUG RECOVERY "+fun_name+" FROM optfun\n")
     script_file.write("QUIT\n")
     script_file.close()
@@ -193,13 +193,17 @@ def process_recovery_log(log_name):
     return log_entry
 
 # script starts here!
-if len(sys.argv) != 3:
-    print("Syntax: " + sys.argv[0] + " <IR_folder> <out_file.tsv>")
+if len(sys.argv) != 3 and len(sys.argv) != 4:
+    print("Syntax: " + sys.argv[0] + " <IR_folder> <out_file.tsv> [<strategy>]")
     exit(1)
 
 IR_folder = sys.argv[1]
 tsv_file_name = sys.argv[2]
 IR_files = []
+BC_strategy = 1
+
+if len(sys.argv) == 4:
+    BC_strategy = sys.argv[3]
 
 # construct list of IR files to process
 for IR_file in os.listdir(IR_folder):
@@ -220,7 +224,7 @@ for IR_file in IR_files:
         print("Module "+IR_file+" does not contain any function!")
         continue
     for fun_name in functions:
-        create_recovery_script(IR_folder, IR_file, fun_name, script_name)
+        create_recovery_script(IR_folder, IR_file, fun_name, BC_strategy, script_name)
         run_tinyvm_script(IR_folder, IR_file, script_name, log_name)
         log_entry = process_recovery_log(log_name)
         log_entry.dump_to_file(IR_file, tsv_file)

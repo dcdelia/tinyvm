@@ -485,7 +485,7 @@ ReprocessLoop:
 
       // Inform each successor of each dead pred.
       for (succ_iterator SI = succ_begin(P), SE = succ_end(P); SI != SE; ++SI)
-        (*SI)->removePredecessor(P);
+        OSR_removePredecessor(*SI, P, OSR_CM);
       // Zap the dead pred's terminator and replace it with unreachable.
       TerminatorInst *TI = P->getTerminator();
 
@@ -496,6 +496,7 @@ ReprocessLoop:
         OSR_CM->deleteInstruction(TI);
       }
       TI->replaceAllUsesWith(tmpUndef);
+      assert(P == TI && "OSR bug here?");
       P->getTerminator()->eraseFromParent(); /* OSR: why doesn't use TI ??? */
       /* [OSR] new UnreachableInst(P->getContext(), P); */
       UnreachableInst* tmpUnreachable = new UnreachableInst(P->getContext(), P);
@@ -700,8 +701,8 @@ ReprocessLoop:
       }
       DT->eraseNode(ExitingBlock);
 
-      BI->getSuccessor(0)->removePredecessor(ExitingBlock);
-      BI->getSuccessor(1)->removePredecessor(ExitingBlock);
+      OSR_removePredecessor(BI->getSuccessor(0), ExitingBlock, OSR_CM);
+      OSR_removePredecessor(BI->getSuccessor(1), ExitingBlock, OSR_CM);
 
       if (OSR_CM) { /* OSR */
           for (BasicBlock::iterator bbIt = ExitingBlock->begin(),

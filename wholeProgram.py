@@ -92,6 +92,8 @@ class logEntry:
         self.avg_dead_user_vars = 0
         self.min_dead_user_vars = 0
         self.max_dead_user_vars = 0
+        # dead available values to maintain
+        self.dead_avail_values = 0
 
     def dump_to_file(self, module_name, out_file):
         out_file.write(module_name+"\t")
@@ -117,7 +119,8 @@ class logEntry:
         out_file.write(self.max_rec_ratio+"\t")
         out_file.write(self.avg_dead_user_vars+"\t")
         out_file.write(self.min_dead_user_vars+"\t")
-        out_file.write(self.max_dead_user_vars+"\n")
+        out_file.write(self.max_dead_user_vars+"\t")
+        out_file.write(self.dead_avail_values+"\n")
         print("Entry written for "+self.fun_name+" ["+module_name+"]")
 
 def process_recovery_log(log_name):
@@ -170,7 +173,7 @@ def process_recovery_log(log_name):
 
     # process recoverability info
     tmp = [x for x in lines[index].strip().split("\t")]
-    if len(tmp) != 16:
+    if len(tmp) != 17:
         error_and_exit()
     log_entry.fun_name = tmp[0]
     log_entry.inst_orig = tmp[1]
@@ -188,6 +191,7 @@ def process_recovery_log(log_name):
     log_entry.avg_dead_user_vars = tmp[13]
     log_entry.min_dead_user_vars = tmp[14]
     log_entry.max_dead_user_vars = tmp[15]
+    log_entry.dead_avail_values = tmp[16]
 
     in_file.close()
     return log_entry

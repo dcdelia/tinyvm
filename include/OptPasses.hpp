@@ -67,6 +67,9 @@ bool OSR_FoldBranchToCommonDest(llvm::BranchInst *BI, const llvm::DataLayout *DL
 bool OSR_RecursivelyDeleteTriviallyDeadInstructions(llvm::Value *V,
         const llvm::TargetLibraryInfo *TLI, CodeMapper* OSR_CM);
 
+void OSR_removePredecessor(llvm::BasicBlock* B, llvm::BasicBlock* Pred,
+        CodeMapper* OSR_CM, bool DontDeleteUselessPHIs = false);
+
 /* Simplified version of LLVM's Statistic class that allows counter reset */
 class OSR_Statistic {
 public:

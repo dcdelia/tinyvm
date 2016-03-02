@@ -387,4 +387,88 @@ bool OSR_RecursivelyDeleteTriviallyDeadInstructions(Value *V,
   return true;
 }
 
+/*
+ * Adapted from BasicBlock.cpp
+ */
+
+void OSR_removePredecessor(BasicBlock* B, BasicBlock* Pred, CodeMapper* OSR_CM,
+        bool DontDeleteUselessPHIs) {
+
+    assert((B->hasNUsesOrMore(16)|| // Reduce cost of this assertion for complex CFGs.
+            find(pred_begin(B), pred_end(B), Pred) != pred_end(B)) &&
+            "removePredecessor: BB is not a predecessor!");
+
+    if (B->getInstList().empty()) return;
+    PHINode *APN = dyn_cast<PHINode>(&B->front());
+    if (!APN) return;   // Quick exit.
+
+    // If there are exactly two predecessors, then we want to nuke the PHI nodes
+    // altogether.  However, we cannot do this, if this in this case:
+    //
+    //  Loop:
+    //    %x = phi [X, Loop]
+    //    %x2 = add %x, 1         ;; This would become %x2 = add %x2, 1
+    //    br Loop                 ;; %x2 does not dominate all uses
+    //
+    // This is because the PHI node input is actually taken from the predecessor
+    // basic block.  The only case this can happen is with a self loop, so we
+    // check for this case explicitly now.
+    //
+    unsigned max_idx = APN->getNumIncomingValues();
+    assert(max_idx != 0 && "PHI Node in block with 0 predecessors!?!?!");
+    if (max_idx == 2) {
+         BasicBlock *Other = APN->getIncomingBlock(APN->getIncomingBlock(0) == Pred);
+
+        // Disable PHI elimination!
+        if (B == Other) max_idx = 3;
+    }
+
+    // <= Two predecessors BEFORE I remove one?
+    if (max_idx <= 2 && !DontDeleteUselessPHIs) {
+        // Yup, loop through and nuke the PHI nodes
+        while (PHINode *PN = dyn_cast<PHINode>(&B->front())) {
+            // Remove the predecessor first.
+            PN->removeIncomingValue(Pred, !DontDeleteUselessPHIs);
+
+            // If the PHI _HAD_ two uses, replace PHI node with its now *single* value
+            if (max_idx == 2) {
+                Value* valToUse;
+                if (PN->getIncomingValue(0) != PN)
+                    valToUse = PN->getIncomingValue(0);
+                else
+                    // We are left with an infinite loop with no entries: kill the PHI.
+                    valToUse = UndefValue::get(PN->getType());
+                if (OSR_CM) {  /* OSR */
+                    OSR_CM->replaceAllUsesWith(PN, valToUse);
+                    OSR_CM->deleteInstruction(PN);
+                }
+                PN->replaceAllUsesWith(valToUse);
+                B->getInstList().pop_front();    // Remove the PHI node
+            }
+
+            // If the PHI node already only had one entry, it got deleted by
+            // removeIncomingValue.
+        }
+    } else {
+        // Okay, now we know that we need to remove predecessor #pred_idx from all
+        // PHI nodes.  Iterate over each PHI node fixing them up
+        PHINode *PN;
+        for (BasicBlock::iterator II = B->begin(); (PN = dyn_cast<PHINode>(II)); ) {
+                ++II;
+            PN->removeIncomingValue(Pred, false);
+            // If all incoming values to the Phi are the same, we can replace the Phi
+            // with that value.
+            Value* PNV = nullptr;
+            if (!DontDeleteUselessPHIs && (PNV = PN->hasConstantValue()))
+                if (PNV != PN) {
+                    if (OSR_CM) { /* OSR */
+                        OSR_CM->replaceAllUsesWith(PN, PNV);
+                        OSR_CM->deleteInstruction(PN);
+                    }
+                    PN->replaceAllUsesWith(PNV);
+                    PN->eraseFromParent();
+            }
+        }
+    }
+}
 

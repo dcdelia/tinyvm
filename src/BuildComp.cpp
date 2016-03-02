@@ -878,6 +878,13 @@ StateMap::CompCode* BuildComp::buildCompCode(Instruction* instToReconstruct,
 
     Instruction* lastI = recList.back();
 
+    if (lastI != instToReconstruct && !isa<PHINode>(instToReconstruct)) {
+        std::cerr << "Inst to reconstruct: ";
+        instToReconstruct->dump();
+        std::cerr << "Last inst in recList: ";
+        lastI->dump();
+    }
+
     assert ( (lastI == instToReconstruct || isa<PHINode>(instToReconstruct))
             && "missing instructions?"); // TODO better check for PHI node
 

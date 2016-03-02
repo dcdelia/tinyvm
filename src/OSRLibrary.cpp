@@ -1072,7 +1072,17 @@ bool OSRLibrary::fixUsesOfFunctionsAndGlobals(Function* origFun, Function* newFu
                 // if a global g1 is being used in another global g2, g2 will
                 // be eventually fixed using an extern declaration: nothing to
                 // do here for g1 then! (TODO: check this on running code)
-                assert(isa<GlobalVariable>(user) && "Case not accounted for yet");
+                if (isa<GlobalVariable>(user)) continue;
+
+
+                // if a global is being used into a constant, we emit a warning
+                // and do not replace the use (TODO: fix this!)
+                if (isa<Constant>(user)) {
+                    std::cerr << "WARNING: not fixing constant "; user->dump();
+                    continue;
+                }
+
+                assert(false && "Case not accounted for yet");
             }
         }
     }

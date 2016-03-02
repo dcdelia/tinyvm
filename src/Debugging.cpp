@@ -330,12 +330,9 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     //LivenessAnalysis *LA_dest = (src == funPair.first) ? &LAPair.second : &LAPair.first;
     LivenessAnalysis *LA_src, *LA_dest;
     if (src == funPair.first) {
-        assert (dest == funPair.second && "wrong LocPair or StateMap");
         LA_src = &LAPair.first;
         LA_dest = &LAPair.second;
     } else {
-        assert (src == funPair.second && dest == funPair.first
-                && "wrong LocPair or StateMap");
         LA_src = &LAPair.second;
         LA_dest = &LAPair.first;
     }
@@ -362,6 +359,8 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     float minRecoverableRatio = 2.0, maxRecoverableRatio = 0;
 
     std::set<Value*> deadScalars, recoveredScalars;
+
+    std::set<Value*> deadValuesToLog;
 
     for (int i = 0, e = locWorkList.size(); i != e; ++i) {
         Instruction* OSRSrc = locWorkList[i].first;
@@ -440,14 +439,22 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                     liveAtOSRSrc, availMap, liveAliasMap, deadAvailMap, opts);
         }
 
-        std::vector<Instruction*> recList;
+
         bcStats.reset();
 
         int oldTotRecoverableUserVars = totRecoverableUserVars;
 
+        std::vector<Instruction*> recList;
+
         for (Value* userVar: varWorkList) {
+            // TODO check why I can't just clear the list in the else branch
+            // (problem appeared when debugging perlbench with strategy 6)
+            recList.clear();
+
             bool canReconstruct = BuildComp::reconstructValue(userVar, availMap,
                     liveAliasMap, deadAvailMap, opts, recList, nullptr);
+
+            deadValuesToLog.insert(bcStats.deadOps.begin(), bcStats.deadOps.end());
 
             if (!canReconstruct) {
                 if (verbose) {
@@ -487,7 +494,6 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                 assert(compCode && "no CompCode object generated");
 
                 delete compCode;
-                recList.clear();
             }
         }
 
@@ -596,6 +602,7 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
      * (7) total # of recoverable dead user vars
      * (8) {avg, min, max} recoverability ratio
      * (9) {avg, min, max} # of dead user variables (normalized against 5b)
+     * (10) dead available values to log
     */
     std::cerr << "Entry for log file:" << std::endl;
     std::cerr << orig->getName().str() << '\t';
@@ -621,7 +628,9 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                             totDeadUserVars/(float)locsWithDeadVars;
     std::cerr << avgDeadUserVars << '\t';
     std::cerr << minDeadUserVars << '\t';
-    std::cerr << maxDeadUserVars << std::endl;
+    std::cerr << maxDeadUserVars << '\t';
+
+    std::cerr << deadValuesToLog.size() << std::endl;
 
     std::cerr.precision(oldPrecision);
 }

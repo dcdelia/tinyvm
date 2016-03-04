@@ -358,7 +358,17 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     float sumRecoverableRatio = 0;
     float minRecoverableRatio = 2.0, maxRecoverableRatio = 0;
 
-    std::set<Value*> deadScalars, recoveredScalars;
+    // TODO use a macro instead :-)
+    auto updateValCountInMap = [](std::map<Value*, int> &map, Value* v) {
+        std::map<Value*, int>::iterator it = map.find(v);
+        if (it == map.end()) {
+            map.insert(std::pair<Value*, int>(v, 1));
+        } else {
+            it->second = it->second + 1;
+        }
+    };
+
+    std::map<Value*, int> deadScalars, recoveredScalars;
 
     std::set<Value*> deadValuesToLog;
 
@@ -404,7 +414,7 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                 // TODO
                 if (sourceInfo->dbgValueInfoMap.count(valToSet)) {
                     varWorkList.push_back(valToSet);
-                    deadScalars.insert(valToSet);
+                    updateValCountInMap(deadScalars, valToSet);
                 }
             }
         }
@@ -465,7 +475,7 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
             }
 
             ++totRecoverableUserVars;
-            recoveredScalars.insert(userVar);
+            updateValCountInMap(recoveredScalars, userVar);
 
             if (recList.empty()) { // local 1:1 mapping information
                 Value* valToUse = BuildComp::fetchOperandFromMaps(userVar,
@@ -561,10 +571,16 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
     };
 
     std::cerr << "List of dead scalar variables across all locations:" << std::endl;
-    for (Value* v: deadScalars) printVarWithDbgInfo(v);
+    for (auto &pair: deadScalars) {
+        std::cerr << "[" << pair.second << "] ";
+        printVarWithDbgInfo(pair.first);
+    }
 
     std::cerr << "List of (at-least-somewhere) recoverable scalar variables:" << std::endl;
-    for (Value* v: recoveredScalars) printVarWithDbgInfo(v);
+    for (auto &pair: recoveredScalars) {
+        std::cerr << "[" << pair.second << "] ";
+        printVarWithDbgInfo(pair.first);
+    }
 
     auto countInstructions = [](Function* F, int* numI, int*numPHI) {
         *numI = 0;

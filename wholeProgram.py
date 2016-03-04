@@ -59,7 +59,7 @@ def create_recovery_script(ll_folder, ll_filename, fun_name, strategy, script_na
     script_file.write("CLONE_FUN "+fun_name+" AS optfun\n")
     script_file.write("OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink\n")
     script_file.write("MAPS UPDATE "+fun_name+" optfun\n")
-    script_file.write("COMP_CODE STRATEGY "+strategy+"\n")
+    script_file.write("COMP_CODE STRATEGY "+str(strategy)+"\n")
     script_file.write("DEBUG RECOVERY "+fun_name+" FROM optfun\n")
     script_file.write("QUIT\n")
     script_file.close()
@@ -207,7 +207,7 @@ IR_files = []
 BC_strategy = 1
 
 if len(sys.argv) == 4:
-    BC_strategy = sys.argv[3]
+    BC_strategy = int(sys.argv[3]) # int() as sanity check
 
 # construct list of IR files to process
 for IR_file in os.listdir(IR_folder):
@@ -216,11 +216,11 @@ for IR_file in os.listdir(IR_folder):
 
 # for each IR file, find defined functions and process them
 tsv_file = open(tsv_file_name, "w")
+script_name = "tmp.tvm"
+log_name = "tmp.log"
 
 for IR_file in IR_files:
     print("Processing "+IR_file+" now...")
-    script_name = "tmp.tvm"
-    log_name = "tmp.log"
     create_show_funs_script(IR_folder, IR_file, script_name)
     run_tinyvm_script(IR_folder, IR_file, script_name, log_name)
     functions = process_show_funs_log(log_name)

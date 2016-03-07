@@ -1022,11 +1022,44 @@ bool BuildComp::buildComp(StateMap* M, Instruction* OSRSrc, Instruction* LPad,
                             deadAvailMap, true);
 
                     assert (valToUse && "broken isAliasAvailableForConstantPHI()?");
+
+                    // update stats - TODO fix this horrible code!
+                    bool found = false;
+                    for (auto &pair: availMap) {
+                        if (pair.second == valToUse) {
+                            stats.liveOps.insert(valToUse);
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        for (auto &pair: liveAliasMap) {
+                            if (pair.second == valToUse) {
+                                stats.liveAliasedOps.insert(valToUse);
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found) {
+                            for (auto &pair: deadAvailMap) {
+                                if (pair.second == valToUse) {
+                                    stats.deadOps.insert(valToUse);
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    assert(found && "Value not found in the three maps!");
                 }
 
                 // store local 1:1 mapping information in valueInfoMap
                 valueInfoMap[valToReconstruct] = new StateMap::ValueInfo(valToUse);
                 stats.aliasedDeadVariables++;
+
             } else {
                 // reconstruct the value, which has to be an instruction! TODO always?
                 Instruction* instToReconstruct = cast<Instruction>(valToReconstruct);

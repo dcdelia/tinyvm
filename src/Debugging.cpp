@@ -450,11 +450,11 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
         }
 
 
-        bcStats.reset();
-
         int oldTotRecoverableUserVars = totRecoverableUserVars;
 
         std::vector<Instruction*> recList;
+
+        bcStats.reset();
 
         for (Value* userVar: varWorkList) {
             // TODO check why I can't just clear the list in the else branch
@@ -463,8 +463,6 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
 
             bool canReconstruct = BuildComp::reconstructValue(userVar, availMap,
                     liveAliasMap, deadAvailMap, opts, recList, nullptr);
-
-            deadValuesToLog.insert(bcStats.deadOps.begin(), bcStats.deadOps.end());
 
             if (!canReconstruct) {
                 if (verbose) {
@@ -494,7 +492,16 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                             liveAliasMap, deadAvailMap, true);
 
                     assert (valToUse && "broken isAliasAvailableForConstantPHI()?");
+
+                    // for statistics we care about dead operands only
+                    for (auto &pair: deadAvailMap) {
+                        if (pair.second == valToUse) {
+                            bcStats.deadOps.insert(valToUse);
+                            break;
+                        }
+                    }
                 }
+
             } else {
                 // reconstruct the value, which has to be an instruction! TODO always?
                 Instruction* userInst = cast<Instruction>(userVar);
@@ -506,6 +513,8 @@ void Debugging::computeRecoveryInfo(Function* orig, Function* opt,
                 delete compCode;
             }
         }
+
+        deadValuesToLog.insert(bcStats.deadOps.begin(), bcStats.deadOps.end());
 
         float recoverableRatio = (totRecoverableUserVars - oldTotRecoverableUserVars)
                                / (float)varWorkList.size();

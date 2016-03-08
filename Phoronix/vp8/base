@@ -1,7 +1,5 @@
 LOAD_IR Phoronix/vp8/code.ll
 CLONE_FUN vp8_full_search_sadx8 AS basefun
 CLONE_FUN basefun AS optfun
-VERBOSE
 OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
 MAPS UPDATE basefun optfun
-VERBOSE

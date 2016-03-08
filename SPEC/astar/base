@@ -1,7 +1,5 @@
 LOAD_IR SPEC/astar/code.ll
 CLONE_FUN _ZN6wayobj10makebound2EPiiS0_ AS basefun
 CLONE_FUN basefun AS optfun
-VERBOSE
 OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
 MAPS UPDATE basefun optfun
-VERBOSE

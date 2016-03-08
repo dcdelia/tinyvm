@@ -1,7 +1,5 @@
 LOAD_IR SPEC/povray/code.ll
 CLONE_FUN _ZN3povL23All_Plane_IntersectionsEPNS_13Object_StructEPNS_10Ray_StructEPNS_13istack_structE AS basefun
 CLONE_FUN basefun AS optfun
-VERBOSE
 OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
 MAPS UPDATE basefun optfun
-VERBOSE

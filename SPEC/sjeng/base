@@ -1,7 +1,5 @@
 LOAD_IR SPEC/sjeng/code.ll
 CLONE_FUN std_eval AS basefun
 CLONE_FUN basefun AS optfun
-VERBOSE
 OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
 MAPS UPDATE basefun optfun
-VERBOSE

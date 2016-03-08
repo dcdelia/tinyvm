@@ -1,9 +1,0 @@
-LOAD_IR debugging/vp8/code-dbg.ll
-DEBUG NAMER vp8_full_search_sadx8
-DEBUG PARSE vp8_full_search_sadx8
-DEBUG STRIP code-dbg.ll
-CLONE_FUN vp8_full_search_sadx8 AS optfun
-VERBOSE
-OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
-MAPS UPDATE vp8_full_search_sadx8 optfun
-VERBOSE

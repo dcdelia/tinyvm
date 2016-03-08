@@ -1,7 +1,5 @@
 LOAD_IR SPEC/sphinx3/code.ll
 CLONE_FUN mgau_eval AS basefun
 CLONE_FUN basefun AS optfun
-VERBOSE
 OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
 MAPS UPDATE basefun optfun
-VERBOSE

@@ -1,7 +1,5 @@
 LOAD_IR Phoronix/dcraw/code.ll
 CLONE_FUN vng_interpolate AS basefun
 CLONE_FUN basefun AS optfun
-VERBOSE
 OPT optfun ADCE ConstProp EarlyCSE SCCP LICM Sink ADCE
 MAPS UPDATE basefun optfun
-VERBOSE

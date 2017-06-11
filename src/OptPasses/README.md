@@ -8,7 +8,7 @@ Lines annotated with __/* OSR */__ have been added to the original LLVM passes i
 
 All-caps methods with the _OSR__ prefix in the name (e.g., _OSR_STATISTIC_, _OSR_DEBUG_) are essentially refactored versions of LLVM helper methods used to collect statistics and to specify dependencies/prerequisites for passes and analyses.
 
-Source files Utils/PassUtils.cpp and Utils/SimplifyCFG.cpp contain shared code among LLVM passes that is used to perform recurrent tasks, such as recursive removal of dead instructions or basic-block manipulation. Some of these methods needed to be made OSR-aware themselves, so we imported them from LLVM's codebase and renamed them by adding _OSR__ as prefix. Edits to their bodiesare marked with __/* OSR */__ and involve the updating of a CodeMapper object.
+Source files Utils/PassUtils.cpp and Utils/SimplifyCFG.cpp contain shared code among LLVM passes that is used to perform recurrent tasks, such as recursive removal of dead instructions or basic-block manipulation. Some of these methods needed to be made OSR-aware themselves, so we imported them from LLVM's codebase and renamed them by adding _OSR__ as prefix. Edits to their bodies are marked with __/* OSR */__ and involve the updating of a CodeMapper object.
 
 Furthermore, some utility methods in turn called methods that are OSR-transparent but, due to their auxiliary nature, were not visible in LLVM headers. We thus had to copy them as-is in the code, keeping their original name so we could easily distinguish them from those edited to support OSR.
 
